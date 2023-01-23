@@ -1,12 +1,7 @@
-// RUN: %clang_analyze_cc1 -analyzer-checker=core,core.MainCall %s -verify
+// RUN: %clang_analyze_cc1 -analyzer-checker=core,alpha.core.StdVariant %s -verify
 
-template<class... Types>
-class variant {};
-
-int main() {
-    variant<int, char> v;
-}
+#include "Inputs/variant.h"
 
 void g() {
-  main(); // expected-warning{{VariantCreated [core.Variant]}}
+  std::variant<int, char> v; // expected-warning{{Variant Created [alpha.core.StdVariant]}}
 }
