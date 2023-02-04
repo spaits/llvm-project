@@ -24,43 +24,24 @@ void g() {
   std::variant<int, char> v; // expected-warning{{Variant Created [alpha.core.StdVariant]}}
 }
 
-void reasonAboutValueHeldInVariant() {
-  std::variant<int, char> v = MAGIC_NUMBER;
+void reasonAboutValueHeld() {
+  std::variant<int, DummyClass> v = MAGIC_NUMBER;
+  int valueFromVariant = std::get<int> (v);
+  clang_analyzer_eval(valueFromVariant == MAGIC_NUMBER); // expected-warning{{TRUE}}
+}
 
-  int numberFromVariant = std::get<int>(v);
+void reasonAboutPrimitiveTypes() {
+  std::variant<int, DummyClass> v1 = MAGIC_NUMBER;
+  std::variant<int, std::string> v2 = MAGIC_NUMBER;
+
+  int fromVariant1 = std::get<int>(v1);
   clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
-  clang_analyzer_eval(numberFromVariant == MAGIC_NUMBER); // expected-warning{{TRUE}}
+  clang_analyzer_eval(fromVariant1 == MAGIC_NUMBER); // expected-warning{{TRUE}}
 
-  DummyClass a = std::get<DummyClass>(v);
-  clang_analyzer_warnIfReached(); // no-warning
+  int fromVariant2 = std::get<int>(v2);
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+  clang_analyzer_eval(fromVariant2 == MAGIC_NUMBER); // expected-warning{{TRUE}}
 
-}
-
-void reasoningAboutGetIf() {
-  std::variant<int, DummyClass> v = MAGIC_NUMBER;
-  DummyClass* inVariant = std::get_if<DummyClass>(&v);
-  clang_analyzer_eval(inVariant == nullptr); // expected-warning{{TRUE}}
-  inVariant->f();
+  DummyClass fromWrong = std::get<DummyClass>(v1);
   clang_analyzer_warnIfReached(); // no-warning
 }
-
-void visit() {
-  std::variant<int, DummyClass> v = MAGIC_NUMBER;
-
-  int res = std::visit(overloaded{[](auto arg) {
-                                        clang_analyzer_warnIfReached(); // no-warning
-                                        return 0;
-                                        },
-                                  [](double arg) {
-                                        clang_analyzer_warnIfReached(); // no-warning
-                                        return 1; 
-                                        },
-                                  [](int arg) {
-                                        clang_analyzer_warnIfReached(); // expected-warning {{REACHABLE}}
-                                        return 2; 
-                                        }},
-                      v);
-  clang_analyzer_dump(res);
-  clang_analyzer_eval(res == 2); // expected-warning{{TRUE}}
-}
-

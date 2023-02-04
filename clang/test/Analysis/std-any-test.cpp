@@ -19,6 +19,15 @@ struct LargeClass {
     char bigStringTwo[10000] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 };
 
+
+struct A {
+  int i;
+};
+
+struct B {
+  int i;
+};
+
 void clang_analyzer_eval(int);
 void clang_analyzer_warnIfReached();
 template <typename T>
@@ -42,10 +51,19 @@ void reasonAboutBigValueHeldInAny() {
 // check weather the analyzer can reason about primitive types in std::any
 void reasoningAboutTypeHeldInAny() {
   std::any a = MAGIC_NUMBER;
+  std::any b = 22;
 
   int i = std::any_cast<int> (a);
   clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
   // if we reach this point that means the analyzer knows that the std::any holds an int
+
+  int j = std::any_cast<int> (b);
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+  
+  std::any a1 = A{5};
+  B baaa = std::any_cast<B> (a1);
+  
+  clang_analyzer_warnIfReached(); // no-warning
 
   DummyClass d = std::any_cast<DummyClass> (a);
   clang_analyzer_warnIfReached(); // no-warning
@@ -54,6 +72,8 @@ void reasoningAboutTypeHeldInAny() {
   // becasue it knows that any_cast function call will fail
   d.f();
   i++;
+  j++;
+  baaa.i++;
 }
 
 // check weather the analyzer can reason about large types in std::any
@@ -70,4 +90,17 @@ void reasonAboutBigTypeHeldInAny() {
   clang_analyzer_warnIfReached(); // no-warning
   d++;
   lv2.elem++;
+}
+
+void reasonAboutAnyPointer() {
+  std::any a = MAGIC_NUMBER;
+  int* i = std::any_cast<int> (&a);
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+  clang_analyzer_eval(*i == MAGIC_NUMBER); // expected-warning{{TRUE}}
+  a = 3.14;
+  float* f = std::any_cast<float> (&a);
+  i = std::any_cast<int> (&a);
+  clang_analyzer_warnIfReached(); // no-warning
+  (*i)++;
+  (*f)++;
 }
