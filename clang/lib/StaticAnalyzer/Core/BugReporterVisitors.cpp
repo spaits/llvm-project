@@ -45,6 +45,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/SMTConv.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -61,6 +62,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <iostream>
 
 using namespace clang;
 using namespace ento;
@@ -449,9 +451,10 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
   if (!CallExitLoc || isModifiedInFrame(N))
     return nullptr;
 
-  CallEventRef<> Call =
+  CallDescription stdGetCall{{"std", "get"}};
+  CallEventRef<> Call = //
       BR.getStateManager().getCallEventManager().getCaller(SCtx, State);
-
+  std::cout << "Matches:" << stdGetCall.matches(*(Call.get())) << "\n";
   // Optimistically suppress uninitialized value bugs that result
   // from system headers having a chance to initialize the value
   // but failing to do so. It's too unlikely a system header's fault.
@@ -469,9 +472,38 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     // One common example of a standard function that doesn't ever initialize
     // its out parameter is operator placement new; it's up to the follow-up
     // constructor (if any) to initialize the memory.
+
     if (!N->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-      R.markInvalid(&i, nullptr);
+      
+      std::cout<<"475 Ez lesz a hibas\n";
+      const Stmt* current = N->getStmtForDiagnostics();
+      if (current == nullptr)
+        std::cout << "Null volt a current\n";
+      else {
+        //SVal sv =
+        N->getSVal(current).dump();
+        llvm::errs() << "\n";
+        llvm::errs() << "\n";
+      }
+
+      const Stmt* next = N->getNextStmtForDiagnostics();
+      if (next == nullptr) {
+        std::cout << "null volt a next\n";
+      }
+      else {
+        N->getSVal(next).dump();
+        llvm::errs() << "\n";
+      }
+
+      auto prev = static_cast<const Stmt*>(N->getPreviousStmtForDiagnostics());
+      if (prev == nullptr) {
+        std::cout << "null volt a prev\n";
+      } else {
+        N->getSVal(prev).dump();
+      }
+
+      //R.markInvalid(&i, nullptr);
     }
     return nullptr;
   }
@@ -895,6 +927,7 @@ public:
         std::string MacroName = std::string(getMacroName(*Loc, BRC));
         SourceLocation BugLoc = BugPoint->getStmt()->getBeginLoc();
         if (!BugLoc.isMacroID() || getMacroName(BugLoc, BRC) != MacroName)
+        std::cout << "BugRepVis 900\n";
           BR.markInvalid(getTag(), MacroName.c_str());
       }
     }
@@ -1170,8 +1203,10 @@ public:
                                    PathSensitiveBugReport &BR) override {
     switch (Mode) {
     case Initial:
+      //llvm_unreachable("Initial!");
       return visitNodeInitial(N, BRC, BR);
     case MaybeUnsuppress:
+      llvm_unreachable("MaybeUnsuppress");
       return visitNodeMaybeUnsuppress(N, BRC, BR);
     case Satisfied:
       return nullptr;
@@ -1182,8 +1217,10 @@ public:
 
   void finalizeVisitor(BugReporterContext &, const ExplodedNode *,
                        PathSensitiveBugReport &BR) override {
-    if (EnableNullFPSuppression && ShouldInvalidate)
+    if (EnableNullFPSuppression && ShouldInvalidate) {
+      llvm_unreachable("finalizeVisitor of returnVisitor");
       BR.markInvalid(ReturnVisitor::getTag(), CalleeSFC);
+    }
   }
 };
 
@@ -1911,6 +1948,7 @@ SuppressInlineDefensiveChecksVisitor::VisitNode(const ExplodedNode *Succ,
     const LocationContext *CurLC = Succ->getLocationContext();
     const LocationContext *ReportLC = BR.getErrorNode()->getLocationContext();
     if (CurLC != ReportLC && !CurLC->isParentOf(ReportLC)) {
+      std::cout << "Suppress IDC\n";
       BR.markInvalid("Suppress IDC", CurLC);
       return nullptr;
     }
@@ -1949,6 +1987,7 @@ SuppressInlineDefensiveChecksVisitor::VisitNode(const ExplodedNode *Succ,
       // Suppress reports unless we are in that same macro.
       if (!BugLoc.isMacroID() ||
           getMacroName(BugLoc, BRC) != getMacroName(TerminatorLoc, BRC)) {
+        std::cout << "Supress Macro IDC \n";
         BR.markInvalid("Suppress Macro IDC", CurLC);
       }
       return nullptr;
@@ -3285,13 +3324,17 @@ void LikelyFalsePositiveSuppressionBRVisitor::finalizeVisitor(
   // based on known issues.
   const AnalyzerOptions &Options = BRC.getAnalyzerOptions();
   const Decl *D = N->getLocationContext()->getDecl();
+      
+  std::cout << "Cout megy?" << AnalysisDeclContext::isInStdNamespace(D) << '\n';
 
   if (AnalysisDeclContext::isInStdNamespace(D)) {
+      llvm_unreachable("At least find it in std namespace");
     // Skip reports within the 'std' namespace. Although these can sometimes be
     // the user's fault, we currently don't report them very well, and
     // Note that this will not help for any other data structure libraries, like
     // TR1, Boost, or llvm/ADT.
     if (Options.ShouldSuppressFromCXXStandardLibrary) {
+      llvm_unreachable("LikleyFalsePos marks it invalid");
       BR.markInvalid(getTag(), nullptr);
       return;
     } else {
@@ -3302,6 +3345,7 @@ void LikelyFalsePositiveSuppressionBRVisitor::finalizeVisitor(
       // or std::list::pop_back are called multiple times because we cannot
       // reason about the internal invariants of the data structure.
       if (const auto *MD = dyn_cast<CXXMethodDecl>(D)) {
+      llvm_unreachable("1");
         const CXXRecordDecl *CD = MD->getParent();
         if (CD->getName() == "list") {
           BR.markInvalid(getTag(), nullptr);
@@ -3312,6 +3356,7 @@ void LikelyFalsePositiveSuppressionBRVisitor::finalizeVisitor(
       // The analyzer issues a false positive when the constructor of
       // std::__independent_bits_engine from algorithms is used.
       if (const auto *MD = dyn_cast<CXXConstructorDecl>(D)) {
+      llvm_unreachable("2");
         const CXXRecordDecl *CD = MD->getParent();
         if (CD->getName() == "__independent_bits_engine") {
           BR.markInvalid(getTag(), nullptr);
@@ -3352,6 +3397,7 @@ void LikelyFalsePositiveSuppressionBRVisitor::finalizeVisitor(
   // reason about data structure shapes.
   const SourceManager &SM = BRC.getSourceManager();
   FullSourceLoc Loc = BR.getLocation().asLocation();
+  std::cout << "Ez kb biztos Nem relevans" << Loc.isMacroID() << "\n";
   while (Loc.isMacroID()) {
     Loc = Loc.getSpellingLoc();
     if (SM.getFilename(Loc).endswith("sys/queue.h")) {

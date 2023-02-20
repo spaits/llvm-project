@@ -42,6 +42,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 namespace clang {
 
@@ -479,6 +480,8 @@ public:
   ///
   /// \sa removeInvalidation
   void markInvalid(const void *Tag, const void *Data) {
+    //llvm_unreachable("markIncv");
+    std::cout<< "Itt mar invalid\n";
     Invalidations.insert(std::make_pair(Tag, Data));
   }
 

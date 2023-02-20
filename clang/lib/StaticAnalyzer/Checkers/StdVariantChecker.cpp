@@ -23,6 +23,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
 
     public:
     void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+      //assert(false && "AAAAAAAAAAA");
       if (!isa<CXXConstructorCall>(Call))
         return;
       if (!VariantConstructorCall.matches(Call))
