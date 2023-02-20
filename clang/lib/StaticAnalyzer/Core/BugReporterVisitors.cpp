@@ -45,6 +45,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/SMTConv.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -56,6 +57,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <iostream>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -461,6 +463,11 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
   // describing the precondition under which the function isn't supposed to
   // initialize its out-parameter, and additionally check that such
   // precondition can actually be fulfilled on the current path.
+  //std::cout << "Matches: " << !CallDescription{{"std", "get"}}.matches(*(Call.get())) << "\n";
+  bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
+  bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
+  bool isAssignmentCall = CallDescription{{"operator="}}.matches(*(Call.get()));
+  std::cout << "is std::getc? " << isStdGetCall << '\n';
   if (Call->isInSystemHeader()) {
     // We make an exception for system header functions that have no branches.
     // Such functions unconditionally fail to initialize the variable.
@@ -469,8 +476,11 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     // One common example of a standard function that doesn't ever initialize
     // its out parameter is operator placement new; it's up to the follow-up
     // constructor (if any) to initialize the memory.
-    if (!N->getStackFrame()->getCFG()->isLinear()) {
+    if (!N->getStackFrame()->getCFG()->isLinear() && !isStdGetCall && !isIndexCall && !isAssignmentCall) {
       static int i = 0;
+      std::cout << "? " << isStdGetCall << " " << isIndexCall << " "<< isAssignmentCall << '\n';
+      Call.get()->dump();
+      //std::cout << "Mark inavlid: " << CallDescription{{"std", "get"}}.matches(*(Call.get())) << "\n";
       R.markInvalid(&i, nullptr);
     }
     return nullptr;
