@@ -24,6 +24,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
 #include <list>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -724,7 +725,7 @@ protected:
                              const ExplodedNode *N) = 0;
 
 public:
-  NoStateChangeFuncVisitor(bugreporter::TrackingKind TKind) : TKind(TKind) {}
+  NoStateChangeFuncVisitor(bugreporter::TrackingKind TKind) : TKind(TKind) {llvm::errs() << "No state change visitor created\n";}
 
   PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
                                    BugReporterContext &BR,

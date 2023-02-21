@@ -467,7 +467,9 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
   bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
   bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
   bool isAssignmentCall = CallDescription{{"operator="}}.matches(*(Call.get()));
-  std::cout << "is std::getc? " << isStdGetCall << '\n';
+ // std::cout << "is std::getc? " << isStdGetCall << '\n';
+  Call.get()->dump();
+  llvm::errs() << "\n";
   if (Call->isInSystemHeader()) {
     // We make an exception for system header functions that have no branches.
     // Such functions unconditionally fail to initialize the variable.
@@ -872,6 +874,44 @@ StringRef NoStoreFuncVisitor::prettyPrintFirstElement(
 //===----------------------------------------------------------------------===//
 // Implementation of MacroNullReturnSuppressionVisitor.
 //===----------------------------------------------------------------------===//
+
+namespace {
+class SupressStdVisitor final : public BugReporterVisitor {
+public:
+  PathDiagnosticPieceRef  VisitNode(
+    const ExplodedNode *N, BugReporterContext &BR, PathSensitiveBugReport &R) override {
+    
+
+  const LocationContext *Ctx = N->getLocationContext();
+  const StackFrameContext *SCtx = Ctx->getStackFrame();
+  ProgramStateRef State = N->getState();
+  auto CallExitLoc = N->getLocationAs<CallExitBegin>();
+
+//  if (!CallExitLoc || isModifiedInFrame(N))
+//    return nullptr;
+
+  CallEventRef<> Call =
+      BR.getStateManager().getCallEventManager().getCaller(SCtx, State);
+
+  bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
+  bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
+  bool isAssignmentCall = CallDescription{{"operator="}}.matches(*(Call.get()));
+ // std::cout << "is std::getc? " << isStdGetCall << '\n';
+  Call.get()->dump();
+  llvm::errs() << "\n";
+  if (Call->isInSystemHeader()) {
+    if (!N->getStackFrame()->getCFG()->isLinear() && !isStdGetCall && !isIndexCall && !isAssignmentCall) {
+      static int i = 0;
+      std::cout << "? " << isStdGetCall << " " << isIndexCall << " "<< isAssignmentCall << '\n';
+      Call.get()->dump();
+      //std::cout << "Mark inavlid: " << CallDescription{{"std", "get"}}.matches(*(Call.get())) << "\n";
+      R.markInvalid(&i, nullptr);
+    }
+  }
+  return nullptr;
+  }
+};
+}; //namespace
 
 namespace {
 
