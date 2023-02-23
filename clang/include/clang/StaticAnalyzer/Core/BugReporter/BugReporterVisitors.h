@@ -725,7 +725,7 @@ protected:
                              const ExplodedNode *N) = 0;
 
 public:
-  NoStateChangeFuncVisitor(bugreporter::TrackingKind TKind) : TKind(TKind) {llvm::errs() << "No state change visitor created\n";}
+  NoStateChangeFuncVisitor(bugreporter::TrackingKind TKind) : TKind(TKind) {}
 
   PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
                                    BugReporterContext &BR,

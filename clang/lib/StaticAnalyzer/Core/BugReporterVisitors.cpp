@@ -441,7 +441,6 @@ void NoStateChangeFuncVisitor::findModifyingFrames(
 
 PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     const ExplodedNode *N, BugReporterContext &BR, PathSensitiveBugReport &R) {
-
   const LocationContext *Ctx = N->getLocationContext();
   const StackFrameContext *SCtx = Ctx->getStackFrame();
   ProgramStateRef State = N->getState();
@@ -451,42 +450,14 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
   if (!CallExitLoc || isModifiedInFrame(N))
     return nullptr;
 
+  
   CallEventRef<> Call =
       BR.getStateManager().getCallEventManager().getCaller(SCtx, State);
 
-  // Optimistically suppress uninitialized value bugs that result
-  // from system headers having a chance to initialize the value
-  // but failing to do so. It's too unlikely a system header's fault.
-  // It's much more likely a situation in which the function has a failure
-  // mode that the user decided not to check. If we want to hunt such
-  // omitted checks, we should provide an explicit function-specific note
-  // describing the precondition under which the function isn't supposed to
-  // initialize its out-parameter, and additionally check that such
-  // precondition can actually be fulfilled on the current path.
-  //std::cout << "Matches: " << !CallDescription{{"std", "get"}}.matches(*(Call.get())) << "\n";
-  bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
-  bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
-  bool isAssignmentCall = CallDescription{{"operator="}}.matches(*(Call.get()));
- // std::cout << "is std::getc? " << isStdGetCall << '\n';
-  Call.get()->dump();
-  llvm::errs() << "\n";
   if (Call->isInSystemHeader()) {
-    // We make an exception for system header functions that have no branches.
-    // Such functions unconditionally fail to initialize the variable.
-    // If they call other functions that have more paths within them,
-    // this suppression would still apply when we visit these inner functions.
-    // One common example of a standard function that doesn't ever initialize
-    // its out parameter is operator placement new; it's up to the follow-up
-    // constructor (if any) to initialize the memory.
-    if (!N->getStackFrame()->getCFG()->isLinear() && !isStdGetCall && !isIndexCall && !isAssignmentCall) {
-      static int i = 0;
-      std::cout << "? " << isStdGetCall << " " << isIndexCall << " "<< isAssignmentCall << '\n';
-      Call.get()->dump();
-      //std::cout << "Mark inavlid: " << CallDescription{{"std", "get"}}.matches(*(Call.get())) << "\n";
-      R.markInvalid(&i, nullptr);
-    }
     return nullptr;
   }
+
 
   if (const auto *MC = dyn_cast<ObjCMethodCall>(Call)) {
     // If we failed to construct a piece for self, we still want to check
@@ -503,6 +474,52 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
 
   return maybeEmitNoteForParameters(R, *Call, N);
 }
+
+
+//===----------------------------------------------------------------------===//
+// Implementation of SomeVisitor.
+//===----------------------------------------------------------------------===//
+
+namespace {
+class SomeVisitor : public BugReporterVisitor {
+public:
+virtual PathDiagnosticPieceRef VisitNode(const ExplodedNode *Succ,
+                                           BugReporterContext &BRC,
+                                           PathSensitiveBugReport &BR) override;
+void Profile(llvm::FoldingSetNodeID &ID) const override {
+    static int Tag = 0;
+    ID.AddPointer(&Tag);
+  }
+
+}; 
+} //namespace
+
+PathDiagnosticPieceRef SomeVisitor::VisitNode(const ExplodedNode *Succ,
+                                           BugReporterContext &BRC,
+                                           PathSensitiveBugReport &BR) {
+  const LocationContext *Ctx = Succ->getLocationContext();
+  const StackFrameContext *SCtx = Ctx->getStackFrame();
+  ProgramStateRef State = Succ->getState();
+  auto CallExitLoc = Succ->getLocationAs<CallExitBegin>();
+
+  // No diagnostic if region was modified inside the frame.
+  if (!CallExitLoc)
+    return nullptr;
+
+  CallEventRef<> Call =
+      BRC.getStateManager().getCallEventManager().getCaller(SCtx, State);
+  if (Call->isInSystemHeader()) {
+     if (!Succ->getStackFrame()->getCFG()->isLinear()) {
+      static int i = 0;
+      Succ->getSVal(Succ->getStmtForDiagnostics()).dump();
+      llvm::errs() << "---\n";
+      BR.markInvalid(&i, nullptr);
+    }
+    return nullptr;
+  }
+  return nullptr; 
+}
+
 
 //===----------------------------------------------------------------------===//
 // Implementation of NoStoreFuncVisitor.
@@ -783,6 +800,8 @@ PathDiagnosticPieceRef NoStoreFuncVisitor::maybeEmitNote(
 
   SmallString<256> sbuf;
   llvm::raw_svector_ostream os(sbuf);
+  std::cout << "We should not get here\n";
+  std::cout << "Is it linear " << N->getStackFrame()->getCFG()->isLinear() << "\n";
   os << "Returning without writing to '";
 
   // Do not generate the note if failed to pretty-print.
@@ -2400,6 +2419,7 @@ public:
         // Mark both the variable region and its contents as interesting.
         SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
         Report.addVisitor<NoStoreFuncVisitor>(cast<SubRegion>(R), Opts.Kind);
+        Report.addVisitor<SomeVisitor>();
 
         // When we got here, we do have something to track, and we will
         // interrupt.
