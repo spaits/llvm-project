@@ -513,15 +513,31 @@ PathDiagnosticPieceRef SomeVisitor::VisitNode(const ExplodedNode *Succ,
   if (Call->isInSystemHeader()) {
      if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-//      Succ->getSVal(Succ->getStmtForDiagnostics()).dump();
-
-      bool isStdVariantCall = CallDescription{{"std", "variant"}}.matches(*(Call.get()));
-      bool isVariant = CallDescription{{"variant"}}.matches(*(Call.get()));
-      bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
-      bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
-      //llvm::errs() << "\nstd::variant:" << isStdVariantCall << " variant:" << isVariant <<" std::get:" << isStdGetCall << " index:" << isIndexCall << "\n---\n";
 
       const CallEvent* ActualCall = Call.get();
+      bool isStdGetIfCall = CallDescription{{"std", "get_if"}, 1, 1}.matches(*(Call.get()));
+      bool isStdGetCall = CallDescription{{"std", "get"}, 1, 1}.matches(*(Call.get()));
+      //llvm::errs() << "\nstd::variant:" << isStdVariantCall << " variant:" << isVariant <<" std::get:" << isStdGetCall << " index:" << isIndexCall << "\n---\n";
+      if ((isStdGetCall || isStdGetIfCall) && ActualCall->getNumArgs() == 1) {
+        StringRef baseTypeID = ActualCall->getArgExpr(0)->getType().getBaseTypeIdentifier()->getName();
+        llvm::errs() << "std::get: " << baseTypeID << "\n";
+        bool isVariant = StringRef("variant") == baseTypeID;
+        if (isVariant) {
+          return nullptr;
+        }
+      }
+
+      const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(ActualCall);
+      if (asMemberCall) {
+        StringRef thisType = asMemberCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
+        llvm::errs() << "AsMemberCall: " << thisType << "\n";
+        bool isVariant = StringRef("variant") == thisType;
+        return nullptr;
+        //if (isVariant) {
+        //  return nullptr;
+        //}
+      }
+
       bool hasAnythingToDoWVariant = false;
       for (unsigned i = 0; i < ActualCall->getNumArgs(); ++i) {
         llvm::errs() << "a---\n";
@@ -534,14 +550,23 @@ PathDiagnosticPieceRef SomeVisitor::VisitNode(const ExplodedNode *Succ,
         llvm::errs() << "b---\n";
       }
       std::cout << "Has anything " << hasAnythingToDoWVariant << "\n";
-      if (!hasAnythingToDoWVariant)
+      if (!hasAnythingToDoWVariant) {
+
+        bool isMemberCall = isa<CXXMemberCall>(ActualCall);
+        //bool isMemberCall = isa<CXXInstanceCall>(ActualCall);
+        std::cout<<"is memberCall " << isMemberCall << "\n";
+        if (isMemberCall) {
+          const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(ActualCall);
+          StringRef thisType = asMemberCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
+          llvm::errs() << "this type: " << thisType << "\n";
+        }
         BR.markInvalid(&i, nullptr);
+     }
     }
     return nullptr;
   }
   return nullptr; 
 }
-
 
 //===----------------------------------------------------------------------===//
 // Implementation of NoStoreFuncVisitor.
