@@ -16,7 +16,6 @@ void clang_analyzer_warnIfReached();
 template <typename T>
 constexpr void clang_analyzer_dump(T) {}
 
-
 void g() {
   clang_analyzer_warnIfReached();  // expected-warning{{REACHABLE}}
   std::variant<int, char> v; 
@@ -25,7 +24,6 @@ void g() {
   clang_analyzer_warnIfReached();  // expected-warning{{REACHABLE}}
   int numFormVarinat = std::get<int>(v);
   clang_analyzer_warnIfReached();  // expected-warning{{REACHABLE}}
-  int result = 25/ numFormVarinat;
-  clang_analyzer_warnIfReached(); // no-warning
+  int result = 25/ numFormVarinat; // expected-warning {{Division by zero [core.DivideZero]}}
   result++;
 }
