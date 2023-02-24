@@ -508,17 +508,34 @@ PathDiagnosticPieceRef SomeVisitor::VisitNode(const ExplodedNode *Succ,
 
   CallEventRef<> Call =
       BRC.getStateManager().getCallEventManager().getCaller(SCtx, State);
+      Call.get()->dump();
+      llvm::errs() << '\n';
   if (Call->isInSystemHeader()) {
      if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
 //      Succ->getSVal(Succ->getStmtForDiagnostics()).dump();
 
-      bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
+      bool isStdVariantCall = CallDescription{{"std", "variant"}}.matches(*(Call.get()));
+      bool isVariant = CallDescription{{"variant"}}.matches(*(Call.get()));
       bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
       bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
-      llvm::errs() << "\nstd::variant index " << isStdGetCall << " " << isIndexCall << "\n---\n";
+      //llvm::errs() << "\nstd::variant:" << isStdVariantCall << " variant:" << isVariant <<" std::get:" << isStdGetCall << " index:" << isIndexCall << "\n---\n";
 
-      BR.markInvalid(&i, nullptr);
+      const CallEvent* ActualCall = Call.get();
+      bool hasAnythingToDoWVariant = false;
+      for (unsigned i = 0; i < ActualCall->getNumArgs(); ++i) {
+        llvm::errs() << "a---\n";
+        ActualCall->getArgSVal(i).dump();
+        llvm::errs() << '\n';
+        StringRef baseTypeID = ActualCall->getArgExpr(i)->getType().getBaseTypeIdentifier()->getName();
+        bool isVariant = StringRef("variant") == baseTypeID;
+        hasAnythingToDoWVariant = hasAnythingToDoWVariant || isVariant;
+        llvm::errs() << "Base type id: " <<ActualCall->getArgExpr(i)->getType().getBaseTypeIdentifier()->getName() << " " << isVariant <<" " << baseTypeID << "-" << StringRef("variant") << '\n';
+        llvm::errs() << "b---\n";
+      }
+      std::cout << "Has anything " << hasAnythingToDoWVariant << "\n";
+      if (!hasAnythingToDoWVariant)
+        BR.markInvalid(&i, nullptr);
     }
     return nullptr;
   }
