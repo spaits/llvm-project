@@ -511,8 +511,13 @@ PathDiagnosticPieceRef SomeVisitor::VisitNode(const ExplodedNode *Succ,
   if (Call->isInSystemHeader()) {
      if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-      Succ->getSVal(Succ->getStmtForDiagnostics()).dump();
-      llvm::errs() << "---\n";
+//      Succ->getSVal(Succ->getStmtForDiagnostics()).dump();
+
+      bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
+      bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
+      bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
+      llvm::errs() << "\nstd::variant index " << isStdGetCall << " " << isIndexCall << "\n---\n";
+
       BR.markInvalid(&i, nullptr);
     }
     return nullptr;
