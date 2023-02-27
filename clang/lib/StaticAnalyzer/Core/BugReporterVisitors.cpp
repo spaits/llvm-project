@@ -930,45 +930,6 @@ StringRef NoStoreFuncVisitor::prettyPrintFirstElement(
 //===----------------------------------------------------------------------===//
 
 namespace {
-class SupressStdVisitor final : public BugReporterVisitor {
-public:
-  PathDiagnosticPieceRef  VisitNode(
-    const ExplodedNode *N, BugReporterContext &BR, PathSensitiveBugReport &R) override {
-    
-
-  const LocationContext *Ctx = N->getLocationContext();
-  const StackFrameContext *SCtx = Ctx->getStackFrame();
-  ProgramStateRef State = N->getState();
-  auto CallExitLoc = N->getLocationAs<CallExitBegin>();
-
-//  if (!CallExitLoc || isModifiedInFrame(N))
-//    return nullptr;
-
-  CallEventRef<> Call =
-      BR.getStateManager().getCallEventManager().getCaller(SCtx, State);
-
-  bool isStdGetCall = CallDescription{{"std", "get"}}.matches(*(Call.get()));
-  bool isIndexCall = CallDescription{{"index"}}.matches(*(Call.get()));
-  bool isAssignmentCall = CallDescription{{"operator="}}.matches(*(Call.get()));
- // std::cout << "is std::getc? " << isStdGetCall << '\n';
-  Call.get()->dump();
-  llvm::errs() << "\n";
-  if (Call->isInSystemHeader()) {
-    if (!N->getStackFrame()->getCFG()->isLinear() && !isStdGetCall && !isIndexCall && !isAssignmentCall) {
-      static int i = 0;
-      std::cout << "? " << isStdGetCall << " " << isIndexCall << " "<< isAssignmentCall << '\n';
-      Call.get()->dump();
-      //std::cout << "Mark inavlid: " << CallDescription{{"std", "get"}}.matches(*(Call.get())) << "\n";
-      R.markInvalid(&i, nullptr);
-    }
-  }
-  return nullptr;
-  }
-};
-}; //namespace
-
-namespace {
-
 /// Suppress null-pointer-dereference bugs where dereferenced null was returned
 /// the macro.
 class MacroNullReturnSuppressionVisitor final : public BugReporterVisitor {
@@ -998,8 +959,9 @@ public:
       if (isFunctionMacroExpansion(*Loc, SMgr)) {
         std::string MacroName = std::string(getMacroName(*Loc, BRC));
         SourceLocation BugLoc = BugPoint->getStmt()->getBeginLoc();
-        if (!BugLoc.isMacroID() || getMacroName(BugLoc, BRC) != MacroName)
-          BR.markInvalid(getTag(), MacroName.c_str());
+        if (!BugLoc.isMacroID() || getMacroName(BugLoc, BRC) != MacroName) {
+        std::cout << "I cant do this anymore \n";
+          BR.markInvalid(getTag(), MacroName.c_str()); }
       }
     }
 
@@ -1284,10 +1246,26 @@ public:
     llvm_unreachable("Invalid visit mode!");
   }
 
-  void finalizeVisitor(BugReporterContext &, const ExplodedNode *,
+  void finalizeVisitor(BugReporterContext &BRC, const ExplodedNode * N,
                        PathSensitiveBugReport &BR) override {
-    if (EnableNullFPSuppression && ShouldInvalidate)
-      BR.markInvalid(ReturnVisitor::getTag(), CalleeSFC);
+    if (EnableNullFPSuppression && ShouldInvalidate) {
+      std::cout << "RetVis\n";
+const LocationContext *Ctx = N->getLocationContext();
+  const StackFrameContext *SCtx = Ctx->getStackFrame();
+  ProgramStateRef State = N->getState();
+  auto Call =
+      BRC.getStateManager().getCallEventManager();
+      llvm::errs() << "-- Loc Dump beg --\n";
+      N->getLocation().dump();
+      if (N->getLocationContext()->getStackFrame()) {
+        std::cout << "contex\n";
+        llvm::errs() << "-\n";
+        N->getLocationContext()->getStackFrame()->dump();
+        llvm::errs() << "\n-\n";
+      }
+      llvm::errs() << "\n-- Loc Dump end --\n";
+
+      BR.markInvalid(ReturnVisitor::getTag(), CalleeSFC);}
   }
 };
 
@@ -2053,6 +2031,7 @@ SuppressInlineDefensiveChecksVisitor::VisitNode(const ExplodedNode *Succ,
       // Suppress reports unless we are in that same macro.
       if (!BugLoc.isMacroID() ||
           getMacroName(BugLoc, BRC) != getMacroName(TerminatorLoc, BRC)) {
+        std::cout << "asasasasas\n";
         BR.markInvalid("Suppress Macro IDC", CurLC);
       }
       return nullptr;
