@@ -35,6 +35,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
@@ -452,6 +453,59 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
   CallEventRef<> Call =
       BR.getStateManager().getCallEventManager().getCaller(SCtx, State);
 
+  if (Call->isInSystemHeader())
+    return nullptr;
+
+  if (const auto *MC = dyn_cast<ObjCMethodCall>(Call)) {
+    // If we failed to construct a piece for self, we still want to check
+    // whether the entity of interest is in a parameter.
+    if (PathDiagnosticPieceRef Piece = maybeEmitNoteForObjCSelf(R, *MC, N))
+      return Piece;
+  }
+
+  if (const auto *CCall = dyn_cast<CXXConstructorCall>(Call)) {
+    // Do not generate diagnostics for not modified parameters in
+    // constructors.
+    return maybeEmitNoteForCXXThis(R, *CCall, N);
+  }
+
+  return maybeEmitNoteForParameters(R, *Call, N);
+}
+
+//===----------------------------------------------------------------------===//
+// Implementation of SuppressSystemHeaderWarningVistor.
+//===----------------------------------------------------------------------===//
+
+namespace {
+class SuppressSystemHeaderWarningVisitor : public BugReporterVisitor
+{
+public:
+  virtual PathDiagnosticPieceRef VisitNode(const ExplodedNode*,
+                                            BugReporterContext&,
+                                            PathSensitiveBugReport&) override;
+  void Profile(llvm::FoldingSetNodeID &ID) const override {
+    static int Tag = 0;
+    ID.AddPointer(&Tag);
+  }
+};
+} // namespace
+
+PathDiagnosticPieceRef SuppressSystemHeaderWarningVisitor::VisitNode(
+                                            const ExplodedNode *Succ,
+                                            BugReporterContext &BRC,
+                                            PathSensitiveBugReport &BR) {
+  const LocationContext *Ctx = Succ->getLocationContext();
+  const StackFrameContext *SCtx = Ctx->getStackFrame();
+  ProgramStateRef State = Succ->getState();
+  auto CallExitLoc = Succ->getLocationAs<CallExitBegin>();
+
+  // No diagnostic if region was modified inside the frame.
+  if (!CallExitLoc)
+    return nullptr;
+
+  CallEventRef<> Call =
+      BRC.getStateManager().getCallEventManager().getCaller(SCtx, State);
+
   // Optimistically suppress uninitialized value bugs that result
   // from system headers having a chance to initialize the value
   // but failing to do so. It's too unlikely a system header's fault.
@@ -469,27 +523,39 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     // One common example of a standard function that doesn't ever initialize
     // its out parameter is operator placement new; it's up to the follow-up
     // constructor (if any) to initialize the memory.
-    if (!N->getStackFrame()->getCFG()->isLinear()) {
+
+    if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-      R.markInvalid(&i, nullptr);
+
+      const CallEvent* ActualCall = Call.get();
+      bool isStdGetIfCall = CallDescription{{"std", "get_if"}, 1, 1}.matches(*(Call.get()));
+      bool isStdGetCall = CallDescription{{"std", "get"}, 1, 1}.matches(*(Call.get()));
+      bool isDefinedOnVariant = false;
+      if ((isStdGetCall || isStdGetIfCall) && ActualCall->getNumArgs() == 1) {
+        StringRef baseTypeID = ActualCall->getArgExpr(0)->getType().getBaseTypeIdentifier()->getName();
+        isDefinedOnVariant = StringRef("variant") == baseTypeID;
+      }
+
+      bool isVariantMemberFunction = false;
+      const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(ActualCall);
+      if (asMemberCall) {
+        StringRef thisType = asMemberCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
+        isVariantMemberFunction = StringRef("variant") == thisType;
+      }
+
+      bool IsVariantMemberOperator = false;
+      const CXXMemberOperatorCall* asMemberOpCall = dyn_cast<CXXMemberOperatorCall>(ActualCall);
+      if (asMemberOpCall) {
+        StringRef thisType = asMemberOpCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
+        IsVariantMemberOperator = StringRef("variant") == thisType;
+      }
+      
+      if (!isDefinedOnVariant && !isVariantMemberFunction && !IsVariantMemberOperator) {
+        BR.markInvalid(&i, nullptr);
+      }
     }
-    return nullptr;
   }
-
-  if (const auto *MC = dyn_cast<ObjCMethodCall>(Call)) {
-    // If we failed to construct a piece for self, we still want to check
-    // whether the entity of interest is in a parameter.
-    if (PathDiagnosticPieceRef Piece = maybeEmitNoteForObjCSelf(R, *MC, N))
-      return Piece;
-  }
-
-  if (const auto *CCall = dyn_cast<CXXConstructorCall>(Call)) {
-    // Do not generate diagnostics for not modified parameters in
-    // constructors.
-    return maybeEmitNoteForCXXThis(R, *CCall, N);
-  }
-
-  return maybeEmitNoteForParameters(R, *Call, N);
+  return nullptr; 
 }
 
 //===----------------------------------------------------------------------===//
@@ -2350,7 +2416,7 @@ public:
         // Mark both the variable region and its contents as interesting.
         SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
         Report.addVisitor<NoStoreFuncVisitor>(cast<SubRegion>(R), Opts.Kind);
-
+        Report.addVisitor<SuppressSystemHeaderWarningVisitor>();
         // When we got here, we do have something to track, and we will
         // interrupt.
         Result.FoundSomethingToTrack = true;
