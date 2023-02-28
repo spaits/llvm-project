@@ -367,7 +367,14 @@ private:
     llvm::errs() << "num of args: " << Call->getNumArgs() << '\n';
     while (i < Call->getNumArgs() && !b) {
       llvm::errs() << "Rot: " << i << '\n';
-      StringRef baseTypeID = Call->getArgExpr(i)->getType().getBaseTypeIdentifier()->getName();
+      //StringRef baseTypeID = 
+      const Expr* exprFromCall = Call->getArgExpr(i);
+      if (!exprFromCall)
+        return false;
+      const IdentifierInfo* idInf = exprFromCall->getType().getBaseTypeIdentifier();
+      if (!idInf)
+        return false;
+      StringRef baseTypeID = idInf->getName();
       llvm::errs() << "WHY?\n";
       if (StringRef("variant") == baseTypeID)
         b = true;
