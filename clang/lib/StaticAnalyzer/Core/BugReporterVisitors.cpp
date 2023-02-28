@@ -526,33 +526,7 @@ PathDiagnosticPieceRef SuppressSystemHeaderWarningVisitor::VisitNode(
 
     if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-
-      const CallEvent* ActualCall = Call.get();
-      bool isStdGetIfCall = CallDescription{{"std", "get_if"}, 1, 1}.matches(*(Call.get()));
-      bool isStdGetCall = CallDescription{{"std", "get"}, 1, 1}.matches(*(Call.get()));
-      bool isDefinedOnVariant = false;
-      if ((isStdGetCall || isStdGetIfCall) && ActualCall->getNumArgs() == 1) {
-        StringRef baseTypeID = ActualCall->getArgExpr(0)->getType().getBaseTypeIdentifier()->getName();
-        isDefinedOnVariant = StringRef("variant") == baseTypeID;
-      }
-
-      bool isVariantMemberFunction = false;
-      const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(ActualCall);
-      if (asMemberCall) {
-        StringRef thisType = asMemberCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
-        isVariantMemberFunction = StringRef("variant") == thisType;
-      }
-
-      bool IsVariantMemberOperator = false;
-      const CXXMemberOperatorCall* asMemberOpCall = dyn_cast<CXXMemberOperatorCall>(ActualCall);
-      if (asMemberOpCall) {
-        StringRef thisType = asMemberOpCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
-        IsVariantMemberOperator = StringRef("variant") == thisType;
-      }
-      
-      if (!isDefinedOnVariant && !isVariantMemberFunction && !IsVariantMemberOperator) {
-        BR.markInvalid(&i, nullptr);
-      }
+      BR.markInvalid(&i, nullptr);
     }
   }
   return nullptr; 
