@@ -349,6 +349,84 @@ BugReporterVisitor::getDefaultEndPath(const BugReporterContext &BRC,
   return P;
 }
 
+
+//===----------------------------------------------------------------------===//
+// Implementation of AllowListElement.
+//===----------------------------------------------------------------------===//
+namespace {
+class AllowListElement {
+private:
+  const std::string name;
+
+  bool checkIfIsArgOf(const CallEvent* Call) const{
+    bool b = false;
+    unsigned i = 0;
+    llvm::errs() << "\nIMP CD\n";
+    Call->dump();
+    llvm::errs() << "\naaa\n";
+    llvm::errs() << "num of args: " << Call->getNumArgs() << '\n';
+    while (i < Call->getNumArgs() && !b) {
+      llvm::errs() << "Rot: " << i << '\n';
+      StringRef baseTypeID = Call->getArgExpr(i)->getType().getBaseTypeIdentifier()->getName();
+      llvm::errs() << "WHY?\n";
+      if (StringRef("variant") == baseTypeID)
+        b = true;
+      i++;
+    }
+    return b;
+  }
+
+  bool checkIfIsMemberFunction(const CallEvent* Call) const{
+    bool isVariantMemberFunction = false;
+    const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(Call);
+    if (asMemberCall) {
+      StringRef thisType = asMemberCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
+      isVariantMemberFunction = StringRef("variant") == thisType;
+    }
+    return isVariantMemberFunction;
+  }
+
+  bool checkIfIsMemberOperator(const CallEvent* Call) const{
+    bool IsVariantMemberOperator = false;
+    const CXXMemberOperatorCall* asMemberOpCall = dyn_cast<CXXMemberOperatorCall>(Call);
+    if (asMemberOpCall) {
+      StringRef thisType = asMemberOpCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
+      IsVariantMemberOperator = StringRef("variant") == thisType;
+    }
+    return IsVariantMemberOperator;
+  }
+
+public:
+  AllowListElement(const std::string name) : name(name) {}
+  bool checkIfAllowed(const ExplodedNode* Succ, BugReporterContext &BRC,
+                      PathSensitiveBugReport& BR) const {
+    const LocationContext *Ctx = Succ->getLocationContext();
+    const StackFrameContext *SCtx = Ctx->getStackFrame();
+    ProgramStateRef State = Succ->getState();
+    auto CallExitLoc = Succ->getLocationAs<CallExitBegin>();
+
+    // No diagnostic if region was modified inside the frame.
+    if (!CallExitLoc)
+      return false;
+    CallEventRef<> Call =
+      BRC.getStateManager().getCallEventManager().getCaller(SCtx, State);
+    const CallEvent* c = Call.get();
+
+    const CXXMemberOperatorCall* asMemberOpCall = dyn_cast<CXXMemberOperatorCall>(c);
+    if (asMemberOpCall) {
+      return checkIfIsMemberOperator(c);
+    }
+
+    const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(c);
+    if (asMemberCall) {
+      return checkIfIsMemberFunction(c);
+    }
+
+    return checkIfIsArgOf(c);
+  }
+};
+} //namespace
+
 //===----------------------------------------------------------------------===//
 // Implementation of NoStateChangeFuncVisitor.
 //===----------------------------------------------------------------------===//
@@ -513,43 +591,12 @@ PathDiagnosticPieceRef SomeVisitor::VisitNode(const ExplodedNode *Succ,
 
      if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-
-      llvm::errs() << "---begin---\n";
-      Call.get()->dump();
-      llvm::errs() << "\n";
-      const CallEvent* ActualCall = Call.get();
-      bool isStdGetIfCall = CallDescription{{"std", "get_if"}, 1, 1}.matches(*(Call.get()));
-      bool isStdGetCall = CallDescription{{"std", "get"}, 1, 1}.matches(*(Call.get()));
-      //llvm::errs() << "\nstd::variant:" << isStdVariantCall << " variant:" << isVariant <<" std::get:" << isStdGetCall << " index:" << isIndexCall << "\n---\n";
-      bool isDefinedOnVariant = false;
-      if ((isStdGetCall || isStdGetIfCall) && ActualCall->getNumArgs() == 1) {
-        StringRef baseTypeID = ActualCall->getArgExpr(0)->getType().getBaseTypeIdentifier()->getName();
-        llvm::errs() << "std::get: " << baseTypeID << "\n";
-        isDefinedOnVariant = StringRef("variant") == baseTypeID;
-      }
-
-      bool isVariantMemberFunction = false;
-      const CXXMemberCall* asMemberCall = dyn_cast<CXXMemberCall>(ActualCall);
-      if (asMemberCall) {
-        StringRef thisType = asMemberCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
-        llvm::errs() << "AsMemberCall: " << thisType << "\n";
-        isVariantMemberFunction = StringRef("variant") == thisType;
-      }
-
-      bool IsVariantMemberOperator = false;
-      const CXXMemberOperatorCall* asMemberOpCall = dyn_cast<CXXMemberOperatorCall>(ActualCall);
-      if (asMemberOpCall) {
-        StringRef thisType = asMemberOpCall->getCXXThisExpr()->getType().getBaseTypeIdentifier()->getName();
-        llvm::errs() << "AsMemberOPCall: " << thisType << "\n";
-        IsVariantMemberOperator = StringRef("variant") == thisType;
-      }
-      
-      if (!isDefinedOnVariant && !isVariantMemberFunction && !IsVariantMemberOperator) {
+      AllowListElement al("variant");
+      bool b =al.checkIfAllowed(Succ, BRC, BR);
+      if (!b) {
         llvm::errs() << "itt a hiba\n";
         BR.markInvalid(&i, nullptr);
       }
-      
-      llvm::errs() << "---end---\n";
     }
     return nullptr;
   }
@@ -925,6 +972,8 @@ StringRef NoStoreFuncVisitor::prettyPrintFirstElement(
   return Out;
 }
 
+
+
 //===----------------------------------------------------------------------===//
 // Implementation of MacroNullReturnSuppressionVisitor.
 //===----------------------------------------------------------------------===//
@@ -1063,6 +1112,12 @@ public:
   PathDiagnosticPieceRef visitNodeInitial(const ExplodedNode *N,
                                           BugReporterContext &BRC,
                                           PathSensitiveBugReport &BR) {
+    //llvm::errs() << "\n##B##\n";
+    auto CallExitBeg = N->getLocationAs<CallExitBegin>();
+    if (CallExitBeg) {
+      std::cout <<"CEB\n";
+    }
+    //llvm::errs() << "\n##E##\n";
     // Only print a message at the interesting return statement.
     if (N->getLocationContext() != CalleeSFC)
       return nullptr;
@@ -1141,8 +1196,10 @@ public:
         // to return that every time. We could use CFG::isLinear() here, but
         // constexpr branches are obvious to the compiler, not necesserily to
         // the programmer.
-        if (N->getCFG().size() == 3)
+        if (N->getCFG().size() == 3) {
+          std::cout << "Would be meaningless\n";
           WouldEventBeMeaningless = true;
+        }
 
         Out << (isa<Loc>(V) ? "Returning pointer" : "Returning value");
       }
@@ -1178,7 +1235,8 @@ public:
       EventPiece->setPrunable(true);
     else
       BR.markInteresting(CalleeSFC);
-
+    std::cout << "We get to the end\n";
+    
     return EventPiece;
   }
 
@@ -1236,8 +1294,10 @@ public:
                                    PathSensitiveBugReport &BR) override {
     switch (Mode) {
     case Initial:
+      //std::cout << "inital\n";
       return visitNodeInitial(N, BRC, BR);
     case MaybeUnsuppress:
+      std::cout << "Maybe unsuppress\n";
       return visitNodeMaybeUnsuppress(N, BRC, BR);
     case Satisfied:
       return nullptr;
@@ -1250,21 +1310,6 @@ public:
                        PathSensitiveBugReport &BR) override {
     if (EnableNullFPSuppression && ShouldInvalidate) {
       std::cout << "RetVis\n";
-const LocationContext *Ctx = N->getLocationContext();
-  const StackFrameContext *SCtx = Ctx->getStackFrame();
-  ProgramStateRef State = N->getState();
-  auto Call =
-      BRC.getStateManager().getCallEventManager();
-      llvm::errs() << "-- Loc Dump beg --\n";
-      N->getLocation().dump();
-      if (N->getLocationContext()->getStackFrame()) {
-        std::cout << "contex\n";
-        llvm::errs() << "-\n";
-        N->getLocationContext()->getStackFrame()->dump();
-        llvm::errs() << "\n-\n";
-      }
-      llvm::errs() << "\n-- Loc Dump end --\n";
-
       BR.markInvalid(ReturnVisitor::getTag(), CalleeSFC);}
   }
 };

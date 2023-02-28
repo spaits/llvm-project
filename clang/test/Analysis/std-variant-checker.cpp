@@ -28,8 +28,4 @@ void g() {
   result++;
 }
 
-void f() {
-  std::variant<int, char> v = 'a';
-  int* numFromVariant = std::get_if<int>(&v);
-  (*numFromVariant)++;
-}
+
