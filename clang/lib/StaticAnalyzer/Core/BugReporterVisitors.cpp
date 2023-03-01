@@ -35,7 +35,6 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
@@ -477,12 +476,11 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
 //===----------------------------------------------------------------------===//
 
 namespace {
-class SuppressSystemHeaderWarningVisitor : public BugReporterVisitor
-{
+class SuppressSystemHeaderWarningVisitor : public BugReporterVisitor {
 public:
-  virtual PathDiagnosticPieceRef VisitNode(const ExplodedNode*,
-                                            BugReporterContext&,
-                                            PathSensitiveBugReport&) override;
+  virtual PathDiagnosticPieceRef VisitNode(const ExplodedNode *,
+                                           BugReporterContext &,
+                                           PathSensitiveBugReport &) override;
   void Profile(llvm::FoldingSetNodeID &ID) const override {
     static int Tag = 0;
     ID.AddPointer(&Tag);
@@ -490,10 +488,10 @@ public:
 };
 } // namespace
 
-PathDiagnosticPieceRef SuppressSystemHeaderWarningVisitor::VisitNode(
-                                            const ExplodedNode *Succ,
-                                            BugReporterContext &BRC,
-                                            PathSensitiveBugReport &BR) {
+PathDiagnosticPieceRef
+SuppressSystemHeaderWarningVisitor::VisitNode(const ExplodedNode *Succ,
+                                              BugReporterContext &BRC,
+                                              PathSensitiveBugReport &BR) {
   const LocationContext *Ctx = Succ->getLocationContext();
   const StackFrameContext *SCtx = Ctx->getStackFrame();
   ProgramStateRef State = Succ->getState();
@@ -529,7 +527,7 @@ PathDiagnosticPieceRef SuppressSystemHeaderWarningVisitor::VisitNode(
       BR.markInvalid(&i, nullptr);
     }
   }
-  return nullptr; 
+  return nullptr;
 }
 
 //===----------------------------------------------------------------------===//
