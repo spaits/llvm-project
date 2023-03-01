@@ -2366,6 +2366,9 @@ public:
     // If so, we can track both its contents and constraints on its value.
     if (ExplodedGraph::isInterestingLValueExpr(Inner)) {
       SVal LVal = LVNode->getSVal(Inner);
+      llvm::errs() << '\n';
+      LVal.dump();
+      llvm::errs() << '\n';
 
       const MemRegion *RR = getLocationRegionIfReference(Inner, LVNode);
       bool LVIsNull = LVState->isNull(LVal).isConstrainedTrue();
@@ -2382,13 +2385,15 @@ public:
       // For those, we want to track the location of the reference.
       const MemRegion *R =
           (RR && LVIsNull) ? RR : LVNode->getSVal(Inner).getAsRegion();
+      
 
       if (R) {
-
+        SVal PointeeVal = LVState->getSVal(R);
         // Mark both the variable region and its contents as interesting.
         SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
         Report.addVisitor<NoStoreFuncVisitor>(cast<SubRegion>(R), Opts.Kind);
-        Report.addVisitor<SuppressSystemHeaderWarningVisitor>();
+        if (PointeeVal.isUndef())
+          Report.addVisitor<SuppressSystemHeaderWarningVisitor>();
         // When we got here, we do have something to track, and we will
         // interrupt.
         Result.FoundSomethingToTrack = true;
