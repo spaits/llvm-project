@@ -2366,9 +2366,6 @@ public:
     // If so, we can track both its contents and constraints on its value.
     if (ExplodedGraph::isInterestingLValueExpr(Inner)) {
       SVal LVal = LVNode->getSVal(Inner);
-      llvm::errs() << '\n';
-      LVal.dump();
-      llvm::errs() << '\n';
 
       const MemRegion *RR = getLocationRegionIfReference(Inner, LVNode);
       bool LVIsNull = LVState->isNull(LVal).isConstrainedTrue();
