@@ -475,8 +475,25 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
 // Implementation of SuppressSystemHeaderWarningVistor.
 //===----------------------------------------------------------------------===//
 
-// This visitor suppresses a warnings coming from system headers which have a
-// a call to any system function that has a non-linear CFG in the bug path.
+// This visitor suppresses a warnings coming from system headers.
+//
+// This visitor is added to suppress false positives coming from
+// system header functions that fail to initialize their arguments
+// It's too unlikely a system header's fault.
+// It's much more likely a situation in which the function has a failure
+// mode that the user decided not to check. If we want to hunt such
+// omitted checks, we should provide an explicit function-specific note
+// describing the precondition under which the function isn't supposed to
+// initialize its out-parameter, and additionally check that such
+// precondition can actually be fulfilled on the current path.
+//
+// We make an exception for system header functions that have no branches.
+// Such functions unconditionally fail to initialize the variable.
+// If they call other functions that have more paths within them,
+// this suppression would still apply when we visit these inner functions.
+// One common example of a standard function that doesn't ever initialize
+// its out parameter is operator placement new; it's up to the follow-up
+// constructor (if any) to initialize the memory
 namespace {
 class SuppressSystemHeaderWarningVisitor : public BugReporterVisitor {
 public:
