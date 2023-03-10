@@ -524,7 +524,16 @@ SuppressSystemHeaderWarningVisitor::VisitNode(const ExplodedNode *Succ,
 
     if (!Succ->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
-      BR.markInvalid(&i, nullptr);
+      SmallString<256> sbuf;
+      llvm::raw_svector_ostream os(sbuf);
+      os << "New suppress visitor would suppress here!\n";
+      PathDiagnosticLocation L =
+        PathDiagnosticLocation::create(Succ->getLocation(), BRC.getSourceManager());
+
+      if (!L.hasValidLocation())
+        return nullptr;
+
+      return std::make_shared<PathDiagnosticEventPiece>(L, os.str());
     }
   }
   return nullptr;
