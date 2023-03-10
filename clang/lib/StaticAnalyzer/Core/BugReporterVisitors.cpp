@@ -475,10 +475,14 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
 // Implementation of SuppressSystemHeaderWarningVistor.
 //===----------------------------------------------------------------------===//
 
-// This visitor suppresses a warnings coming from system headers.
+// This visitor suppresses warnings coming from inlined system
+// headers functions when we exit the call that have no branches.
+// This is a very primitive visitor. It flat-out suppresses every report that
+// have a node that matches all the conditions above.
+// It should be used carefully!
 //
-// This visitor is added to suppress false positives coming from
-// system header functions that fail to initialize their arguments
+// A good example for the usage of this visitor is when we want to suppress
+// warnings when a system header function does not initialize their arguments.
 // It's too unlikely a system header's fault.
 // It's much more likely a situation in which the function has a failure
 // mode that the user decided not to check. If we want to hunt such
@@ -487,8 +491,8 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
 // initialize its out-parameter, and additionally check that such
 // precondition can actually be fulfilled on the current path.
 //
-// We make an exception for system header functions that have no branches.
-// Such functions unconditionally fail to initialize the variable.
+// System header functions that have no branches unconditionally fail to
+// initialize the variable.
 // If they call other functions that have more paths within them,
 // this suppression would still apply when we visit these inner functions.
 // One common example of a standard function that doesn't ever initialize
