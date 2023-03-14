@@ -469,7 +469,7 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     // One common example of a standard function that doesn't ever initialize
     // its out parameter is operator placement new; it's up to the follow-up
     // constructor (if any) to initialize the memory.
-    if (!N->getStackFrame()->getCFG()->isLinear()) {
+    if (!N->getStackFrame()->getCFG()->isLinear() && shouldIdk(N, BR, R)) {
       static int i = 0;
       R.markInvalid(&i, nullptr);
     }
@@ -502,6 +502,7 @@ namespace {
 /// but not written inside, and it has caused an undefined read or a null
 /// pointer dereference outside.
 class NoStoreFuncVisitor final : public NoStateChangeFuncVisitor {
+  const ExplodedNode* Node;
   const SubRegion *RegionOfInterest;
   MemRegionManager &MmrMgr;
   const SourceManager &SM;
@@ -515,8 +516,9 @@ class NoStoreFuncVisitor final : public NoStateChangeFuncVisitor {
   using RegionVector = SmallVector<const MemRegion *, 5>;
 
 public:
-  NoStoreFuncVisitor(const SubRegion *R, bugreporter::TrackingKind TKind)
-      : NoStateChangeFuncVisitor(TKind), RegionOfInterest(R),
+  NoStoreFuncVisitor(const ExplodedNode* N, const SubRegion *R,
+                                  bugreporter::TrackingKind TKind)
+      : NoStateChangeFuncVisitor(TKind), Node(N), RegionOfInterest(R),
         MmrMgr(R->getMemRegionManager()),
         SM(MmrMgr.getContext().getSourceManager()),
         PP(MmrMgr.getContext().getPrintingPolicy()) {}
@@ -526,6 +528,14 @@ public:
     ID.AddPointer(&Tag);
     ID.AddPointer(RegionOfInterest);
   }
+  
+protected:
+  bool shouldIdk(const ExplodedNode* N,
+                         BugReporterContext &BR,
+                         PathSensitiveBugReport &R) override {
+    return Node->getState()->getSVal(RegionOfInterest).isUndef();
+  }
+
 
 private:
   /// \return Whether \c RegionOfInterest was modified at \p CurrN compared to
@@ -2349,7 +2359,7 @@ public:
 
         // Mark both the variable region and its contents as interesting.
         SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
-        Report.addVisitor<NoStoreFuncVisitor>(cast<SubRegion>(R), Opts.Kind);
+        Report.addVisitor<NoStoreFuncVisitor>(LVNode, cast<SubRegion>(R), Opts.Kind);
 
         // When we got here, we do have something to track, and we will
         // interrupt.

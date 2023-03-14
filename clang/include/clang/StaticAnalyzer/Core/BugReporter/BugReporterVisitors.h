@@ -694,6 +694,11 @@ protected:
     return false;
   }
 
+  virtual bool shouldIdk(const ExplodedNode* N,
+                         BugReporterContext &BR,
+                         PathSensitiveBugReport &R) {
+    return false;
+  }
   /// Consume the information on the non-modifying stack frame in order to
   /// either emit a note or not. May suppress the report entirely.
   /// \return Diagnostics piece for the unmodified state in the current
