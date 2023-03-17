@@ -18,26 +18,38 @@ using namespace clang;
 using namespace ento;
 
 class StdVariantChecker : public Checker<check::PreCall> {
-    CallDescription VariantConstructorCall{{"std", "variant"}, 0, 0};
-    BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
+  CallDescription VariantConstructorCall{{"std", "variant"}};
+  CallDescription VariantAsOp{{"std", "variant", "operator="}};
+  BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
-    public:
-    void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
-      if (!isa<CXXConstructorCall>(Call))
-        return;
-      if (!VariantConstructorCall.matches(Call))
-        return;
-
-      ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
-      if (!ErrNode)
-        return;
-      llvm::SmallString<128> Str;
-      llvm::raw_svector_ostream OS(Str);
-      OS << "Variant Created";
-      auto R = std::make_unique<PathSensitiveBugReport>(
-          VariantCreated, OS.str(), ErrNode);
-      C.emitReport(std::move(R));
+  public:
+  void handleAssignmentOperator(const CallEvent& Call, CheckerContext &C) const {
+    if (Call.getNumArgs() == 0) {
     }
+  }
+
+  void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+    if (!isa<CXXConstructorCall>(Call) && !isa<CXXMemberOperatorCall>(Call))
+      return;
+    //if (!VariantConstructorCall.matches(Call))
+    //  return;
+    if (VariantAsOp.matches(Call)) {
+      handleAssignmentOperator(Call, C);
+      return;
+    }
+
+    ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+    if (!ErrNode)
+      return;
+    llvm::SmallString<128> Str;
+    llvm::raw_svector_ostream OS(Str);
+    OS << "Variant Created";
+    auto R = std::make_unique<PathSensitiveBugReport>(
+        VariantCreated, OS.str(), ErrNode);
+    C.emitReport(std::move(R));
+  }
+
+  
 };
 
 bool clang::ento::shouldRegisterStdVariantChecker(
