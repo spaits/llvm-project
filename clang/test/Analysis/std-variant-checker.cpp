@@ -12,6 +12,7 @@ using vector_t = std::vector<int>;
 
 void g() {
   std::variant<std::string, vector_t, char> var6 {std::in_place_index<1>, 4, 42};
-  var6 = 'c';
+  std::vector<int> v;
+  var6 = v; 
 }
 

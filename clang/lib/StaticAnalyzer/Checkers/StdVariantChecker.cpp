@@ -24,8 +24,21 @@ class StdVariantChecker : public Checker<check::PreCall> {
 
   public:
   void handleAssignmentOperator(const CallEvent& Call, CheckerContext &C) const {
-    if (Call.getNumArgs() == 0) {
-    }
+    llvm::errs() << "\n BEG \n";
+    C.getPredecessor()->getLocation().dump();
+    llvm::errs() << "\n END \n";
+    llvm::errs() << Call.getNumArgs() << '\n';
+    // since it is an assignemnt operator we must be checking a copy or move
+    // operator, so we are sure it is going to have only one argument
+    assert(Call.getNumArgs() == 1 && "An assignemnt operator should have only one argument!");
+    llvm::errs() << Call.getArgSVal(0).getType(C.getASTContext()).getAsString() << '\n';
+  }
+
+  void handleConstructor(const CallEvent& Call, CheckerContext& C) const {
+    llvm::errs() << "\n BEG \n";
+    C.getPredecessor()->getLocation().dump();
+    llvm::errs()<<"\n" << Call.getNumArgs() << "\n";
+    llvm::errs() << "\n END \n";
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
@@ -35,6 +48,11 @@ class StdVariantChecker : public Checker<check::PreCall> {
     //  return;
     if (VariantAsOp.matches(Call)) {
       handleAssignmentOperator(Call, C);
+      return;
+    }
+
+    if (VariantConstructorCall.matches(Call)) {
+      handleConstructor(Call, C);
       return;
     }
 
