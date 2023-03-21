@@ -9,8 +9,13 @@
 #include <vector>
  
 using vector_t = std::vector<int>;
+using var_t = std::variant<int, char>;
+using var_tt = var_t;
 
 void g() {
-  std::variant<std::string, vector_t, char> var6 {std::in_place_index<1>, 4, 42};
+  var_t vt = 'c';
+  std::variant<int, char> v = 25;
+  var_tt vtt = 55;
+
 }
 

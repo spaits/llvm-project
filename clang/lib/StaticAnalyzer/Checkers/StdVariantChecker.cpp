@@ -74,12 +74,11 @@ class StdVariantChecker : public Checker<check::PreCall,
     llvm::errs() << '\n';
     CE->dump();
     llvm::errs() << '\n';
-    CE->getSingleDecl()->dump();
-    llvm::errs() << '\n';
+
     auto decl = cast<VarDecl>(CE->getSingleDecl());
-    llvm::errs() << decl->isTemplateParameter() << " " << decl->isTemplateParameterPack() << " " <<decl->isTemplated() << " " << decl->isTemplateDecl() << '\n';
-    llvm::errs() << decl->getNumTemplateParameterLists() <<'\n';
     llvm::errs() << decl->getType().getAsString() << '\n';
+    llvm::errs() << "\n";
+    decl->dump();
     auto qtype = decl->getType();
 
     auto DeclarationTypeLoc = decl->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc();
@@ -92,6 +91,14 @@ class StdVariantChecker : public Checker<check::PreCall,
       }
     } else {
       llvm::errs() << "Nem jo\n";
+      auto ag = DeclarationTypeLoc.getAs<TypedefTypeLoc>();
+      if (ag) {
+        llvm::errs() << "Most jo\n";
+        if (ag.getTypedefNameDecl()->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc().getAs<TemplateSpecializationTypeLoc>()) {
+          llvm::errs() << "Meg jobb\n";
+        }
+      }
+
     }
     llvm::errs() << "\n---\n";
 
@@ -106,9 +113,20 @@ class StdVariantChecker : public Checker<check::PreCall,
       llvm::errs() << "Good\n";
     }
     llvm::errs() << "a\n";
-    llvm::errs() << describetClassTemplate->getTemplateParameters()->size() << '\n';
 
     llvm::errs() << "\nSTMT END\n";
+  }
+
+  private:
+  TemplateSpecializationTypeLoc getTemplateSpecializationTypeLoc(TypeLoc tl) {
+    auto actualTlAsTempSpec =  tl.getNextTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+    while(!actualTlAsTempSpec) {
+      auto ag = actualTlAsTempSpec.getAs<TypedefTypeLoc>();
+      if (ag) {
+        actualTlAsTempSpec = ag.getTypedefNameDecl()->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+      }
+    }
+    return actualTlAsTempSpec;
   }
   
 };
