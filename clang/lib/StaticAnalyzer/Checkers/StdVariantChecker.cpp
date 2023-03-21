@@ -87,6 +87,9 @@ class StdVariantChecker : public Checker<check::PreCall,
     auto tempSpecLoc = DeclarationTypeLoc.getAs<TemplateSpecializationTypeLoc>();
     if(tempSpecLoc) {
       llvm::errs() << tempSpecLoc.getNumArgs() << " Jo\n";
+      for (unsigned i = 0; i < tempSpecLoc.getNumArgs(); i++) {
+        llvm::errs() << tempSpecLoc.getArgLocInfo(i).getAsTypeSourceInfo()->getType().getAsString() << '\n';
+      }
     } else {
       llvm::errs() << "Nem jo\n";
     }
