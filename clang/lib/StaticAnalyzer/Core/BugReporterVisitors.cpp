@@ -471,7 +471,18 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     // constructor (if any) to initialize the memory.
     if (!N->getStackFrame()->getCFG()->isLinear() && shouldIdk(N, BR, R)) {
       static int i = 0;
-      R.markInvalid(&i, nullptr);
+      //R.markInvalid(&i, nullptr);
+      SmallString<256> sbuf;
+      llvm::raw_svector_ostream os(sbuf);
+      os << "New suppress visitor would suppress here!\n";
+      PathDiagnosticLocation L =
+        PathDiagnosticLocation::create(N->getLocation(), BR.getSourceManager());
+
+      if (!L.hasValidLocation())
+        return nullptr;
+
+      return std::make_shared<PathDiagnosticEventPiece>(L, os.str());
+
     }
     return nullptr;
   }
