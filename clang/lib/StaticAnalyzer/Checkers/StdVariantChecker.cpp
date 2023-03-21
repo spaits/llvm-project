@@ -81,6 +81,18 @@ class StdVariantChecker : public Checker<check::PreCall,
     llvm::errs() << decl->getNumTemplateParameterLists() <<'\n';
     llvm::errs() << decl->getType().getAsString() << '\n';
     auto qtype = decl->getType();
+
+    auto DeclarationTypeLoc = decl->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc();
+    llvm::errs() << "\n---\n";
+    auto tempSpecLoc = DeclarationTypeLoc.getAs<TemplateSpecializationTypeLoc>();
+    if(tempSpecLoc) {
+      llvm::errs() << tempSpecLoc.getNumArgs() << " Jo\n";
+    } else {
+      llvm::errs() << "Nem jo\n";
+    }
+    llvm::errs() << "\n---\n";
+
+
     auto underType = qtype.getTypePtr();
     llvm::errs() << "\n";
     underType->dump();
