@@ -81,7 +81,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     decl->dump();
     auto qtype = decl->getType();
 
-    auto DeclarationTypeLoc = decl->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc();
+    auto DeclarationTypeLoc = getTemplateSpecializationTypeLoc(decl->getTypeSourceInfo()->getTypeLoc());
     llvm::errs() << "\n---\n";
     auto tempSpecLoc = DeclarationTypeLoc.getAs<TemplateSpecializationTypeLoc>();
     if(tempSpecLoc) {
@@ -118,12 +118,14 @@ class StdVariantChecker : public Checker<check::PreCall,
   }
 
   private:
-  TemplateSpecializationTypeLoc getTemplateSpecializationTypeLoc(TypeLoc tl) {
-    auto actualTlAsTempSpec =  tl.getNextTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+  TemplateSpecializationTypeLoc getTemplateSpecializationTypeLoc(TypeLoc tl) const {
+    auto actualTl = tl.getNextTypeLoc();
+    auto actualTlAsTempSpec =  actualTl.getAs<TemplateSpecializationTypeLoc>();
     while(!actualTlAsTempSpec) {
-      auto ag = actualTlAsTempSpec.getAs<TypedefTypeLoc>();
+      auto ag = actualTl.getAs<TypedefTypeLoc>();
       if (ag) {
-        actualTlAsTempSpec = ag.getTypedefNameDecl()->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc().getAs<TemplateSpecializationTypeLoc>();
+        actualTl = ag.getTypedefNameDecl()->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc();
+        actualTlAsTempSpec = actualTl.getAs<TemplateSpecializationTypeLoc>();
       }
     }
     return actualTlAsTempSpec;
