@@ -13,9 +13,7 @@ using var_t = std::variant<int, char>;
 using var_tt = var_t;
 
 void g() {
-  var_t vt = 'c';
   std::variant<int, char> v = 25;
-  var_tt vtt = 55;
-
+  int a = std::get<int>(v);
 }
 

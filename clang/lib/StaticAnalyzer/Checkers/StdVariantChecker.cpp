@@ -21,18 +21,19 @@ class StdVariantChecker : public Checker<check::PreCall,
                                          check::PreStmt<DeclStmt> > {
   CallDescription VariantConstructorCall{{"std", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
+  CallDescription StdGet{{"std", "get"}};
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
   void handleAssignmentOperator(const CallEvent& Call, CheckerContext &C) const {
     llvm::errs() << "\n BEG =\n";
     C.getPredecessor()->getLocation().dump();
-    llvm::errs() << "\n END =\n";
     llvm::errs() << Call.getNumArgs() << '\n';
     // since it is an assignemnt operator we must be checking a copy or move
     // operator, so we are sure it is going to have only one argument
     assert(Call.getNumArgs() == 1 && "An assignemnt operator should have only one argument!");
     llvm::errs() << Call.getArgSVal(0).getType(C.getASTContext()).getAsString() << '\n';
+    llvm::errs() << "\n END =\n";
   }
 
   void handleConstructor(const CallEvent& Call, CheckerContext& C) const {
@@ -42,7 +43,25 @@ class StdVariantChecker : public Checker<check::PreCall,
     llvm::errs() << "\n END Ctor\n";
   }
 
+  void handleStdGet(const CallEvent &Call, CheckerContext &C) const {
+    llvm::errs() << "\nBegin StdGet\n";
+    auto FuncDecl = cast<FunctionDecl>(Call.getDecl());
+    llvm::errs() << FuncDecl->getTemplatedKind() << '\n';
+    FuncDecl->dump();
+    auto funcTempSpec = FuncDecl->getTemplateSpecializationInfo()->getTemplate();
+    llvm::errs() << "!!!\n";
+    //llvm::errs() << funcTempSpec->getDescribedTemplateParams()->size() << '\n';
+    //auto FuncTypeLoc = FuncDecl->getFunctionTypeLoc();
+    //auto Param = FuncTypeLoc.getParam(0);
+
+    llvm::errs() << "\nEnd StdGet\n";
+  }
+
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+    if (StdGet.matches(Call)) {
+      llvm::errs() << "std get found\n";
+      handleStdGet(Call, C);
+    }
     if (!isa<CXXConstructorCall>(Call) && !isa<CXXMemberOperatorCall>(Call))
       return;
     //if (!VariantConstructorCall.matches(Call))
@@ -76,7 +95,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     llvm::errs() << '\n';
 
     auto decl = cast<VarDecl>(CE->getSingleDecl());
-    llvm::errs() << decl->getType().getAsString() << '\n';
+    llvm::errs() << decl->getType().getAsString() << " !!\n";
     llvm::errs() << "\n";
     decl->dump();
     auto qtype = decl->getType();
