@@ -469,12 +469,12 @@ PathDiagnosticPieceRef NoStateChangeFuncVisitor::VisitNode(
     // One common example of a standard function that doesn't ever initialize
     // its out parameter is operator placement new; it's up to the follow-up
     // constructor (if any) to initialize the memory.
-    if (!N->getStackFrame()->getCFG()->isLinear() && shouldIdk(N, BR, R)) {
+    if (!N->getStackFrame()->getCFG()->isLinear()) {
       static int i = 0;
       if (!shouldIdk(N, BR, R)) {
         SmallString<256> sbuf;
         llvm::raw_svector_ostream os(sbuf);
-        os << "New suppress visitor would suppress here!\n";
+        os << "New suppress visitor would not suppress here!\n";
         PathDiagnosticLocation L =
           PathDiagnosticLocation::create(N->getLocation(), BR.getSourceManager());
 
