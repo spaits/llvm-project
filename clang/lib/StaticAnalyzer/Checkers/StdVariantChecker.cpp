@@ -45,18 +45,26 @@ class StdVariantChecker : public Checker<check::PreCall,
 
   void handleStdGet(const CallEvent &Call, CheckerContext &C) const {
     llvm::errs() << "\nBegin StdGet\n";
-    auto FuncDecl = cast<FunctionDecl>(Call.getDecl());
-    llvm::errs() << FuncDecl->getTemplatedKind() << '\n';
-    FuncDecl->dump();
-    auto funcTempSpec = FuncDecl->getTemplateSpecializationInfo()->getTemplate();
-    llvm::errs() << "!!!\n";
-    auto ResType = Call.getResultType();
-    llvm::errs() << "ResT: " << ResType.getAsString() << '\n';
-    //llvm::errs() << funcTempSpec->getDescribedTemplateParams()->size() << '\n';
-    //auto FuncTypeLoc = FuncDecl->getFunctionTypeLoc();
-    //auto Param = FuncTypeLoc.getParam(0);
-
+    const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
+    if (!CE)
+      return;
+    llvm::errs() << "Ok we got the callExpr\n";
+    const FunctionDecl* FD = CE->getDirectCallee();
+    if (!FD)
+      return;
+      llvm::errs() << "OOOO: " << FD->getTemplateSpecializationArgs()->asArray().size() << "\n";
+    for (const auto& Arg : FD->getTemplateSpecializationArgs()->asArray()) {
+      if (Arg.getKind() == clang::TemplateArgument::Type) {
+        llvm::errs() << "Type template argument: " << Arg.getAsType().getAsString() << "\n";
+      } else if (Arg.getKind() == clang::TemplateArgument::Integral) {
+        llvm::errs() << "Integral template argument: " << Arg.getAsIntegral().getSExtValue() << "\n";
+      } 
+    }
     llvm::errs() << "\nEnd StdGet\n";
+  }
+
+  QualType getTypeStored(const CallEvent& Call) {
+
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
@@ -64,18 +72,17 @@ class StdVariantChecker : public Checker<check::PreCall,
       llvm::errs() << "std get found\n";
       handleStdGet(Call, C);
     }
-    if (!isa<CXXConstructorCall>(Call) && !isa<CXXMemberOperatorCall>(Call))
-      return;
-    //if (!VariantConstructorCall.matches(Call))
-    //  return;
-    if (VariantAsOp.matches(Call)) {
-      handleAssignmentOperator(Call, C);
-      return;
-    }
-
-    if (VariantConstructorCall.matches(Call)) {
-      handleConstructor(Call, C);
-      return;
+    if (isa<CXXConstructorCall>(Call) || isa<CXXMemberOperatorCall>(Call)) {
+      if (VariantAsOp.matches(Call) || VariantConstructorCall.matches(Call)) {
+        if (Call.getNumArgs() == 1) {
+          auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
+          llvm::errs() << "Variant created w type: " << origQT.getAsString() << '\n';
+          const Type* typePtr = origQT.getTypePtr();
+          auto woPointer = typePtr->getPointeeType();
+          llvm::errs() << "ActualType: " << woPointer.getAsString() << '\n';
+        }
+        return;
+      }
     }
 
     ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
@@ -91,16 +98,13 @@ class StdVariantChecker : public Checker<check::PreCall,
 
   void checkPreStmt(const DeclStmt *CE, CheckerContext &C) const {
     llvm::errs() << "\nSTMT BEG\n";
-    C.getPredecessor()->getLocation().dump();
-    llvm::errs() << '\n';
-    CE->dump();
-    llvm::errs() << '\n';
 
     auto decl = cast<VarDecl>(CE->getSingleDecl());
     llvm::errs() << decl->getType().getAsString() << " !!\n";
     llvm::errs() << "\n";
     decl->dump();
     auto qtype = decl->getType();
+
 
     auto DeclarationTypeLoc = getTemplateSpecializationTypeLoc(decl->getTypeSourceInfo()->getTypeLoc());
     llvm::errs() << "\n---\n";
