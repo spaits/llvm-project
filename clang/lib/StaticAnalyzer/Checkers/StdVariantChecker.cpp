@@ -50,6 +50,8 @@ class StdVariantChecker : public Checker<check::PreCall,
     FuncDecl->dump();
     auto funcTempSpec = FuncDecl->getTemplateSpecializationInfo()->getTemplate();
     llvm::errs() << "!!!\n";
+    auto ResType = Call.getResultType();
+    llvm::errs() << "ResT: " << ResType.getAsString() << '\n';
     //llvm::errs() << funcTempSpec->getDescribedTemplateParams()->size() << '\n';
     //auto FuncTypeLoc = FuncDecl->getFunctionTypeLoc();
     //auto Param = FuncTypeLoc.getParam(0);
