@@ -13,9 +13,32 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "llvm/ADT/FoldingSet.h"
+
+#include <optional>
+#include <variant>
+#include <vector>
+
 
 using namespace clang;
 using namespace ento;
+using var_t = std::variant<QualType, unsigned long>;
+using type_vector_t = std::vector<QualType>; 
+
+class VectorWrapper {
+public:
+  VectorWrapper(type_vector_t* v) : v(v) {}
+  type_vector_t* get() const { return v; }
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    ID.AddPointer(v);
+  }
+private:
+  type_vector_t* v;
+};
+
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, var_t);
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantPossibleMap, SymbolRef, type_vector_t*);
 
 class StdVariantChecker : public Checker<check::PreCall,
                                          check::PreStmt<DeclStmt> > {
@@ -43,34 +66,27 @@ class StdVariantChecker : public Checker<check::PreCall,
     llvm::errs() << "\n END Ctor\n";
   }
 
-  void handleStdGet(const CallEvent &Call, CheckerContext &C) const {
-    llvm::errs() << "\nBegin StdGet\n";
+  const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) const {
     const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
-    if (!CE)
-      return;
-    llvm::errs() << "Ok we got the callExpr\n";
     const FunctionDecl* FD = CE->getDirectCallee();
-    if (!FD)
-      return;
-      llvm::errs() << "OOOO: " << FD->getTemplateSpecializationArgs()->asArray().size() << "\n";
-    for (const auto& Arg : FD->getTemplateSpecializationArgs()->asArray()) {
-      if (Arg.getKind() == clang::TemplateArgument::Type) {
-        llvm::errs() << "Type template argument: " << Arg.getAsType().getAsString() << "\n";
-      } else if (Arg.getKind() == clang::TemplateArgument::Integral) {
-        llvm::errs() << "Integral template argument: " << Arg.getAsIntegral().getSExtValue() << "\n";
-      } 
-    }
-    llvm::errs() << "\nEnd StdGet\n";
-  }
-
-  QualType getTypeStored(const CallEvent& Call) {
-
+    assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
+              "std::get should have at least 1 template argument!");
+    return FD->getTemplateSpecializationArgs()->asArray()[0];
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
     if (StdGet.matches(Call)) {
       llvm::errs() << "std get found\n";
-      handleStdGet(Call, C);
+      //const TemplateArgument& TypeInf
+      auto a = getFirstTemplateArgument(Call);
+      auto State = Call.getState();
+      auto vec = State->contains<VariantPossibleMap>(Call.getArgSVal(0).getAsSymbol());
+      if (vec) {
+        llvm::errs() << "Finshed\n";
+      } else {
+        llvm::errs() << "Fuck\n";
+      }
+      
     }
     if (isa<CXXConstructorCall>(Call) || isa<CXXMemberOperatorCall>(Call)) {
       if (VariantAsOp.matches(Call) || VariantConstructorCall.matches(Call)) {
@@ -97,49 +113,25 @@ class StdVariantChecker : public Checker<check::PreCall,
   }
 
   void checkPreStmt(const DeclStmt *CE, CheckerContext &C) const {
-    llvm::errs() << "\nSTMT BEG\n";
-
     auto decl = cast<VarDecl>(CE->getSingleDecl());
-    llvm::errs() << decl->getType().getAsString() << " !!\n";
-    llvm::errs() << "\n";
-    decl->dump();
-    auto qtype = decl->getType();
-
-
     auto DeclarationTypeLoc = getTemplateSpecializationTypeLoc(decl->getTypeSourceInfo()->getTypeLoc());
-    llvm::errs() << "\n---\n";
     auto tempSpecLoc = DeclarationTypeLoc.getAs<TemplateSpecializationTypeLoc>();
+
+    auto State = C.getState();
+    auto SomeSvalPlease = C.getSVal(decl->getInit()).getAsSymbol();
+
+
+
     if(tempSpecLoc) {
-      llvm::errs() << tempSpecLoc.getNumArgs() << " Jo\n";
+      type_vector_t* v = new type_vector_t;
       for (unsigned i = 0; i < tempSpecLoc.getNumArgs(); i++) {
+        v->push_back(tempSpecLoc.getArgLocInfo(i).getAsTypeSourceInfo()->getType());
         llvm::errs() << tempSpecLoc.getArgLocInfo(i).getAsTypeSourceInfo()->getType().getAsString() << '\n';
       }
-    } else {
-      llvm::errs() << "Nem jo\n";
-      auto ag = DeclarationTypeLoc.getAs<TypedefTypeLoc>();
-      if (ag) {
-        llvm::errs() << "Most jo\n";
-        if (ag.getTypedefNameDecl()->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc().getAs<TemplateSpecializationTypeLoc>()) {
-          llvm::errs() << "Meg jobb\n";
-        }
-      }
-
-    }
-    llvm::errs() << "\n---\n";
-
-
-    auto underType = qtype.getTypePtr();
-    llvm::errs() << "\n";
-    underType->dump();
-    auto recDecFin = underType->getAsCXXRecordDecl();
-    llvm::errs() << recDecFin->getNumTemplateParameterLists() << "\n";
-    auto describetClassTemplate = recDecFin->getDescribedClassTemplate();
-    if (describetClassTemplate ) {
-      llvm::errs() << "Good\n";
-    }
-    llvm::errs() << "a\n";
-
-    llvm::errs() << "\nSTMT END\n";
+      State = State->set<VariantPossibleMap>(SomeSvalPlease, v);
+      llvm::errs() << "TRANZPIPA\n";
+      C.addTransition(State);
+    } 
   }
 
   private:
