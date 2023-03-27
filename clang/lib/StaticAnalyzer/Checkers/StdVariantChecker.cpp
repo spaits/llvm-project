@@ -48,6 +48,33 @@ class StdVariantChecker : public Checker<check::PreCall,
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
+
+  const Type* getThisPtr(const CXXConstructorCall *Call, CheckerContext& C) const {
+    return Call->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
+  }
+
+  const Type* getThisPtr(const CXXMemberOperatorCall *Call, CheckerContext& C) const {
+    return Call->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
+  }
+
+
+  ArrayRef<TemplateArgument> getTemplateArgsFromVariantConstrOrOP(const CallEvent& Call, CheckerContext& C) const{
+    const Type* ThisType = nullptr;
+    if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
+      auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+      ThisType = getThisPtr(AsConstructorCall, C);
+    }
+    if (isa<CXXMemberOperatorCall>(Call) && VariantConstructorCall.matches(Call)) {
+      auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+      ThisType = getThisPtr(AsMemberOpCall, C);
+    }
+      //ThisType = AsConstructorCall->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
+      assert(ThisType && "We are in constructor or member operator it shuld have a this pointer!");
+      auto TempSpecType = ThisType->getAs<TemplateSpecializationType>();
+      assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
+      auto TempArray = TempSpecType->template_arguments();
+  }
+
   void handleAssignmentOperator(const CallEvent& Call, CheckerContext &C) const {
     llvm::errs() << "\n BEG =\n";
     C.getPredecessor()->getLocation().dump();
@@ -88,6 +115,23 @@ class StdVariantChecker : public Checker<check::PreCall,
       }
       
     }
+
+    auto tarr = getTemplateArgsFromVariantConstrOrOP(Call, C);
+    llvm::errs() << tarr.size() << "MEGVOT\n";
+    if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
+      auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+      auto ThisType = AsConstructorCall->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
+      if (!ThisType) {
+        return;
+      }
+      auto TempSpecType = ThisType->getAs<TemplateSpecializationType>();
+      if (!TempSpecType) {
+        return;
+      }
+      auto TempArray = TempSpecType->template_arguments();
+      llvm::errs() << "Temp arr size: " << TempArray.size() << '\n';
+    }
+
     if (isa<CXXConstructorCall>(Call) || isa<CXXMemberOperatorCall>(Call)) {
       if (VariantAsOp.matches(Call) || VariantConstructorCall.matches(Call)) {
         if (Call.getNumArgs() == 1) {
