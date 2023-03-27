@@ -37,7 +37,7 @@ private:
   type_vector_t* v;
 };
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, var_t);
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, QualType);
 
 class StdVariantChecker : public Checker<check::PreCall> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
@@ -91,17 +91,19 @@ class StdVariantChecker : public Checker<check::PreCall> {
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+
+    auto State = Call.getState();
     if (StdGet.matches(Call)) {
       llvm::errs() << "std get found\n";
       //const TemplateArgument& TypeInf
       auto a = getFirstTemplateArgument(Call);
-      auto State = Call.getState();
-//      auto vec = State->contains<VariantPossibleMap>(Call.getArgSVal(0).getAsSymbol());
-//      if (vec) {
-//        llvm::errs() << "Finshed\n";
-//      } else {
-//        llvm::errs() << "Fuck\n";
-//      }
+
+      auto vec = State->contains<VariantHeldMap>(Call.getArgSVal(0).getAsSymbol());
+      if (vec) {
+        llvm::errs() << "\nFinshed\n";
+      } else {
+        llvm::errs() << "\nFuck\n";
+      }
       
     }
 
@@ -118,20 +120,34 @@ class StdVariantChecker : public Checker<check::PreCall> {
       auto TempArray = TempSpecType->template_arguments();
       llvm::errs() << "Temp arr size: " << TempArray.size() << '\n';
     }
+    
+    bool isVariantConstructor = isa<CXXConstructorCall>(Call) &&
+                                          VariantConstructorCall.matches(Call);
+    bool isVariantAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
+                                                      VariantAsOp.matches(Call);
 
-    if (isa<CXXConstructorCall>(Call) || isa<CXXMemberOperatorCall>(Call)) {
-      if (VariantAsOp.matches(Call) || VariantConstructorCall.matches(Call)) {
-        auto tarr = getTemplateArgsFromVariantConstrOrOP(Call, C);
-        llvm::errs() << tarr.size() << "MEGVOT\n";
-        if (Call.getNumArgs() == 1) {
-          auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
-          llvm::errs() << "Variant created w type: " << origQT.getAsString() << '\n';
-          const Type* typePtr = origQT.getTypePtr();
-          auto woPointer = typePtr->getPointeeType();
-          llvm::errs() << "ActualType: " << woPointer.getAsString() << '\n';
-        }
+    if (isVariantConstructor || isVariantAssignmentOperatorCall) {
+      if (Call.getNumArgs() != 1)
+        return;
+      SVal thisSVal;
+      if (isVariantConstructor) {
+        auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+        thisSVal = AsConstructorCall->getCXXThisVal();
+      } else if (isVariantAssignmentOperatorCall) {
+        auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+        thisSVal = AsMemberOpCall->getCXXThisVal();
+      } else {
         return;
       }
+      auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
+      llvm::errs() << Call.getNumArgs() << "aa \n";
+      const Type* typePtr = origQT.getTypePtr();
+      auto woPointer = typePtr->getPointeeType();
+      llvm::errs() << "ActualType: " << woPointer.getAsString() << '\n';
+      thisSVal.dump();
+      llvm::errs() << '\n';
+      State = State->set<VariantHeldMap>(thisSVal.getAsSymbol(), woPointer);
+      return;
     }
 
     ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
