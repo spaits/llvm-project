@@ -38,10 +38,8 @@ private:
 };
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, var_t);
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantPossibleMap, SymbolRef, type_vector_t*);
 
-class StdVariantChecker : public Checker<check::PreCall,
-                                         check::PreStmt<DeclStmt> > {
+class StdVariantChecker : public Checker<check::PreCall> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}};
@@ -57,40 +55,31 @@ class StdVariantChecker : public Checker<check::PreCall,
     return Call->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
   }
 
+  ArrayRef<TemplateArgument> getTemplateArgsFromVariant(const Type* VariantType) const {
+    auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
+    assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
+    return TempSpecType->template_arguments();
+  }
 
   ArrayRef<TemplateArgument> getTemplateArgsFromVariantConstrOrOP(const CallEvent& Call, CheckerContext& C) const{
+
+    llvm::errs() << "3\n";
     const Type* ThisType = nullptr;
     if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
       auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
       ThisType = getThisPtr(AsConstructorCall, C);
     }
+    llvm::errs() << "2\n";
     if (isa<CXXMemberOperatorCall>(Call) && VariantConstructorCall.matches(Call)) {
+      llvm::errs() << "OP\n";
       auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
       ThisType = getThisPtr(AsMemberOpCall, C);
     }
-      //ThisType = AsConstructorCall->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
-      assert(ThisType && "We are in constructor or member operator it shuld have a this pointer!");
-      auto TempSpecType = ThisType->getAs<TemplateSpecializationType>();
-      assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
-      auto TempArray = TempSpecType->template_arguments();
-  }
-
-  void handleAssignmentOperator(const CallEvent& Call, CheckerContext &C) const {
-    llvm::errs() << "\n BEG =\n";
-    C.getPredecessor()->getLocation().dump();
-    llvm::errs() << Call.getNumArgs() << '\n';
-    // since it is an assignemnt operator we must be checking a copy or move
-    // operator, so we are sure it is going to have only one argument
-    assert(Call.getNumArgs() == 1 && "An assignemnt operator should have only one argument!");
-    llvm::errs() << Call.getArgSVal(0).getType(C.getASTContext()).getAsString() << '\n';
-    llvm::errs() << "\n END =\n";
-  }
-
-  void handleConstructor(const CallEvent& Call, CheckerContext& C) const {
-    llvm::errs() << "\n BEG Ctro\n";
-    C.getPredecessor()->getLocation().dump();
-    llvm::errs()<<"\n" << Call.getNumArgs() << "\n";
-    llvm::errs() << "\n END Ctor\n";
+    llvm::errs() << "1\n";
+    Call.dump();
+    llvm::errs() << '\n';
+    assert(ThisType && "We are in constructor or member operator it shuld have a this pointer!");
+    return getTemplateArgsFromVariant(ThisType);
   }
 
   const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) const {
@@ -107,17 +96,15 @@ class StdVariantChecker : public Checker<check::PreCall,
       //const TemplateArgument& TypeInf
       auto a = getFirstTemplateArgument(Call);
       auto State = Call.getState();
-      auto vec = State->contains<VariantPossibleMap>(Call.getArgSVal(0).getAsSymbol());
-      if (vec) {
-        llvm::errs() << "Finshed\n";
-      } else {
-        llvm::errs() << "Fuck\n";
-      }
+//      auto vec = State->contains<VariantPossibleMap>(Call.getArgSVal(0).getAsSymbol());
+//      if (vec) {
+//        llvm::errs() << "Finshed\n";
+//      } else {
+//        llvm::errs() << "Fuck\n";
+//      }
       
     }
 
-    auto tarr = getTemplateArgsFromVariantConstrOrOP(Call, C);
-    llvm::errs() << tarr.size() << "MEGVOT\n";
     if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
       auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
       auto ThisType = AsConstructorCall->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
@@ -134,6 +121,8 @@ class StdVariantChecker : public Checker<check::PreCall,
 
     if (isa<CXXConstructorCall>(Call) || isa<CXXMemberOperatorCall>(Call)) {
       if (VariantAsOp.matches(Call) || VariantConstructorCall.matches(Call)) {
+        auto tarr = getTemplateArgsFromVariantConstrOrOP(Call, C);
+        llvm::errs() << tarr.size() << "MEGVOT\n";
         if (Call.getNumArgs() == 1) {
           auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
           llvm::errs() << "Variant created w type: " << origQT.getAsString() << '\n';
@@ -156,28 +145,6 @@ class StdVariantChecker : public Checker<check::PreCall,
     //C.emitReport(std::move(R));
   }
 
-  void checkPreStmt(const DeclStmt *CE, CheckerContext &C) const {
-    auto decl = cast<VarDecl>(CE->getSingleDecl());
-    auto DeclarationTypeLoc = getTemplateSpecializationTypeLoc(decl->getTypeSourceInfo()->getTypeLoc());
-    auto tempSpecLoc = DeclarationTypeLoc.getAs<TemplateSpecializationTypeLoc>();
-
-    auto State = C.getState();
-    auto SomeSvalPlease = C.getSVal(decl->getInit()).getAsSymbol();
-
-
-
-    if(tempSpecLoc) {
-      type_vector_t* v = new type_vector_t;
-      for (unsigned i = 0; i < tempSpecLoc.getNumArgs(); i++) {
-        v->push_back(tempSpecLoc.getArgLocInfo(i).getAsTypeSourceInfo()->getType());
-        llvm::errs() << tempSpecLoc.getArgLocInfo(i).getAsTypeSourceInfo()->getType().getAsString() << '\n';
-      }
-      State = State->set<VariantPossibleMap>(SomeSvalPlease, v);
-      llvm::errs() << "TRANZPIPA\n";
-      C.addTransition(State);
-    } 
-  }
-
   private:
   TemplateSpecializationTypeLoc getTemplateSpecializationTypeLoc(TypeLoc tl) const {
     auto actualTl = tl.getNextTypeLoc();
@@ -191,7 +158,6 @@ class StdVariantChecker : public Checker<check::PreCall,
     }
     return actualTlAsTempSpec;
   }
-  
 };
 
 bool clang::ento::shouldRegisterStdVariantChecker(
