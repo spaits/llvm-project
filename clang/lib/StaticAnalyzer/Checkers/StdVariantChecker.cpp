@@ -90,24 +90,44 @@ class StdVariantChecker : public Checker<check::PreCall> {
     return FD->getTemplateSpecializationArgs()->asArray()[0];
   }
 
+  QualType getNthTmplateTypeArgFromVariant(const Type* varType, unsigned i) const {
+    //TODO
+    return getTemplateArgsFromVariant(varType)[i].getAsType();
+  }
+
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
 
     auto State = Call.getState();
     if (StdGet.matches(Call)) {
       llvm::errs() << "std get found\n";
       //const TemplateArgument& TypeInf
-      auto a = getFirstTemplateArgument(Call);
+      auto TypeOut = getFirstTemplateArgument(Call);
 
-      auto vec = State->contains<VariantHeldMap>(Call.getArgSVal(0).getAsLocSymbol());
-      llvm::errs() << '\n';
-      Call.getArgSVal(0).dump();
-      llvm::errs() << "\nSymbol:\n";
-      //Call.getArgSVal(0).getAsLocSymbol()->dump();
-      llvm::errs() << '\n';
-      if (vec) {
-        llvm::errs() << "\nFinshed\n";
+      auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsLocSymbol());
+
+      if (!TypeStored) {
+        return;
+      } 
+
+      llvm::errs() <<"Type stored " << TypeStored->getAsString() << "\n";
+      bool matches = true;
+      switch (TypeOut.getKind()) {
+        case TemplateArgument::ArgKind::Type:
+          matches = TypeOut.getAsType() == *(TypeStored);
+          llvm::errs() << "Getting w type\n";
+          break;
+        case TemplateArgument::ArgKind::Integral:
+          auto variantNthArg = getNthTmplateTypeArgFromVariant(
+            Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr(),
+            TypeOut.getAsIntegral().getSExtValue());
+            llvm::errs() << "Getting w int\n";
+          break;
+      }
+
+      if (matches) {
+        llvm::errs() << "Matches\n";
       } else {
-        llvm::errs() << "\nFuck\n";
+        llvm::errs() << "Not Matches\n";
       }
       
     }
@@ -139,6 +159,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
       thisSVal.dump();
       llvm::errs() << '\n';
       State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), woPointer);
+      C.addTransition(State);
       return;
     }
 

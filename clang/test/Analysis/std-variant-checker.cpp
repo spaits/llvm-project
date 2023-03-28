@@ -8,6 +8,6 @@
  
 void g() {
   std::variant<int, char> v = 25;
-  int a = std::get<int>(v);
+  int a = std::get<0>(v);
 }
 
