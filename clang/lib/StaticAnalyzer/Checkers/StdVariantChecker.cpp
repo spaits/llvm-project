@@ -16,28 +16,22 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/FoldingSet.h"
 
-#include <optional>
-#include <variant>
-#include <vector>
-
-
 using namespace clang;
 using namespace ento;
-using var_t = std::variant<QualType, unsigned long>;
-using type_vector_t = std::vector<QualType>; 
-
-class VectorWrapper {
-public:
-  VectorWrapper(type_vector_t* v) : v(v) {}
-  type_vector_t* get() const { return v; }
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    ID.AddPointer(v);
-  }
-private:
-  type_vector_t* v;
-};
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, QualType);
+
+// Get the non pointer type behind any pointer type
+// For example if we have an int*** we get int
+static const Type* getPointeeType (const QualType& qt) {
+  const Type* PrevTypePtr = qt.getTypePtr();
+  const Type* TypePtr = PrevTypePtr->getPointeeType().getTypePtr();
+  while (TypePtr) {
+    PrevTypePtr = TypePtr;
+    TypePtr = PrevTypePtr->getPointeeType().getTypePtr();
+  }
+  return PrevTypePtr;
+}
 
 class StdVariantChecker : public Checker<check::PreCall> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
@@ -46,38 +40,10 @@ class StdVariantChecker : public Checker<check::PreCall> {
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
-
-
-  template<class T>
-  const Type* getThisPtr(const T *Call, CheckerContext& C) const {
-    return Call->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
-  }
-
   ArrayRef<TemplateArgument> getTemplateArgsFromVariant(const Type* VariantType) const {
     auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
     assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
     return TempSpecType->template_arguments();
-  }
-
-  ArrayRef<TemplateArgument> getTemplateArgsFromVariantConstrOrOP(const CallEvent& Call, CheckerContext& C) const{
-
-    llvm::errs() << "3\n";
-    const Type* ThisType = nullptr;
-    if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
-      auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
-      ThisType = getThisPtr<CXXConstructorCall>(AsConstructorCall, C);
-    }
-    llvm::errs() << "2\n";
-    if (isa<CXXMemberOperatorCall>(Call) && VariantConstructorCall.matches(Call)) {
-      llvm::errs() << "OP\n";
-      auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-      ThisType = getThisPtr<CXXMemberOperatorCall>(AsMemberOpCall, C);
-    }
-    llvm::errs() << "1\n";
-    Call.dump();
-    llvm::errs() << '\n';
-    assert(ThisType && "We are in constructor or member operator it shuld have a this pointer!");
-    return getTemplateArgsFromVariant(ThisType);
   }
 
   const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) const {
@@ -94,25 +60,19 @@ class StdVariantChecker : public Checker<check::PreCall> {
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
-
     auto State = Call.getState();
     if (StdGet.matches(Call)) {
-      llvm::errs() << "std get found\n";
-      //const TemplateArgument& TypeInf
       auto TypeOut = getFirstTemplateArgument(Call);
-
       auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsLocSymbol());
 
       if (!TypeStored) {
         return;
       } 
 
-      llvm::errs() <<"Type stored " << TypeStored->getAsString() << "\n";
       bool matches = true;
       switch (TypeOut.getKind()) {
         case TemplateArgument::ArgKind::Type:
           matches = TypeOut.getAsType() == *(TypeStored);
-          llvm::errs() << "Getting w type\n";
           break;
         case TemplateArgument::ArgKind::Integral:
           auto variantNthArg = getNthTmplateTypeArgFromVariant(
@@ -124,17 +84,15 @@ class StdVariantChecker : public Checker<check::PreCall> {
       }
 
       if (matches) {
-        llvm::errs() << "Matches\n";
       } else {
-        llvm::errs() << "Not Matches\n";
-      ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
-      if (!ErrNode)
-        return;
-      llvm::SmallString<128> Str;
-      llvm::raw_svector_ostream OS(Str);
-      OS << "Variant held a(n) " << TypeStored->getAsString() << " not a(n)";
-      auto R = std::make_unique<PathSensitiveBugReport>(
-        VariantCreated, OS.str(), ErrNode);
+        ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+        if (!ErrNode)
+          return;
+        llvm::SmallString<128> Str;
+        llvm::raw_svector_ostream OS(Str);
+        OS << "Variant held a(n) " << TypeStored->getAsString() << " not a(n)";
+        auto R = std::make_unique<PathSensitiveBugReport>(
+          VariantCreated, OS.str(), ErrNode);
         C.emitReport(std::move(R));
       }
       
@@ -156,30 +114,15 @@ class StdVariantChecker : public Checker<check::PreCall> {
         auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
         thisSVal = AsMemberOpCall->getCXXThisVal();
       } else {
-        llvm::errs() << "\nWe should NOT get here\n";
-        return;
+        llvm_unreachable("AAA");
       }
       auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
-      llvm::errs() << Call.getNumArgs() << "aa \n";
       const Type* typePtr = origQT.getTypePtr();
       auto woPointer = typePtr->getPointeeType();
-      llvm::errs() << "ActualType: " << woPointer.getAsString() << '\n';
-      thisSVal.dump();
-      llvm::errs() << '\n';
       State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), woPointer);
       C.addTransition(State);
       return;
     }
-
-    ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
-    if (!ErrNode)
-      return;
-    llvm::SmallString<128> Str;
-    llvm::raw_svector_ostream OS(Str);
-    OS << "Variant Created";
-    auto R = std::make_unique<PathSensitiveBugReport>(
-        VariantCreated, OS.str(), ErrNode);
-    //C.emitReport(std::move(R));
   }
 };
 
