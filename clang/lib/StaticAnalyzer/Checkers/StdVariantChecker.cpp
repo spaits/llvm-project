@@ -98,7 +98,12 @@ class StdVariantChecker : public Checker<check::PreCall> {
       //const TemplateArgument& TypeInf
       auto a = getFirstTemplateArgument(Call);
 
-      auto vec = State->contains<VariantHeldMap>(Call.getArgSVal(0).getAsSymbol());
+      auto vec = State->contains<VariantHeldMap>(Call.getArgSVal(0).getAsLocSymbol());
+      llvm::errs() << '\n';
+      Call.getArgSVal(0).dump();
+      llvm::errs() << "\nSymbol:\n";
+      //Call.getArgSVal(0).getAsLocSymbol()->dump();
+      llvm::errs() << '\n';
       if (vec) {
         llvm::errs() << "\nFinshed\n";
       } else {
@@ -107,20 +112,6 @@ class StdVariantChecker : public Checker<check::PreCall> {
       
     }
 
-    if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
-      auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
-      auto ThisType = AsConstructorCall->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
-      if (!ThisType) {
-        return;
-      }
-      auto TempSpecType = ThisType->getAs<TemplateSpecializationType>();
-      if (!TempSpecType) {
-        return;
-      }
-      auto TempArray = TempSpecType->template_arguments();
-      llvm::errs() << "Temp arr size: " << TempArray.size() << '\n';
-    }
-    
     bool isVariantConstructor = isa<CXXConstructorCall>(Call) &&
                                           VariantConstructorCall.matches(Call);
     bool isVariantAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
@@ -137,6 +128,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
         auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
         thisSVal = AsMemberOpCall->getCXXThisVal();
       } else {
+        llvm::errs() << "\nWe should NOT get here\n";
         return;
       }
       auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
@@ -146,7 +138,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
       llvm::errs() << "ActualType: " << woPointer.getAsString() << '\n';
       thisSVal.dump();
       llvm::errs() << '\n';
-      State = State->set<VariantHeldMap>(thisSVal.getAsSymbol(), woPointer);
+      State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), woPointer);
       return;
     }
 
