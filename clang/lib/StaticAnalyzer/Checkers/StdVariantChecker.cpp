@@ -47,11 +47,9 @@ class StdVariantChecker : public Checker<check::PreCall> {
 
   public:
 
-  const Type* getThisPtr(const CXXConstructorCall *Call, CheckerContext& C) const {
-    return Call->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
-  }
 
-  const Type* getThisPtr(const CXXMemberOperatorCall *Call, CheckerContext& C) const {
+  template<class T>
+  const Type* getThisPtr(const T *Call, CheckerContext& C) const {
     return Call->getCXXThisVal().getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
   }
 
@@ -67,13 +65,13 @@ class StdVariantChecker : public Checker<check::PreCall> {
     const Type* ThisType = nullptr;
     if (isa<CXXConstructorCall>(Call) && VariantConstructorCall.matches(Call)) {
       auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
-      ThisType = getThisPtr(AsConstructorCall, C);
+      ThisType = getThisPtr<CXXConstructorCall>(AsConstructorCall, C);
     }
     llvm::errs() << "2\n";
     if (isa<CXXMemberOperatorCall>(Call) && VariantConstructorCall.matches(Call)) {
       llvm::errs() << "OP\n";
       auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-      ThisType = getThisPtr(AsMemberOpCall, C);
+      ThisType = getThisPtr<CXXMemberOperatorCall>(AsMemberOpCall, C);
     }
     llvm::errs() << "1\n";
     Call.dump();
@@ -120,7 +118,8 @@ class StdVariantChecker : public Checker<check::PreCall> {
           auto variantNthArg = getNthTmplateTypeArgFromVariant(
             Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr(),
             TypeOut.getAsIntegral().getSExtValue());
-            llvm::errs() << "Getting w int\n";
+          matches = variantNthArg == *(TypeStored);
+          llvm::errs() << "Getting w int\n";
           break;
       }
 
@@ -128,6 +127,15 @@ class StdVariantChecker : public Checker<check::PreCall> {
         llvm::errs() << "Matches\n";
       } else {
         llvm::errs() << "Not Matches\n";
+      ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+      if (!ErrNode)
+        return;
+      llvm::SmallString<128> Str;
+      llvm::raw_svector_ostream OS(Str);
+      OS << "Variant held a(n) " << TypeStored->getAsString() << " not a(n)";
+      auto R = std::make_unique<PathSensitiveBugReport>(
+        VariantCreated, OS.str(), ErrNode);
+        C.emitReport(std::move(R));
       }
       
     }
@@ -172,20 +180,6 @@ class StdVariantChecker : public Checker<check::PreCall> {
     auto R = std::make_unique<PathSensitiveBugReport>(
         VariantCreated, OS.str(), ErrNode);
     //C.emitReport(std::move(R));
-  }
-
-  private:
-  TemplateSpecializationTypeLoc getTemplateSpecializationTypeLoc(TypeLoc tl) const {
-    auto actualTl = tl.getNextTypeLoc();
-    auto actualTlAsTempSpec =  actualTl.getAs<TemplateSpecializationTypeLoc>();
-    while(!actualTlAsTempSpec) {
-      auto ag = actualTl.getAs<TypedefTypeLoc>();
-      if (ag) {
-        actualTl = ag.getTypedefNameDecl()->getTypeSourceInfo()->getTypeLoc().getNextTypeLoc();
-        actualTlAsTempSpec = actualTl.getAs<TemplateSpecializationTypeLoc>();
-      }
-    }
-    return actualTlAsTempSpec;
   }
 };
 

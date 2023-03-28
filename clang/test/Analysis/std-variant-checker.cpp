@@ -9,5 +9,6 @@
 void g() {
   std::variant<int, char> v = 25;
   int a = std::get<0>(v);
+  char c = std::get<1>(v);
 }
 
