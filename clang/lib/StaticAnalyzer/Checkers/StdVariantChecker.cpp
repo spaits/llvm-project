@@ -32,6 +32,45 @@ static const Type* getPointeeType (const QualType& qt) {
   }
   return Type.getTypePtr();
 }
+//to be deleted
+static QualType getPointeeQualType (const QualType& qt) {
+  QualType Type = qt;
+  QualType NextType = qt.getTypePtr()->getPointeeType();
+  while (!NextType.isNull()) {
+    Type = NextType;
+    NextType = Type.getTypePtr()->getPointeeType();
+  }
+  return Type;
+}
+
+static bool isCopyConstructorCallEvent (const CallEvent& Call) {
+  auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+  if (!ConstructorCall) {
+    return false;
+  }
+  auto ConstructorDecl = ConstructorCall->getDecl();
+  if (!ConstructorDecl) {
+    return false;
+  }
+  return ConstructorDecl->isCopyConstructor();
+}
+
+static bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
+  auto CopyAssignmentCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+  if (!CopyAssignmentCall) {
+    return false;
+  }
+  auto CopyAssignmentDecl = CopyAssignmentCall->getDecl();
+  if (!CopyAssignmentDecl) {
+    return false;
+  }
+  auto AsMethodDecl = dyn_cast<CXXMethodDecl>(CopyAssignmentDecl);
+  if (!AsMethodDecl) {
+    return false;
+  }
+  return AsMethodDecl->isCopyAssignmentOperator();
+}
+
 
 class StdVariantChecker : public Checker<check::PreCall> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
@@ -74,12 +113,11 @@ class StdVariantChecker : public Checker<check::PreCall> {
       switch (TypeOut.getKind()) {
         case TemplateArgument::ArgKind::Type:
           return TypeOut.getAsType() == *(TypeStored);
-          break;
         case TemplateArgument::ArgKind::Integral:
           return getNthTmplateTypeArgFromVariant(
             getPointeeType(Call.getArgSVal(0).getType(C.getASTContext())),
+            //what if undefined integer
             TypeOut.getAsIntegral().getSExtValue()) == *(TypeStored);
-          break;
         default:
           llvm_unreachable("An std::get's first template argument can only be a type or an integral");
       }}();
@@ -96,7 +134,6 @@ class StdVariantChecker : public Checker<check::PreCall> {
           VariantCreated, OS.str(), ErrNode);
         C.emitReport(std::move(R));
       }
-      
     }
 
     bool isVariantConstructor = isa<CXXConstructorCall>(Call) &&
@@ -118,10 +155,24 @@ class StdVariantChecker : public Checker<check::PreCall> {
           llvm_unreachable("We must have an assignment operator or constructor");
         }
       }();
-      auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
-      const Type* typePtr = origQT.getTypePtr();
-      auto woPointer = typePtr->getPointeeType();
-      State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), woPointer);
+      auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
+      const Type* typePtr = argQType.getTypePtr();
+
+      llvm::errs() << "\nThis SVals type: " << thisSVal.getType(C.getASTContext()).getAsString() << '\n';
+      llvm::errs() << "Arguments Type: " << argQType.getAsString() << '\n';
+      if (isCopyConstructorCallEvent(Call) || isCopyAssignmentOperatorCall(Call)) {
+        llvm::errs() << "Are we even here?\n";
+        //Possible problem wit null type var
+        auto argLocSymbol = Call.getArgSVal(0).getAsSymbol();
+        if (!State->contains<VariantHeldMap>(argLocSymbol))
+          return;
+        auto otherQType = State->get<VariantHeldMap>(argLocSymbol);
+        llvm::errs() << isCopyConstructorCallEvent(Call)<< " " << isCopyAssignmentOperatorCall(Call)<<"Type held in other: " << otherQType->getAsString() << '\n';
+        State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), *otherQType);
+      } else {
+        auto woPointer = typePtr->getPointeeType();
+        State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), woPointer);
+      }
       C.addTransition(State);
       return;
     }
