@@ -19,18 +19,18 @@
 using namespace clang;
 using namespace ento;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, QualType);
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, QualType)
 
 // Get the non pointer type behind any pointer type
 // For example if we have an int*** we get int
 static const Type* getPointeeType (const QualType& qt) {
-  const Type* PrevTypePtr = qt.getTypePtr();
-  const Type* TypePtr = PrevTypePtr->getPointeeType().getTypePtr();
-  while (TypePtr) {
-    PrevTypePtr = TypePtr;
-    TypePtr = PrevTypePtr->getPointeeType().getTypePtr();
+  QualType Type = qt;
+  QualType NextType = qt.getTypePtr()->getPointeeType();
+  while (!NextType.isNull()) {
+    Type = NextType;
+    NextType = Type.getTypePtr()->getPointeeType();
   }
-  return PrevTypePtr;
+  return Type.getTypePtr();
 }
 
 class StdVariantChecker : public Checker<check::PreCall> {
@@ -61,27 +61,28 @@ class StdVariantChecker : public Checker<check::PreCall> {
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = Call.getState();
+    //Add type checking
     if (StdGet.matches(Call)) {
       auto TypeOut = getFirstTemplateArgument(Call);
       auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsLocSymbol());
-
+      
       if (!TypeStored) {
         return;
       } 
 
-      bool matches = true;
+      bool matches = [&]() {
       switch (TypeOut.getKind()) {
         case TemplateArgument::ArgKind::Type:
-          matches = TypeOut.getAsType() == *(TypeStored);
+          return TypeOut.getAsType() == *(TypeStored);
           break;
         case TemplateArgument::ArgKind::Integral:
-          auto variantNthArg = getNthTmplateTypeArgFromVariant(
-            Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr(),
-            TypeOut.getAsIntegral().getSExtValue());
-          matches = variantNthArg == *(TypeStored);
-          llvm::errs() << "Getting w int\n";
+          return getNthTmplateTypeArgFromVariant(
+            getPointeeType(Call.getArgSVal(0).getType(C.getASTContext())),
+            TypeOut.getAsIntegral().getSExtValue()) == *(TypeStored);
           break;
-      }
+        default:
+          llvm_unreachable("An std::get's first template argument can only be a type or an integral");
+      }}();
 
       if (matches) {
       } else {
@@ -106,16 +107,17 @@ class StdVariantChecker : public Checker<check::PreCall> {
     if (isVariantConstructor || isVariantAssignmentOperatorCall) {
       if (Call.getNumArgs() != 1)
         return;
-      SVal thisSVal;
-      if (isVariantConstructor) {
-        auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
-        thisSVal = AsConstructorCall->getCXXThisVal();
-      } else if (isVariantAssignmentOperatorCall) {
-        auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-        thisSVal = AsMemberOpCall->getCXXThisVal();
-      } else {
-        llvm_unreachable("AAA");
-      }
+      SVal thisSVal = [&]() {
+        if (isVariantConstructor) {
+          auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+          return AsConstructorCall->getCXXThisVal();
+        } else if (isVariantAssignmentOperatorCall) {
+          auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+          return AsMemberOpCall->getCXXThisVal();
+        } else {
+          llvm_unreachable("We must have an assignment operator or constructor");
+        }
+      }();
       auto origQT = Call.getArgSVal(0).getType(C.getASTContext());
       const Type* typePtr = origQT.getTypePtr();
       auto woPointer = typePtr->getPointeeType();
