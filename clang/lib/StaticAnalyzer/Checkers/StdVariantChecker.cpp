@@ -32,16 +32,6 @@ static const Type* getPointeeType (const QualType& qt) {
   }
   return Type.getTypePtr();
 }
-//to be deleted
-static QualType getPointeeQualType (const QualType& qt) {
-  QualType Type = qt;
-  QualType NextType = qt.getTypePtr()->getPointeeType();
-  while (!NextType.isNull()) {
-    Type = NextType;
-    NextType = Type.getTypePtr()->getPointeeType();
-  }
-  return Type;
-}
 
 static bool isCopyConstructorCallEvent (const CallEvent& Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
@@ -102,38 +92,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
     auto State = Call.getState();
     //Add type checking
     if (StdGet.matches(Call)) {
-      auto TypeOut = getFirstTemplateArgument(Call);
-      auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsRegion());
-
-      if (!TypeStored) {
-        return;
-      } 
-
-      bool matches = [&]() {
-      switch (TypeOut.getKind()) {
-        case TemplateArgument::ArgKind::Type:
-          return TypeOut.getAsType() == *(TypeStored);
-        case TemplateArgument::ArgKind::Integral:
-          return getNthTmplateTypeArgFromVariant(
-            getPointeeType(Call.getArgSVal(0).getType(C.getASTContext())),
-            //what if undefined integer
-            TypeOut.getAsIntegral().getSExtValue()) == *(TypeStored);
-        default:
-          llvm_unreachable("An std::get's first template argument can only be a type or an integral");
-      }}();
-
-      if (matches) {
-      } else {
-        ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
-        if (!ErrNode)
-          return;
-        llvm::SmallString<128> Str;
-        llvm::raw_svector_ostream OS(Str);
-        OS << "Variant held a(n) " << TypeStored->getAsString() << " not a(n)";
-        auto R = std::make_unique<PathSensitiveBugReport>(
-          VariantCreated, OS.str(), ErrNode);
-        C.emitReport(std::move(R));
-      }
+      handleStdGetCall(Call, C);
     }
 
     bool isVariantConstructor = isa<CXXConstructorCall>(Call) &&
@@ -173,6 +132,45 @@ class StdVariantChecker : public Checker<check::PreCall> {
       C.addTransition(State);
       return;
     }
+  }
+
+  void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
+
+    auto State = Call.getState();
+    auto TypeOut = getFirstTemplateArgument(Call);
+    auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsRegion());
+
+    if (!TypeStored) {
+      return;
+    } 
+
+    auto GetType = [&]() {
+    switch (TypeOut.getKind()) {
+      case TemplateArgument::ArgKind::Type:
+        return TypeOut.getAsType();
+      case TemplateArgument::ArgKind::Integral:
+        return getNthTmplateTypeArgFromVariant(
+          getPointeeType(Call.getArgSVal(0).getType(C.getASTContext())),
+          TypeOut.getAsIntegral().getSExtValue());
+      default:
+        llvm_unreachable("An std::get's first template argument can only be a type or an integral");
+    }}();
+
+    bool matches = GetType == *TypeStored;
+
+    if (matches) {
+      return;
+    }
+
+    ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+    if (!ErrNode)
+      return;
+    llvm::SmallString<128> Str;
+    llvm::raw_svector_ostream OS(Str);
+    OS << "Variant held a(n) " << TypeStored->getAsString() << " not a(n) " << GetType.getAsString();
+    auto R = std::make_unique<PathSensitiveBugReport>(
+      VariantCreated, OS.str(), ErrNode);
+    C.emitReport(std::move(R));  
   }
 };
 
