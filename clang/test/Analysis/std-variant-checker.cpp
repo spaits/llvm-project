@@ -8,6 +8,7 @@
  
 void g() {
   std::variant<int, char> v = 25;
+  std::variant<int, char> t = 'c';
   int a = std::get<0>(v);
   char c = std::get<1>(v);
   (void*)a;
@@ -47,6 +48,7 @@ void i() {
 void j() {
   std::variant<int, char> v = 25;
   int a = std::get<int> (v);
+  (void*)a;
   v = 'c';
   char c = std::get<char>(v);
   a = std::get<int>(v);

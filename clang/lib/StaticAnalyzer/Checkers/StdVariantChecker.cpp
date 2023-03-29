@@ -19,7 +19,7 @@
 using namespace clang;
 using namespace ento;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, SymbolRef, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
 
 // Get the non pointer type behind any pointer type
 // For example if we have an int*** we get int
@@ -103,8 +103,8 @@ class StdVariantChecker : public Checker<check::PreCall> {
     //Add type checking
     if (StdGet.matches(Call)) {
       auto TypeOut = getFirstTemplateArgument(Call);
-      auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsLocSymbol());
-      
+      auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsRegion());
+
       if (!TypeStored) {
         return;
       } 
@@ -158,20 +158,17 @@ class StdVariantChecker : public Checker<check::PreCall> {
       auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
       const Type* typePtr = argQType.getTypePtr();
 
-      llvm::errs() << "\nThis SVals type: " << thisSVal.getType(C.getASTContext()).getAsString() << '\n';
-      llvm::errs() << "Arguments Type: " << argQType.getAsString() << '\n';
       if (isCopyConstructorCallEvent(Call) || isCopyAssignmentOperatorCall(Call)) {
-        llvm::errs() << "Are we even here?\n";
         //Possible problem wit null type var
-        auto argLocSymbol = Call.getArgSVal(0).getAsSymbol();
-        if (!State->contains<VariantHeldMap>(argLocSymbol))
+        auto argMemRegion = Call.getArgSVal(0).getAsRegion();
+        if (!State->contains<VariantHeldMap>(argMemRegion))
           return;
-        auto otherQType = State->get<VariantHeldMap>(argLocSymbol);
-        llvm::errs() << isCopyConstructorCallEvent(Call)<< " " << isCopyAssignmentOperatorCall(Call)<<"Type held in other: " << otherQType->getAsString() << '\n';
-        State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), *otherQType);
+        auto otherQType = State->get<VariantHeldMap>(argMemRegion);
+        Call.getArgSVal(0).dump();
+        State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), *otherQType);
       } else {
         auto woPointer = typePtr->getPointeeType();
-        State = State->set<VariantHeldMap>(thisSVal.getAsLocSymbol(), woPointer);
+        State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), woPointer);
       }
       C.addTransition(State);
       return;
