@@ -196,7 +196,8 @@ class StdVariantChecker : public Checker<check::PreCall> {
     //    !ArgDecl->isInStdNamespace()) {
     //      return;
     //}
-    auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsRegion());
+    auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+    auto TypeStored = State->get<VariantHeldMap>(ArgMemRegion);
     if (!TypeStored) {
       return;
     } 
@@ -224,7 +225,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
       return;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << "Variant held a(n) "
+    OS << "variant " << ArgMemRegion->getDescriptiveName() << " held a(n) "
        << TypeStored->getAsString()
        << " not a(n) " << GetType.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(
