@@ -61,6 +61,15 @@ static bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
   }
   return AsMethodDecl->isCopyAssignmentOperator();
 }
+
+static bool isStdVariant(const Type *Type) {
+  auto Decl = Type->getAsRecordDecl();
+  if (!Decl) {
+    return false;
+  } 
+  return (Decl->getNameAsString() == std::string("variant")) && Decl->isInStdNamespace();
+}
+
 static ArrayRef<TemplateArgument> getTemplateArgsFromVariant(const Type* VariantType) {
   auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
   assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
@@ -95,6 +104,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
     //Add type checking
     if (StdGet.matches(Call)) {
       handleStdGetCall(Call, C);
+      return;
     }
 
     bool isVariantConstructor = isa<CXXConstructorCall>(Call) &&
@@ -120,20 +130,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
           llvm_unreachable("We must have an assignment operator or constructor");
         }
       }();
-      auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
-      const Type* typePtr = argQType.getTypePtr();
-
-      if (isCopyConstructorCallEvent(Call) || isCopyAssignmentOperatorCall(Call)) {
-        auto argMemRegion = Call.getArgSVal(0).getAsRegion();
-        if (!State->contains<VariantHeldMap>(argMemRegion))
-          return;
-        auto otherQType = State->get<VariantHeldMap>(argMemRegion);
-        State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), *otherQType);
-      } else {
-        auto woPointer = typePtr->getPointeeType();
-        State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), woPointer);
-      }
-      C.addTransition(State);
+      handleConstructorAndAssignemnt(Call, C, thisSVal);
       return;
     }
   }
@@ -156,16 +153,37 @@ class StdVariantChecker : public Checker<check::PreCall> {
     llvm::errs() << "Default\n";
     C.addTransition(State);
   }
+
+  void handleConstructorAndAssignemnt(const CallEvent &Call, CheckerContext &C, const SVal &thisSVal) const {
+    auto State = Call.getState();
+    auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
+    const Type* typePtr = argQType.getTypePtr();
+
+    if (isCopyConstructorCallEvent(Call) || isCopyAssignmentOperatorCall(Call)) {
+      auto argMemRegion = Call.getArgSVal(0).getAsRegion();
+      if (!State->contains<VariantHeldMap>(argMemRegion))
+        return;
+      auto otherQType = State->get<VariantHeldMap>(argMemRegion);
+        State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), *otherQType);
+      } else {
+        auto woPointer = typePtr->getPointeeType();
+        State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), woPointer);
+      }
+    C.addTransition(State);
+  }
   
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = Call.getState();
     auto TypeOut = getFirstTemplateArgument(Call);
-    auto ArgType = getPointeeType(Call.getArgSVal(0).getType(C.getASTContext()))->getAsRecordDecl();
-    //llvm::errs() <<ArgType->isInStdNamespace() << " " << ArgType->getNameAsString() << '\n';
-    if (!(ArgType->getNameAsString() == std::string("variant")) ||
-        !ArgType->isInStdNamespace()) {
-          return;
+    auto ArgType = getPointeeType(Call.getArgSVal(0).getType(C.getASTContext()));
+    
+    if (!isStdVariant(ArgType)) {
+      return;
     }
+    //if (!(ArgDecl->getNameAsString() == std::string("variant")) ||
+    //    !ArgDecl->isInStdNamespace()) {
+    //      return;
+    //}
     auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsRegion());
     if (!TypeStored) {
       return;
@@ -177,7 +195,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
         return TypeOut.getAsType();
       case TemplateArgument::ArgKind::Integral:
         return getNthTmplateTypeArgFromVariant(
-          getPointeeType(Call.getArgSVal(0).getType(C.getASTContext())),
+          ArgType,
           TypeOut.getAsIntegral().getSExtValue());
       default:
         llvm_unreachable("An std::get's first template argument can only be a type or an integral");
