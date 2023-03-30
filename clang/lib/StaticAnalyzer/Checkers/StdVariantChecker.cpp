@@ -60,6 +60,25 @@ static bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
   }
   return AsMethodDecl->isCopyAssignmentOperator();
 }
+static ArrayRef<TemplateArgument> getTemplateArgsFromVariant(const Type* VariantType) {
+  auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
+  assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
+  return TempSpecType->template_arguments();
+}
+
+  const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
+  const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
+  const FunctionDecl* FD = CE->getDirectCallee();
+  assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
+              "std::get should have at least 1 template argument!");
+  return FD->getTemplateSpecializationArgs()->asArray()[0];
+}
+
+static QualType getNthTmplateTypeArgFromVariant(const Type* varType, unsigned i) {
+  //TODO
+  return getTemplateArgsFromVariant(varType)[i].getAsType();
+}
+
 
 
 class StdVariantChecker : public Checker<check::PreCall> {
@@ -69,25 +88,7 @@ class StdVariantChecker : public Checker<check::PreCall> {
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
-  ArrayRef<TemplateArgument> getTemplateArgsFromVariant(const Type* VariantType) const {
-    auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
-    assert(TempSpecType && "We are in a variant instance. It must be a template specialization!");
-    return TempSpecType->template_arguments();
-  }
-
-  const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) const {
-    const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
-    const FunctionDecl* FD = CE->getDirectCallee();
-    assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
-              "std::get should have at least 1 template argument!");
-    return FD->getTemplateSpecializationArgs()->asArray()[0];
-  }
-
-  QualType getNthTmplateTypeArgFromVariant(const Type* varType, unsigned i) const {
-    //TODO
-    return getTemplateArgsFromVariant(varType)[i].getAsType();
-  }
-
+  
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = Call.getState();
     //Add type checking
