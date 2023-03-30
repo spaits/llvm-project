@@ -13,8 +13,9 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/FoldingSet.h"
+
+#include <string>
 
 using namespace clang;
 using namespace ento;
@@ -123,12 +124,10 @@ class StdVariantChecker : public Checker<check::PreCall> {
       const Type* typePtr = argQType.getTypePtr();
 
       if (isCopyConstructorCallEvent(Call) || isCopyAssignmentOperatorCall(Call)) {
-        //Possible problem wit null type var
         auto argMemRegion = Call.getArgSVal(0).getAsRegion();
         if (!State->contains<VariantHeldMap>(argMemRegion))
           return;
         auto otherQType = State->get<VariantHeldMap>(argMemRegion);
-        Call.getArgSVal(0).dump();
         State = State->set<VariantHeldMap>(thisSVal.getAsRegion(), *otherQType);
       } else {
         auto woPointer = typePtr->getPointeeType();
@@ -159,11 +158,15 @@ class StdVariantChecker : public Checker<check::PreCall> {
   }
   
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
-
     auto State = Call.getState();
     auto TypeOut = getFirstTemplateArgument(Call);
+    auto ArgType = getPointeeType(Call.getArgSVal(0).getType(C.getASTContext()))->getAsRecordDecl();
+    //llvm::errs() <<ArgType->isInStdNamespace() << " " << ArgType->getNameAsString() << '\n';
+    if (!(ArgType->getNameAsString() == std::string("variant")) ||
+        !ArgType->isInStdNamespace()) {
+          return;
+    }
     auto TypeStored = State->get<VariantHeldMap>(Call.getArgSVal(0).getAsRegion());
-
     if (!TypeStored) {
       return;
     } 

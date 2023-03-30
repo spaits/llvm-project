@@ -29,7 +29,7 @@ void stdGetType() {
 
 }
 
-void h() {
+void copyConstructor() {
   std::variant<int, char> v = 25;
   std::variant<int, char> t(v);
   int a = std::get<int> (t);
@@ -38,7 +38,8 @@ void h() {
   (void*)c;
 
 }
-void i() {
+
+void copyAssignemntOperator() {
   std::variant<int, char> v = 25;
   std::variant<int, char> t = 'c';
   t = v;
@@ -48,8 +49,7 @@ void i() {
   (void*)c;
 }
 
-
-void j() {
+void assignemntOperator() {
   std::variant<int, char> v = 25;
   int a = std::get<int> (v);
   (void*)a;
