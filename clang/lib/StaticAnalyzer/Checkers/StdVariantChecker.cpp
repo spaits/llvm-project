@@ -210,7 +210,8 @@ class StdVariantChecker : public Checker<check::PreCall> {
           ArgType,
           TypeOut.getAsIntegral().getSExtValue());
       default:
-        llvm_unreachable("An std::get's first template argument can only be a type or an integral");
+        llvm_unreachable(
+          "An std::get's first template argument can only be a type or an integral");
     }}();
 
     bool matches = GetType == *TypeStored;
@@ -223,7 +224,9 @@ class StdVariantChecker : public Checker<check::PreCall> {
       return;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << "Variant held a(n) " << TypeStored->getAsString() << " not a(n) " << GetType.getAsString();
+    OS << "Variant held a(n) "
+       << TypeStored->getAsString()
+       << " not a(n) " << GetType.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(
       VariantCreated, OS.str(), ErrNode);
     C.emitReport(std::move(R));  
