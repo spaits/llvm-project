@@ -102,6 +102,10 @@ class StdVariantChecker : public Checker<check::PreCall> {
                                                       VariantAsOp.matches(Call);
 
     if (isVariantConstructor || isVariantAssignmentOperatorCall) {
+      if (isVariantConstructor && Call.getNumArgs() == 0) {
+        handleDefaultConstructor(Call, C);
+        return;
+      }
       if (Call.getNumArgs() != 1)
         return;
       SVal thisSVal = [&]() {
@@ -135,6 +139,25 @@ class StdVariantChecker : public Checker<check::PreCall> {
     }
   }
 
+  private:
+  void handleDefaultConstructor(const CallEvent &Call, CheckerContext &C) const {
+    auto State = Call.getState();
+    auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+    if (!AsConstructorCall) {
+      return;
+    }
+
+    auto ThisSVal = AsConstructorCall->getCXXThisVal();
+    auto MemRegion = ThisSVal.getAsRegion();
+    if (!MemRegion) {
+      return;
+    } 
+    State = State->set<VariantHeldMap>(MemRegion, getNthTmplateTypeArgFromVariant(
+          getPointeeType(ThisSVal.getType(C.getASTContext())),0));
+    llvm::errs() << "Default\n";
+    C.addTransition(State);
+  }
+  
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
 
     auto State = Call.getState();
