@@ -10,6 +10,12 @@ void changeVraiantType(std::variant<int, char> &v) {
   v = 25;
 }
 
+void changesToInt(std::variant<int, char> &v);
+
+char getUnknownChar();
+
+auto getUnknownType();
+
 void swap(std::variant<int, char> &v1, std::variant<int, char> &v2) {
   std::variant<int, char> tmp = v1;
   v1 = v2;
@@ -28,7 +34,6 @@ using var_tt = var_t;
 using int_t = int;
 using char_t = char;
 
-void changesToInt(std::variant<int, char> &v);
 
 //Verify that we warn when we try to get the wrong type out of variant and
 //We do not warn when we try to get the stored type 
@@ -127,7 +132,7 @@ void functionCallWithCopyAssignment() {
 void typefdefedVariant() {
   var_t v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v);
+  char c = std::get<char>(v); // expected-warning {{}}
   (void*)a;
   (void*)c;
 }
@@ -135,7 +140,7 @@ void typefdefedVariant() {
 void typedefedTypedfefedVariant() {
   var_tt v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v);
+  char c = std::get<char>(v); // expected-warning {{}}
   (void*)a;
   (void*)c;
 }
@@ -156,6 +161,51 @@ void typedefedPack() {
   (void*)c;
 }
 
+void temporaryObjectsConstructor() {
+  std::variant<int, char> v(std::variant<int, char>('c'));
+  char c = std::get<char>(v);
+  int a = std::get<int>(v);
+  (void*)a;
+  (void*)c;
+}
+
+void temporaryObjectsAssignment() {
+  std::variant<int, char> v = std::variant<int, char>('c');
+  char c = std::get<char>(v);
+  int a = std::get<int>(v);
+  (void*)a;
+  (void*)c;
+}
+
+void moveAssignemnt() {
+  char o = 'c';
+  std::variant<int, char> v(o);
+  char c = std::get<char>(v);
+  int a = std::get<int>(v);
+  (void*)a;
+  (void*)c;
+}
+
+void unknowValueButKnownType() {
+  char o = getUnknownChar();
+  std::variant<int, char> v(o);
+  char c = std::get<char>(v);
+  int a = std::get<int>(v);
+  (void*)a;
+  (void*)c;
+}
+
+void autoType() {
+  auto o = getUnknownType();
+
+  std::variant<int, char> v(o);
+  char c = std::get<char>(v);
+  int a = std::get<int>(v);
+  (void*)a;
+  (void*)c;
+
+}
+
 //What we do not report on, but we should
 void valueHeld() {
   std::variant<int, char> v = 0;
@@ -174,3 +224,4 @@ void stdGetIf() {
 
 //move constructor
 //move assignment
+// Temporary objects

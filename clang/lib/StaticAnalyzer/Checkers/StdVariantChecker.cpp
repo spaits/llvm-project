@@ -62,6 +62,34 @@ static bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
   return AsMethodDecl->isCopyAssignmentOperator();
 }
 
+static bool isMoveConstructorCall(const CallEvent &Call) {
+  auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+  if (!ConstructorCall) {
+    return false;
+  }
+  auto ConstructorDecl = ConstructorCall->getDecl();
+  if (!ConstructorDecl) {
+    return false;
+  }
+  return ConstructorDecl->isMoveConstructor();
+}
+
+static bool isMoveAssignemntCall(const CallEvent &Call) {
+  auto CopyAssignmentCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+  if (!CopyAssignmentCall) {
+    return false;
+  }
+  auto CopyAssignmentDecl = CopyAssignmentCall->getDecl();
+  if (!CopyAssignmentDecl) {
+    return false;
+  }
+  auto AsMethodDecl = dyn_cast<CXXMethodDecl>(CopyAssignmentDecl);
+  if (!AsMethodDecl) {
+    return false;
+  }
+  return AsMethodDecl->isMoveAssignmentOperator();
+}
+
 static bool isStdVariant(const Type *Type) {
   auto Decl = Type->getAsRecordDecl();
   if (!Decl) {
