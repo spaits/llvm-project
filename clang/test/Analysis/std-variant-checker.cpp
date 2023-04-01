@@ -29,6 +29,10 @@ void cantDo(const std::variant<int, char>& v) {
   (void*) a;
 }
 
+void changeVraiantPtr(std::variant<int, char> *v) {
+  *v = 'c';
+}
+
 using var_t = std::variant<int, char>;
 using var_tt = var_t;
 using int_t = int;
@@ -195,12 +199,20 @@ void unknowValueButKnownType() {
   (void*)c;
 }
 
-void autoType() {
-  auto o = getUnknownType();
 
-  std::variant<int, char> v(o);
-  char c = std::get<char>(v);
-  int a = std::get<int>(v);
+void changeThruPointers() {
+  std::variant<int, char> v = 15;
+  changeVraiantPtr(&v);
+  char c = std::get<char> (v);
+  int a = std::get<int> (v);
+  (void*)a;
+  (void*)c;
+}
+
+void createPointer() {
+  std::variant<int, char> *v = new std::variant<int, char>(15);
+  int a = std::get<int>(*v);
+  char c = std::get<char>(*v);
   (void*)a;
   (void*)c;
 
