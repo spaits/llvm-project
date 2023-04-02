@@ -138,11 +138,19 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
                        ArrayRef<const MemRegion *> Regions,
                        const LocationContext *LCtx,
                        const CallEvent *Call) const {
-    //for (auto currentMemRegion : Regions) {
-    //  if (State->contains<VariantHeldMap>(currentMemRegion)) {
-    //    State = State->remove<VariantHeldMap>(currentMemRegion);
-    //  }
-    //}
+    if (!Call) {
+      return State;
+    }
+
+    if (Call->isInSystemHeader()) {
+      return State;
+    }
+
+    for (auto currentMemRegion : Regions) {
+      if (State->contains<VariantHeldMap>(currentMemRegion)) {
+        State = State->remove<VariantHeldMap>(currentMemRegion);
+      }
+    }
     return State;
   }
 
