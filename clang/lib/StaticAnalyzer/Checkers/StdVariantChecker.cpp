@@ -123,13 +123,24 @@ static QualType getNthTmplateTypeArgFromVariant
 
 
 
-class StdVariantChecker : public Checker<check::PreCall> {
+class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}};
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
+  
+  ProgramStateRef
+    checkRegionChanges(ProgramStateRef State,
+                       const InvalidatedSymbols *Invalidated,
+                       ArrayRef<const MemRegion *> ExplicitRegions,
+                       ArrayRef<const MemRegion *> Regions,
+                       const LocationContext *LCtx,
+                       const CallEvent *Call) const {
+    return State;
+  }
+
   
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
     if (StdGet.matches(Call)) {
