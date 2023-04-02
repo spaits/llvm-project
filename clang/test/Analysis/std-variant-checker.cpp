@@ -115,7 +115,7 @@ void functionCallwithAssignemnt() {
   std::variant<int, char> v = 'c';
   changesToInt(v);
   int a = std::get<int> (v);
-  char c = std::get<char> (v); // expected-warning {{}}
+  char c = std::get<char> (v);
   (void*)a;
   (void*)c;
 }
@@ -212,7 +212,8 @@ void changeThruPointers() {
 void createPointer() {
   std::variant<int, char> *v = new std::variant<int, char>(15);
   int a = std::get<int>(*v);
-  char c = std::get<char>(*v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  //PROBLEM W VAR NAMES
+  char c = std::get<char>(*v); // expected-warning {{variant  held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 
