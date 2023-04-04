@@ -6,15 +6,17 @@
 #include <variant>
 
 //helper functions
-void changeVraiantType(std::variant<int, char> &v) {
+void changeVariantType(std::variant<int, char> &v) {
   v = 25;
 }
 
 void changesToInt(std::variant<int, char> &v);
+void changesToInt(std::variant<int, char> *v);
+
+void cannotChnageRef(const std::variant<int, char> &v);
+void cannotChnagePtr(const std::variant<int, char> *v);
 
 char getUnknownChar();
-
-auto getUnknownType();
 
 void swap(std::variant<int, char> &v1, std::variant<int, char> &v2) {
   std::variant<int, char> tmp = v1;
@@ -29,7 +31,7 @@ void cantDo(const std::variant<int, char>& v) {
   (void*) a;
 }
 
-void changeVraiantPtr(std::variant<int, char> *v) {
+void changeVariantPtr(std::variant<int, char> *v) {
   *v = 'c';
 }
 
@@ -44,7 +46,7 @@ using char_t = char;
 void stdGetIntegral() {
   std::variant<int, char> v = 25;
   // variant t is here to see wether we can distinguish between two variants
-  // variants are identifieb by their memmory region
+  // variants are identifieb by their memory region
   std::variant<int, char> t = 'c';
   int a = std::get<0>(v);
   char c = std::get<1>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
@@ -52,7 +54,7 @@ void stdGetIntegral() {
   (void*)c;
 
 }
-//Verify that we warn when 
+
 void stdGetType() {
   std::variant<int, char> v = 25;
   int a = std::get<int>(v);
@@ -100,38 +102,7 @@ void defaultConstructor() {
   (void*)c;
 }
 
-//NOT GOOD
-void inlineFunctionCall() {
-  std::variant<int, char> v = 'c';
-  changeVraiantType(v);
-  int a = std::get<int> (v);
-  char c = std::get<char> (v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
-  (void*)a;
-  (void*)c;
-}
 
-void functionCallwithAssignemnt() {
-  //here is the problem
-  std::variant<int, char> v = 'c';
-  changesToInt(v);
-  int a = std::get<int> (v);
-  char c = std::get<char> (v);
-  (void*)a;
-  (void*)c;
-}
-
-void functionCallWithCopyAssignment() {
-  var_t v1 = 15;
-  var_t v2 = 'c';
-  swap(v1, v2);
-  int a = std::get<int> (v2);
-  (void*)a;
-  char c = std::get<char> (v1);
-  a = std::get<int> (v1); // expected-warning {{variant 'v1' held a(n) char not a(n) int}}
-  (void*)a;
-  (void*)c;
-
-}
 
 void typefdefedVariant() {
   var_t v = 25;
@@ -200,14 +171,6 @@ void unknowValueButKnownType() {
 }
 
 
-void changeThruPointers() {
-  std::variant<int, char> v = 15;
-  changeVraiantPtr(&v);
-  char c = std::get<char> (v);
-  int a = std::get<int> (v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
-  (void*)a;
-  (void*)c;
-}
 
 void createPointer() {
   std::variant<int, char> *v = new std::variant<int, char>(15);
@@ -216,8 +179,94 @@ void createPointer() {
   char c = std::get<char>(*v); // expected-warning {{variant  held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
+}
+
+//----------------------------------------------------------------------------//
+// Passing std::variants to functions
+//----------------------------------------------------------------------------//
+
+// Verifying that we are not invalidating the memory region of a variant if
+// a non inlined or inlined funtion takes it as a constant reference or pointer
+void constNonInlineRef() {
+  std::variant<int, char> v = 'c';
+  cannotChnageRef(v);
+  char c = std::get<char>(v); 
+  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
+}
+
+void contNonInlinePtr() {
+  std::variant<int, char> v = 'c';
+  cannotChnagePtr(&v);
+  char c = std::get<char>(v); 
+  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
+}
+
+void copyInAFunction() {
+  std::variant<int, char> v = 'c';
+  cantDo(v);
+  char c = std::get<char>(v); 
+  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
 
 }
+
+// Verifying that we can keep track of the type stored in std::variant when
+// it is passed to an inlined funtion as a reference or pointer
+void changeThruPointers() {
+  std::variant<int, char> v = 15;
+  changeVariantPtr(&v);
+  char c = std::get<char> (v);
+  int a = std::get<int> (v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
+}
+
+void functionCallWithCopyAssignment() {
+  var_t v1 = 15;
+  var_t v2 = 'c';
+  swap(v1, v2);
+  int a = std::get<int> (v2);
+  (void*)a;
+  char c = std::get<char> (v1);
+  a = std::get<int> (v1); // expected-warning {{variant 'v1' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
+}
+
+void inlineFunctionCall() {
+  std::variant<int, char> v = 'c';
+  changeVariantType(v);
+  int a = std::get<int> (v);
+  char c = std::get<char> (v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  (void*)a;
+  (void*)c;
+}
+
+// Verifying that we invalidate the mem region of std::variant when it is
+// passed as a referenece or a pointer to a non inlined function
+void nonInleneFunctionCall() {
+  std::variant<int, char> v = 'c';
+  changesToInt(v);
+  int a = std::get<int> (v);
+  char c = std::get<char> (v);
+  (void*)a;
+  (void*)c;
+}
+
+void nonInleneFunctionCallPtr() {
+  std::variant<int, char> v = 'c';
+  changesToInt(&v);
+  int a = std::get<int> (v);
+  char c = std::get<char> (v);
+  (void*)a;
+  (void*)c;
+}
+
 
 //What we do not report on, but we should
 void valueHeld() {

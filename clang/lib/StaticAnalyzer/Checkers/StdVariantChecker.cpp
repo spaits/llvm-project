@@ -148,6 +148,8 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
 
     for (auto currentMemRegion : Regions) {
       if (State->contains<VariantHeldMap>(currentMemRegion)) {
+//        llvm::errs() << "\nInvalidating\n";
+//        Call->dump();
         State = State->remove<VariantHeldMap>(currentMemRegion);
       }
     }
@@ -237,6 +239,8 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   }
   
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
+    //llvm::errs() << "\nStd get\n";
+    //Call.dump();
     auto State = Call.getState();
     auto TypeOut = getFirstTemplateArgument(Call);
     auto ArgType = getPointeeType(Call.getArgSVal(0).getType(C.getASTContext()));
