@@ -22,6 +22,17 @@ using namespace ento;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, QualType)
 
+static bool isStdAny(const Type *Type) {
+  auto Decl = Type->getAsRecordDecl();
+  if (!Decl) {
+    return false;
+  } 
+  return (Decl->getNameAsString() == std::string("any"))
+          && Decl->isInStdNamespace();
+}
+
+const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
+
 class StdAnyChecker : public Checker<check::PreCall> {
   CallDescription AnyConstructorCall{{"std", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
@@ -72,11 +83,34 @@ class StdAnyChecker : public Checker<check::PreCall> {
 
   private:
   void handleAnyCall(const CallEvent &Call, CheckerContext &C) const {
+    auto State = C.getState();
+
     if (Call.getNumArgs() != 1) {
       return;
     }
     auto argSVal = Call.getArgSVal(0);
     llvm::errs() << "AnyCall: " << argSVal.getType(C.getASTContext()).getAsString() << '\n';
+    //??
+    auto ArgType = argSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
+    if (!isStdAny(ArgType)) {
+      return;
+    }
+
+    // get the type we are trying to get from any
+    auto FirstTemplateArgument = getFirstTemplateArgument(Call);
+    if (FirstTemplateArgument.getKind() != TemplateArgument::ArgKind::Type) {
+      return;
+    }
+    auto TypeOut = FirstTemplateArgument.getAsType();
+
+    auto AnyMemRegion = argSVal.getAsRegion();
+
+    auto TypeStored = State->get<AnyHeldMap>(AnyMemRegion);
+    if (*TypeStored == TypeOut) {
+      llvm::errs() << "matches\n";
+    } else {
+      llvm::errs() << "not matches\n";
+    }
   }
 
 };
