@@ -41,8 +41,12 @@ using int_t = int;
 using char_t = char;
 
 
-//Verify that we warn when we try to get the wrong type out of variant and
-//We do not warn when we try to get the stored type 
+//----------------------------------------------------------------------------//
+// std::get
+//----------------------------------------------------------------------------//
+// Verify that we warn when we try to get the wrong type out of variant by
+// passing the index of the type and we do not warn when we try to get
+// the stored type
 void stdGetIntegral() {
   std::variant<int, char> v = 25;
   // variant t is here to see wether we can distinguish between two variants
@@ -52,7 +56,6 @@ void stdGetIntegral() {
   char c = std::get<1>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
-
 }
 
 void stdGetType() {
@@ -63,6 +66,9 @@ void stdGetType() {
   (void*)c;
 }
 
+//----------------------------------------------------------------------------//
+// Constructors and assignments
+//----------------------------------------------------------------------------//
 void copyConstructor() {
   std::variant<int, char> v = 25;
   std::variant<int, char> t(v);
@@ -102,7 +108,25 @@ void defaultConstructor() {
   (void*)c;
 }
 
+void temporaryObjectsConstructor() {
+  std::variant<int, char> v(std::variant<int, char>('c'));
+  char c = std::get<char>(v);
+  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
+}
 
+void temporaryObjectsAssignment() {
+  std::variant<int, char> v = std::variant<int, char>('c');
+  char c = std::get<char>(v);
+  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  (void*)a;
+  (void*)c;
+}
+
+//----------------------------------------------------------------------------//
+// typedef
+//----------------------------------------------------------------------------//
 
 void typefdefedVariant() {
   var_t v = 25;
@@ -136,21 +160,7 @@ void typedefedPack() {
   (void*)c;
 }
 
-void temporaryObjectsConstructor() {
-  std::variant<int, char> v(std::variant<int, char>('c'));
-  char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
-  (void*)a;
-  (void*)c;
-}
 
-void temporaryObjectsAssignment() {
-  std::variant<int, char> v = std::variant<int, char>('c');
-  char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
-  (void*)a;
-  (void*)c;
-}
 
 void fromVarianble() {
   char o = 'c';
@@ -169,8 +179,6 @@ void unknowValueButKnownType() {
   (void*)a;
   (void*)c;
 }
-
-
 
 void createPointer() {
   std::variant<int, char> *v = new std::variant<int, char>(15);
