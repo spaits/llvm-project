@@ -117,6 +117,7 @@ ProgramStateRef
       auto ArgSVal = Call.getArgSVal(0);
       auto ArgQType = ArgSVal.getType(C.getASTContext()); 
       auto ArgQTypeWoPtr = ArgQType.getTypePtr()->getPointeeType();
+      ArgQType.removeLocalFastQualifiers();
       llvm::errs() << "Type assigned is: " << ArgQType.getAsString() << " " << ArgQTypeWoPtr.getAsString() << "\n";
       State = State->set<AnyHeldMap>(ThisMemRegion, ArgQTypeWoPtr);
       C.addTransition(State);
