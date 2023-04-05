@@ -76,7 +76,6 @@ void copyConstructor() {
   char c = std::get<char> (t); // expected-warning {{variant 't' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
-
 }
 
 void copyAssignemntOperator() {
@@ -121,6 +120,14 @@ void temporaryObjectsAssignment() {
   char c = std::get<char>(v);
   int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
   (void*)a;
+  (void*)c;
+}
+
+void pointerTypeHeld() {
+  std::variant<int*, char> v = new int;
+  int *a = std::get<int*>(v);
+  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) char}}
+  (void**)a;
   (void*)c;
 }
 

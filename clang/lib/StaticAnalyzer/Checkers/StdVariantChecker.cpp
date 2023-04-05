@@ -107,7 +107,7 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
   return TempSpecType->template_arguments();
 }
 
-  const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
+static const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
   const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
   const FunctionDecl* FD = CE->getDirectCallee();
   assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
@@ -117,7 +117,6 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
 
 static QualType getNthTmplateTypeArgFromVariant
                                             (const Type* varType, unsigned i) {
-  //TODO
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
 
@@ -148,8 +147,6 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
 
     for (auto currentMemRegion : Regions) {
       if (State->contains<VariantHeldMap>(currentMemRegion)) {
-//        llvm::errs() << "\nInvalidating\n";
-//        Call->dump();
         State = State->remove<VariantHeldMap>(currentMemRegion);
       }
     }
@@ -163,23 +160,23 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
       return;
     }
 
-    bool isVariantConstructor = isa<CXXConstructorCall>(Call) &&
+    bool IsVariantConstructor = isa<CXXConstructorCall>(Call) &&
                                           VariantConstructorCall.matches(Call);
-    bool isVariantAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
+    bool IsVariantAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
                                                       VariantAsOp.matches(Call);
 
-    if (isVariantConstructor || isVariantAssignmentOperatorCall) {
-      if (isVariantConstructor && Call.getNumArgs() == 0) {
+    if (IsVariantConstructor || IsVariantAssignmentOperatorCall) {
+      if (IsVariantConstructor && Call.getNumArgs() == 0) {
         handleDefaultConstructor(Call, C);
         return;
       }
       if (Call.getNumArgs() != 1)
         return;
       SVal thisSVal = [&]() {
-        if (isVariantConstructor) {
+        if (IsVariantConstructor) {
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
-        } else if (isVariantAssignmentOperatorCall) {
+        } else if (IsVariantAssignmentOperatorCall) {
           auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
           return AsMemberOpCall->getCXXThisVal();
         } else {
@@ -217,18 +214,19 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
                                       const SVal &thisSVal) const {
     auto State = Call.getState(); // check
     auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
-    const Type* typePtr = argQType.getTypePtr();
+    const Type* ArgTypePtr = argQType.getTypePtr();
     auto ThisRegion = thisSVal.getAsRegion();
 
-    State = [&]() {if (isCopyConstructorCallEvent(Call) || isCopyAssignmentOperatorCall(Call)) {
-      auto argMemRegion = Call.getArgSVal(0).getAsRegion();
-      if (!State->contains<VariantHeldMap>(argMemRegion))
+    State = [&]() {if (isCopyConstructorCallEvent(Call) ||
+                                          isCopyAssignmentOperatorCall(Call)) {
+      auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+      if (!State->contains<VariantHeldMap>(ArgMemRegion))
         return IntrusiveRefCntPtr<const ProgramState>{}; //Prog state
-      auto otherQType = State->get<VariantHeldMap>(argMemRegion);
-        return State->set<VariantHeldMap>(ThisRegion, *otherQType);
+      auto OtherQType = State->get<VariantHeldMap>(ArgMemRegion);
+        return State->set<VariantHeldMap>(ThisRegion, *OtherQType);
       } else {
-        auto woPointer = typePtr->getPointeeType();
-        return State->set<VariantHeldMap>(ThisRegion, woPointer);
+        auto WoPointer = ArgTypePtr->getPointeeType();
+        return State->set<VariantHeldMap>(ThisRegion, WoPointer);
     }}();
 
     if (State) {
@@ -239,19 +237,15 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   }
   
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
-    //llvm::errs() << "\nStd get\n";
-    //Call.dump();
     auto State = Call.getState();
     auto TypeOut = getFirstTemplateArgument(Call);
-    auto ArgType = getPointeeType(Call.getArgSVal(0).getType(C.getASTContext()));
+    auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
+                                      getPointeeType().getTypePtr();
     
     if (!isStdVariant(ArgType)) {
       return;
     }
-    //if (!(ArgDecl->getNameAsString() == std::string("variant")) ||
-    //    !ArgDecl->isInStdNamespace()) {
-    //      return;
-    //}
+
     auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
     auto TypeStored = State->get<VariantHeldMap>(ArgMemRegion);
     if (!TypeStored) {
@@ -268,7 +262,7 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
           TypeOut.getAsIntegral().getSExtValue());
       default:
         llvm_unreachable(
-          "An std::get's first template argument can only be a type or an integral");
+    "An std::get's first template argument can only be a type or an integral");
     }}();
 
     bool matches = GetType == *TypeStored;
