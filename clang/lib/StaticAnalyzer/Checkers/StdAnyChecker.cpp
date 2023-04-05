@@ -33,7 +33,7 @@ static bool isStdAny(const Type *Type) {
 
 const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
 
-class StdAnyChecker : public Checker<check::PreCall> {
+class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
   CallDescription AnyConstructorCall{{"std", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
   CallDescription AnyReset{{"std", "any", "reset"}};
@@ -43,6 +43,33 @@ class StdAnyChecker : public Checker<check::PreCall> {
   BugType NullAnyType{this, "NullAnyType", "NullAnyType"};
   
   public:
+
+
+ProgramStateRef
+    checkRegionChanges(ProgramStateRef State,
+                       const InvalidatedSymbols *Invalidated,
+                       ArrayRef<const MemRegion *> ExplicitRegions,
+                       ArrayRef<const MemRegion *> Regions,
+                       const LocationContext *LCtx,
+                       const CallEvent *Call) const {
+    if (!Call) {
+      return State;
+    }
+
+    //if (Call->isInSystemHeader()) {
+    //  return State;
+    //}
+
+    for (auto currentMemRegion : Regions) {
+      if (State->contains<AnyHeldMap>(currentMemRegion)) {
+//        llvm::errs() << "\nInvalidating\n";
+//        Call->dump();
+        State = State->remove<AnyHeldMap>(currentMemRegion);
+      }
+    }
+    return State;
+  }
+
   void checkPreCall(const CallEvent& Call, CheckerContext& C) const {
     if (AnyCast.matches(Call)) {
       handleAnyCall(Call, C);

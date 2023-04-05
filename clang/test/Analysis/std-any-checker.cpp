@@ -23,7 +23,7 @@ void formVariabnle() {
 void pointerHeld() {
   std::any a = new int;
   int* x = std::any_cast<int*>(a);
-  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int * not a(n) int}}
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int * not a(n) char}}
   (void**)x;
   (void*)c;
 }
