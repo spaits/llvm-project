@@ -160,8 +160,6 @@ void typedefedPack() {
   (void*)c;
 }
 
-
-
 void fromVarianble() {
   char o = 'c';
   std::variant<int, char> v(o);

@@ -36,25 +36,34 @@ const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
 class StdAnyChecker : public Checker<check::PreCall> {
   CallDescription AnyConstructorCall{{"std", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
+  CallDescription AnyReset{{"std", "any", "reset"}};
   CallDescription AnyCast{{"std", "any_cast"}};
-  BugType BadAnyType{this, "VariantCreated", "VariantCreated"};
+  BugType BadAnyType{this, "BadAnyType", "BadAnyType"};
+
+  BugType NullAnyType{this, "NullAnyType", "NullAnyType"};
   
   public:
   void checkPreCall(const CallEvent& Call, CheckerContext& C) const {
     if (AnyCast.matches(Call)) {
       handleAnyCall(Call, C);
+      return;
     }
-    llvm::errs() << "Any checker\n";
+    if (AnyReset.matches(Call)) {
+      llvm::errs() << "reset found\n";
+      auto ThisMemRegion = dyn_cast<CXXMemberCall>(&Call)->getCXXThisVal().getAsRegion();
+      setNullTypeAny(ThisMemRegion, C);
+      return;
+    }
 
     bool isAnyConstructor = isa<CXXConstructorCall>(Call) &&
                                           AnyConstructorCall.matches(Call);
     bool isAnyAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
                                                       AnyAsOp.matches(Call);
 
-    if ((isAnyConstructor || isAnyAssignmentOperatorCall) && Call.getNumArgs() == 1) {
+    if (isAnyConstructor || isAnyAssignmentOperatorCall) {
       auto State = C.getState();
       llvm::errs() << "Any ctor w value\n";
-      SVal thisSVal = [&]() {
+      SVal ThisSVal = [&]() {
         if (isAnyConstructor) {
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
@@ -66,22 +75,38 @@ class StdAnyChecker : public Checker<check::PreCall> {
                           "We must have an assignment operator or constructor");
         }
       }();
-      auto argSVal = Call.getArgSVal(0);
-      auto argQType = argSVal.getType(C.getASTContext()); 
-      auto argQTypeWoPtr = argQType.getTypePtr()->getPointeeType();
-      llvm::errs() << "Type assigned is: " << argQType.getAsString() << " " << argQTypeWoPtr.getAsString() << "\n";
-      auto ThisMemRegion = thisSVal.getAsRegion();
-      State = State->set<AnyHeldMap>(ThisMemRegion, argQTypeWoPtr);
+
+      auto ThisMemRegion = ThisSVal.getAsRegion();
+      if(Call.getNumArgs() == 0) {
+        //removeAnyFromState(ThisMemRegion, C);
+        setNullTypeAny(ThisMemRegion, C);
+        return;
+      }
+
+      if (Call.getNumArgs() != 1) {
+        return;
+      }
+
+      auto ArgSVal = Call.getArgSVal(0);
+      auto ArgQType = ArgSVal.getType(C.getASTContext()); 
+      auto ArgQTypeWoPtr = ArgQType.getTypePtr()->getPointeeType();
+      llvm::errs() << "Type assigned is: " << ArgQType.getAsString() << " " << ArgQTypeWoPtr.getAsString() << "\n";
+      State = State->set<AnyHeldMap>(ThisMemRegion, ArgQTypeWoPtr);
       C.addTransition(State);
     }
 
-
-    if (AnyConstructorCall.matches(Call)) {
-        llvm::errs() << "Any ctor call found\n";
-    }
+    //if (AnyConstructorCall.matches(Call)) {
+    //    llvm::errs() << "Any ctor call found\n";
+    //}
   }
 
   private:
+  void setNullTypeAny(const MemRegion *Mem, CheckerContext &C) const {
+    auto State = C.getState();
+    State = State->set<AnyHeldMap>(Mem, QualType{});
+    C.addTransition(State);
+  }
+
   void handleAnyCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = C.getState();
 
@@ -105,11 +130,43 @@ class StdAnyChecker : public Checker<check::PreCall> {
 
     auto AnyMemRegion = argSVal.getAsRegion();
 
+    if (!State->contains<AnyHeldMap>(AnyMemRegion)) {
+      return;
+    }
     auto TypeStored = State->get<AnyHeldMap>(AnyMemRegion);
-    if (*TypeStored == TypeOut) {
-      llvm::errs() << "matches\n";
-    } else {
+    if(TypeStored->isNull()) {
+      llvm::errs() << "Any was not initilaized\n";
+      ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+      if (!ErrNode)
+        return;
+      llvm::SmallString<128> Str;
+      llvm::raw_svector_ostream OS(Str);
+      OS << "any " << AnyMemRegion->getDescriptiveName() << " held a null type";
+      auto R = std::make_unique<PathSensitiveBugReport>(
+        NullAnyType, OS.str(), ErrNode);
+      C.emitReport(std::move(R));  
+      return;
+    }
+
+    if (*TypeStored != TypeOut) {
       llvm::errs() << "not matches\n";
+      Call.dump();
+      llvm::errs() << "\nend no match\n";
+      ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+      if (!ErrNode)
+        return;
+      llvm::SmallString<128> Str;
+      llvm::raw_svector_ostream OS(Str);
+      OS << "std::any " << AnyMemRegion->getDescriptiveName() << " held a(n) " << TypeStored->getAsString() << " not a(n) " << TypeOut.getAsString();
+      auto R = std::make_unique<PathSensitiveBugReport>(
+        BadAnyType, OS.str(), ErrNode);
+      C.emitReport(std::move(R));  
+      return;
+    } else {
+      llvm::errs() << "matches\n";
+      Call.dump();
+      llvm::errs() << "\nend match\n";
+
     }
   }
 
