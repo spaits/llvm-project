@@ -96,6 +96,7 @@ ProgramStateRef
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
         } else if (isAnyAssignmentOperatorCall) {
+          llvm::errs() << "ASOP\n";
           auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
           return AsMemberOpCall->getCXXThisVal();
         } else {
@@ -105,7 +106,10 @@ ProgramStateRef
       }();
 
       auto ThisMemRegion = ThisSVal.getAsRegion();
-      if(Call.getNumArgs() == 0) {
+      if(isAnyConstructor && Call.getNumArgs() == 0) {
+        llvm::errs() << '\n';
+        Call.dump();
+        llvm::errs() << '\n';
         //removeAnyFromState(ThisMemRegion, C);
         setNullTypeAny(ThisMemRegion, C);
         return;
@@ -182,28 +186,17 @@ ProgramStateRef
       return;
     }
 
-    if (*TypeStored != TypeOut) {
-      llvm::errs() << "not matches\n";
-      Call.dump();
-      llvm::errs() << "\nend no match\n";
-      ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
-      if (!ErrNode)
-        return;
-      llvm::SmallString<128> Str;
-      llvm::raw_svector_ostream OS(Str);
-      OS << "std::any " << AnyMemRegion->getDescriptiveName() << " held a(n) " << TypeStored->getAsString() << " not a(n) " << TypeOut.getAsString();
-      auto R = std::make_unique<PathSensitiveBugReport>(
-        BadAnyType, OS.str(), ErrNode);
-      C.emitReport(std::move(R));  
+    ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+    if (!ErrNode)
       return;
-    } else {
-      llvm::errs() << "matches\n";
-      Call.dump();
-      llvm::errs() << "\nend match\n";
-
-    }
+    llvm::SmallString<128> Str;
+    llvm::raw_svector_ostream OS(Str);
+    OS << "std::any " << AnyMemRegion->getDescriptiveName() << " held a(n) " << TypeStored->getAsString() << " not a(n) " << TypeOut.getAsString();
+    auto R = std::make_unique<PathSensitiveBugReport>(
+      BadAnyType, OS.str(), ErrNode);
+    C.emitReport(std::move(R));  
+    return;
   }
-
 };
 
 

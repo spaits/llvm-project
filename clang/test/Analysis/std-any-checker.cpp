@@ -10,6 +10,16 @@ class DummyClass{
   void foo(){};
 };
 
+void nonInlined(std::any &a);
+void nonInlinedConst(const std::any & a);
+
+void inlined(std::any &a) {
+  a = 5;
+}
+
+using any_t = std::any;
+using any_tt = any_t;
+
 
 //----------------------------------------------------------------------------//
 // std::any_cast
@@ -38,10 +48,6 @@ void pointerHeld() {
   (void*)c;
 }
 
-
-
-
-
 //----------------------------------------------------------------------------//
 // Null type
 //----------------------------------------------------------------------------//
@@ -63,10 +69,64 @@ void reset() {
 // Typedefs
 //----------------------------------------------------------------------------//
 
+void typedefedAny () {
+  any_t a = 5;
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
+}
+
+void typedefedTypedefedAny () {
+  any_tt a = 5;
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
+}
+
 //----------------------------------------------------------------------------//
 // Constructors and assignemnets
 //----------------------------------------------------------------------------//
 
+void assignemntOp () {
+  std::any a;
+  a = 5;
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a);
+  (void*)i;
+  (void*)c;
+
+}
+
 //----------------------------------------------------------------------------//
 // Function calls
 //----------------------------------------------------------------------------//
+
+void nonInlinedRefCall() {
+  std::any a = 5;
+  nonInlined(a);
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a);
+  (void*)i;
+  (void*)c;
+}
+
+void nonInlinedConstRefCall() {
+  std::any a = 5;
+  nonInlinedConst(a);
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
+}
+
+void inlinedCall() {
+  std::any a = 'c';
+  inlined(a);
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
+
+}
