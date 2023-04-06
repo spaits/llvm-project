@@ -1,4 +1,4 @@
-//===- StdAnyChecker.cpp -------------------------------------*- C++ -*-==//
+//===- StdAnyChecker.cpp -------------------------------------*- C++ -*----===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -45,15 +45,12 @@ class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
   BugType NullAnyType{this, "NullAnyType", "NullAnyType"};
   
   public:
-
-
-ProgramStateRef
-    checkRegionChanges(ProgramStateRef State,
-                       const InvalidatedSymbols *Invalidated,
-                       ArrayRef<const MemRegion *> ExplicitRegions,
-                       ArrayRef<const MemRegion *> Regions,
-                       const LocationContext *LCtx,
-                       const CallEvent *Call) const {
+  ProgramStateRef checkRegionChanges(ProgramStateRef State,
+                                    const InvalidatedSymbols *Invalidated,
+                                    ArrayRef<const MemRegion *> ExplicitRegions,
+                                    ArrayRef<const MemRegion *> Regions,
+                                    const LocationContext *LCtx,
+                                    const CallEvent *Call) const {
     if (!Call) {
       return State;
     }
@@ -82,19 +79,32 @@ ProgramStateRef
       handleAnyCastCall(Call, C);
       return;
     }
+    
+    if (AnyReset.matches(Call)) {
+      auto AsMemberCall = dyn_cast<CXXMemberCall>(&Call);
+      if (!AsMemberCall) {
+        return;
+      }
+      auto ThisMemRegion = AsMemberCall->getCXXThisVal().getAsRegion();
+      if(!ThisMemRegion) {
+        return;
+      }
+      setNullTypeAny(ThisMemRegion, C);
+      return;
+    }
 
-    bool isAnyConstructor = isa<CXXConstructorCall>(Call) &&
+    bool IsAnyConstructor = isa<CXXConstructorCall>(Call) &&
                                           AnyConstructorCall.matches(Call);
-    bool isAnyAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
+    bool IsAnyAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
                                                       AnyAsOp.matches(Call);
 
-    if (isAnyConstructor || isAnyAssignmentOperatorCall) {
+    if (IsAnyConstructor || IsAnyAssignmentOperatorCall) {
       auto State = C.getState();
       SVal ThisSVal = [&]() {
-        if (isAnyConstructor) {
+        if (IsAnyConstructor) {
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
-        } else if (isAnyAssignmentOperatorCall) {
+        } else if (IsAnyAssignmentOperatorCall) {
           auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
           return AsMemberOpCall->getCXXThisVal();
         } else {
@@ -103,9 +113,10 @@ ProgramStateRef
         }
       }();
 
-      
-      auto ThisMemRegion = ThisSVal.getAsRegion();
+      // default constructor call
+      // in this case the any holds a null type
       if(Call.getNumArgs() == 0) {
+        auto ThisMemRegion = ThisSVal.getAsRegion();
         setNullTypeAny(ThisMemRegion, C);
         return;
       }
@@ -117,12 +128,6 @@ ProgramStateRef
       handleConstructorAndAssignment<AnyHeldMap>(Call, C, ThisSVal);
       return;
     }
-    
-    if (AnyReset.matches(Call)) {
-      auto ThisMemRegion = dyn_cast<CXXMemberCall>(&Call)->getCXXThisVal().getAsRegion();
-      setNullTypeAny(ThisMemRegion, C);
-      return;
-    }
   }
 
   private:
@@ -130,32 +135,6 @@ ProgramStateRef
     auto State = C.getState();
     State = State->set<AnyHeldMap>(Mem, QualType{});
     C.addTransition(State);
-  }
-  void handleConstructorAndAssignmnet(const CallEvent &Call,
-                                      CheckerContext &C,
-                                      const SVal &thisSVal) const {
-    auto State = Call.getState(); // check
-    auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
-    const Type* ArgTypePtr = argQType.getTypePtr();
-    auto ThisRegion = thisSVal.getAsRegion();
-
-    State = [&]() {if (isCopyConstructorCallEvent(Call) ||
-                                          isCopyAssignmentOperatorCall(Call)) {
-      auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-      if (!State->contains<AnyHeldMap>(ArgMemRegion)) // Think of the case when other is unknown
-        return IntrusiveRefCntPtr<const ProgramState>{}; //Prog state
-      auto OtherQType = State->get<AnyHeldMap>(ArgMemRegion);
-        return State->set<AnyHeldMap>(ThisRegion, *OtherQType);
-      } else {
-        auto WoPointer = ArgTypePtr->getPointeeType();
-        return State->set<AnyHeldMap>(ThisRegion, WoPointer);
-    }}();
-
-    if (State) {
-      C.addTransition(State);
-    } else {
-      C.addTransition(Call.getState()->remove<AnyHeldMap>(ThisRegion));
-    }
   }
 
   //this function name is terrible
@@ -165,9 +144,9 @@ ProgramStateRef
     if (Call.getNumArgs() != 1) {
       return;
     }
-    auto argSVal = Call.getArgSVal(0);
+    auto ArgSVal = Call.getArgSVal(0);
     //??
-    auto ArgType = argSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
+    auto ArgType = ArgSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
     if (!isStdAny(ArgType)) {
       return;
     }
@@ -177,9 +156,9 @@ ProgramStateRef
     if (FirstTemplateArgument.getKind() != TemplateArgument::ArgKind::Type) {
       return;
     }
-    auto TypeOut = FirstTemplateArgument.getAsType();
 
-    auto AnyMemRegion = argSVal.getAsRegion();
+    auto TypeOut = FirstTemplateArgument.getAsType();
+    auto AnyMemRegion = ArgSVal.getAsRegion();
 
     if (!State->contains<AnyHeldMap>(AnyMemRegion)) {
       return;
@@ -207,14 +186,18 @@ ProgramStateRef
       return;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << "std::any " << AnyMemRegion->getDescriptiveName() << " held a(n) " << TypeStored->getAsString() << " not a(n) " << TypeOut.getAsString();
+    OS << "std::any "
+       << AnyMemRegion->getDescriptiveName()
+       << " held a(n) "
+       << TypeStored->getAsString()
+       << " not a(n) "
+       << TypeOut.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(
       BadAnyType, OS.str(), ErrNode);
     C.emitReport(std::move(R));  
     return;
   }
 };
-
 
 bool clang::ento::shouldRegisterStdAnyChecker(
     clang::ento::CheckerManager const &mgr) {
