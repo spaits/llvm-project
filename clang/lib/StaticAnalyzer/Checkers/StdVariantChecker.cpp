@@ -222,13 +222,23 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
     const Type* ArgTypePtr = argQType.getTypePtr();
     auto ThisRegion = thisSVal.getAsRegion();
+    auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
 
     State = [&]() {if (isCopyConstructorCallEvent(Call) ||
                                           isCopyAssignmentOperatorCall(Call)) {
-      auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-      if (!State->contains<VariantHeldMap>(ArgMemRegion)) // Think of the case when other is unknown
-        return IntrusiveRefCntPtr<const ProgramState>{}; //Prog state
-      auto OtherQType = State->get<VariantHeldMap>(ArgMemRegion);
+        // if the argument of a copy constructor or assignment is unknown then
+        // we will not know the argument of the copied to object
+        if (!State->contains<VariantHeldMap>(ArgMemRegion)) {// Think of the case when other is unknown
+          return State->remove<VariantHeldMap>(ThisRegion);
+        } 
+        auto OtherQType = State->get<VariantHeldMap>(ArgMemRegion);
+        return State->set<VariantHeldMap>(ThisRegion, *OtherQType);
+      } else if(isMoveConstructorCall(Call) || isMoveAssignemntCall(Call)) {
+        if (!State->contains<VariantHeldMap>(ArgMemRegion)) {// Think of the case when other is unknown
+          return State->remove<VariantHeldMap>(ThisRegion);
+        }
+        auto OtherQType = State->get<VariantHeldMap>(ArgMemRegion);
+        State = State->remove<VariantHeldMap>(ArgMemRegion);
         return State->set<VariantHeldMap>(ThisRegion, *OtherQType);
       } else {
         auto WoPointer = ArgTypePtr->getPointeeType();
