@@ -16,18 +16,16 @@
 #include "llvm/ADT/FoldingSet.h"
 
 #include <string>
+#include "VariantLikeTypeModeling.h"
 
 using namespace clang;
 using namespace ento;
+using namespace variant_modeling;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
 
 
-bool isObjectOf(QualType t, QualType to) {
-  QualType canonicalTypeT = t.getCanonicalType();
-  QualType canonicalTypeTo = to.getCanonicalType();
-  return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
-}
+
 
 // Get the non pointer type behind any pointer type
 // For example if we have an int*** we get int
@@ -39,6 +37,15 @@ static const Type* getPointeeType (const QualType& qt) {
     NextType = Type.getTypePtr()->getPointeeType();
   }
   return Type.getTypePtr();
+}
+namespace clang {
+namespace ento {
+namespace variant_modeling {
+
+bool isObjectOf(QualType t, QualType to) {
+  QualType canonicalTypeT = t.getCanonicalType();
+  QualType canonicalTypeTo = to.getCanonicalType();
+  return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
 bool isCopyConstructorCallEvent (const CallEvent& Call) {
@@ -97,43 +104,17 @@ bool isMoveAssignemntCall(const CallEvent &Call) {
   return AsMethodDecl->isMoveAssignmentOperator();
 }
 
-template <class T>
-void handleConstructorAndAssignment(const CallEvent &Call,
-                                      CheckerContext &C,
-                                      const SVal &thisSVal) {
-    auto State = Call.getState(); // check
-    auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
-    const Type* ArgTypePtr = argQType.getTypePtr();
-    auto ThisRegion = thisSVal.getAsRegion();
-    auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
+  const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
+  const FunctionDecl* FD = CE->getDirectCallee();
+  assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
+              "std::get should have at least 1 template argument!");
+  return FD->getTemplateSpecializationArgs()->asArray()[0];
+}
 
-    State = [&]() {if (isCopyConstructorCallEvent(Call) ||
-                                          isCopyAssignmentOperatorCall(Call)) {
-        // if the argument of a copy constructor or assignment is unknown then
-        // we will not know the argument of the copied to object
-        if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
-          return State->remove<T>(ThisRegion);
-        } 
-        auto OtherQType = State->get<T>(ArgMemRegion);
-        return State->set<T>(ThisRegion, *OtherQType);
-      } else if(isMoveConstructorCall(Call) || isMoveAssignemntCall(Call)) {
-        if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
-          return State->remove<T>(ThisRegion);
-        }
-        auto OtherQType = State->get<T>(ArgMemRegion);
-        State = State->remove<T>(ArgMemRegion);
-        return State->set<T>(ThisRegion, *OtherQType);
-      } else {
-        auto WoPointer = ArgTypePtr->getPointeeType();
-        return State->set<T>(ThisRegion, WoPointer);
-    }}();
 
-    if (State) {
-      C.addTransition(State);
-    } else {
-      C.addTransition(Call.getState()->remove<T>(ThisRegion));
-    }
-  }
+}}}
+
 
 
 
@@ -154,13 +135,6 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
   return TempSpecType->template_arguments();
 }
 
-const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
-  const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
-  const FunctionDecl* FD = CE->getDirectCallee();
-  assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
-              "std::get should have at least 1 template argument!");
-  return FD->getTemplateSpecializationArgs()->asArray()[0];
-}
 
 static QualType getNthTmplateTypeArgFromVariant
                                             (const Type* varType, unsigned i) {
