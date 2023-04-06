@@ -52,6 +52,8 @@ static bool isStdAny(const Type *Type) {
 
 const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
 bool isObjectOf(QualType t, QualType to);
+bool isCopyConstructorCallEvent (const CallEvent& Call);
+bool isCopyAssignmentOperatorCall(const CallEvent& Call);
 
 class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
   CallDescription AnyConstructorCall{{"std", "any"}};
@@ -76,14 +78,12 @@ ProgramStateRef
       return State;
     }
 
-    //if (Call->isInSystemHeader()) {
-    //  return State;
-    //}
+    if (Call->isInSystemHeader()) {
+      return State;
+    }
 
     for (auto currentMemRegion : Regions) {
       if (State->contains<AnyHeldMap>(currentMemRegion)) {
-//        llvm::errs() << "\nInvalidating\n";
-//        Call->dump();
         State = State->remove<AnyHeldMap>(currentMemRegion);
       }
     }
@@ -99,11 +99,9 @@ ProgramStateRef
     }
     
     if (AnyCast.matches(Call)) {
-      handleAnyCall(Call, C);
+      handleAnyCastCall(Call, C);
       return;
     }
-    
-
 
     bool isAnyConstructor = isa<CXXConstructorCall>(Call) &&
                                           AnyConstructorCall.matches(Call);
@@ -125,8 +123,9 @@ ProgramStateRef
         }
       }();
 
+      
       auto ThisMemRegion = ThisSVal.getAsRegion();
-      if(isAnyConstructor && Call.getNumArgs() == 0) {
+      if(Call.getNumArgs() == 0) {
         setNullTypeAny(ThisMemRegion, C);
         return;
       }
@@ -135,12 +134,14 @@ ProgramStateRef
         return;
       }
 
+      handleConstructorAndAssignmnet(Call, C, ThisSVal);
+      /*
       auto ArgSVal = Call.getArgSVal(0);
       auto ArgQType = ArgSVal.getType(C.getASTContext()); 
       auto ArgQTypeWoPtr = ArgQType.getTypePtr()->getPointeeType();
       ArgQType.removeLocalFastQualifiers();
       State = State->set<AnyHeldMap>(ThisMemRegion, ArgQTypeWoPtr);
-      C.addTransition(State);
+      C.addTransition(State); */
       return;
     }
     
@@ -149,9 +150,6 @@ ProgramStateRef
       setNullTypeAny(ThisMemRegion, C);
       return;
     }
-    //if (AnyConstructorCall.matches(Call)) {
-    //    llvm::errs() << "Any ctor call found\n";
-    //}
   }
 
   private:
@@ -160,9 +158,35 @@ ProgramStateRef
     State = State->set<AnyHeldMap>(Mem, QualType{});
     C.addTransition(State);
   }
+  void handleConstructorAndAssignmnet(const CallEvent &Call,
+                                      CheckerContext &C,
+                                      const SVal &thisSVal) const {
+    auto State = Call.getState(); // check
+    auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
+    const Type* ArgTypePtr = argQType.getTypePtr();
+    auto ThisRegion = thisSVal.getAsRegion();
+
+    State = [&]() {if (isCopyConstructorCallEvent(Call) ||
+                                          isCopyAssignmentOperatorCall(Call)) {
+      auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+      if (!State->contains<AnyHeldMap>(ArgMemRegion)) // Think of the case when other is unknown
+        return IntrusiveRefCntPtr<const ProgramState>{}; //Prog state
+      auto OtherQType = State->get<AnyHeldMap>(ArgMemRegion);
+        return State->set<AnyHeldMap>(ThisRegion, *OtherQType);
+      } else {
+        auto WoPointer = ArgTypePtr->getPointeeType();
+        return State->set<AnyHeldMap>(ThisRegion, WoPointer);
+    }}();
+
+    if (State) {
+      C.addTransition(State);
+    } else {
+      C.addTransition(Call.getState()->remove<AnyHeldMap>(ThisRegion));
+    }
+  }
 
   //this function name is terrible
-  void handleAnyCall(const CallEvent &Call, CheckerContext &C) const {
+  void handleAnyCastCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = C.getState();
 
     if (Call.getNumArgs() != 1) {

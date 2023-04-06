@@ -40,7 +40,7 @@ static const Type* getPointeeType (const QualType& qt) {
   return Type.getTypePtr();
 }
 
-static bool isCopyConstructorCallEvent (const CallEvent& Call) {
+bool isCopyConstructorCallEvent (const CallEvent& Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
     return false;
@@ -52,7 +52,7 @@ static bool isCopyConstructorCallEvent (const CallEvent& Call) {
   return ConstructorDecl->isCopyConstructor();
 }
 
-static bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
+bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
   auto CopyAssignmentCall = dyn_cast<CXXMemberOperatorCall>(&Call);
   if (!CopyAssignmentCall) {
     return false;

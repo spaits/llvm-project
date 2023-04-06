@@ -96,7 +96,35 @@ void assignemntOp () {
   char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
   (void*)i;
   (void*)c;
+}
 
+void constructor() {
+  std::any a(5);
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
+}
+
+void copyCtor() {
+  std::any a(5);
+  std::any b(a);
+  int i = std::any_cast<int>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
+}
+
+void copyAssignment() {
+  std::any a = 5;
+  std::any b = 'c';
+  char c = std::any_cast<char>(b);
+  (void*)c;
+  b = a;
+  int i = std::any_cast<int>(b);
+  c = std::any_cast<char>(b); // expected-warning {{std::any 'b' held a(n) int not a(n) char}}
+  (void*)i;
+  (void*)c;
 }
 
 //----------------------------------------------------------------------------//
@@ -128,5 +156,4 @@ void inlinedCall() {
   char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
   (void*)i;
   (void*)c;
-
 }
