@@ -10,8 +10,6 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/FoldingSet.h"
 
-
-
 namespace clang {
 namespace ento {
 namespace variant_modeling {
@@ -22,6 +20,7 @@ bool isCopyConstructorCallEvent (const CallEvent& Call);
 bool isCopyAssignmentOperatorCall(const CallEvent& Call);
 bool isMoveAssignemntCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
+CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 
 template <class T>
 void handleConstructorAndAssignment(const CallEvent &Call,
@@ -60,9 +59,6 @@ void handleConstructorAndAssignment(const CallEvent &Call,
       C.addTransition(Call.getState()->remove<T>(ThisRegion));
     }
 }
-
-
-
 
 } //namespace variant_modeling
 } //namespace ento

@@ -24,24 +24,7 @@ using namespace variant_modeling;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, QualType)
 
-auto getCaller(const CallEvent &Call, CheckerContext &C) {
-  auto CallLocationContext = Call.getLocationContext();
-  if (!CallLocationContext) {
-    return CallEventRef<CallEvent>(nullptr); 
-  }
 
-  if (CallLocationContext->inTopFrame()) {
-    return CallEventRef<CallEvent>(nullptr); 
-  }
-  auto CallStackFrameContext = CallLocationContext->getStackFrame();
-  if (!CallStackFrameContext) {
-    return CallEventRef<CallEvent>(nullptr);
-  }
-
-  CallEventManager &CEMgr = C.getState()->getStateManager().getCallEventManager();
-  return CEMgr.getCaller(CallStackFrameContext, C.getState());
-
-}
 
 static bool isStdAny(const Type *Type) {
   auto Decl = Type->getAsRecordDecl();

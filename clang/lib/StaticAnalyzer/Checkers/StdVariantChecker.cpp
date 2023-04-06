@@ -39,6 +39,24 @@ namespace clang {
 namespace ento {
 namespace variant_modeling {
 
+CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C) {
+  auto CallLocationContext = Call.getLocationContext();
+  if (!CallLocationContext) {
+    return CallEventRef<>(nullptr); 
+  }
+
+  if (CallLocationContext->inTopFrame()) {
+    return CallEventRef<>(nullptr); 
+  }
+  auto CallStackFrameContext = CallLocationContext->getStackFrame();
+  if (!CallStackFrameContext) {
+    return CallEventRef<>(nullptr);
+  }
+
+  CallEventManager &CEMgr = C.getState()->getStateManager().getCallEventManager();
+  return CEMgr.getCaller(CallStackFrameContext, C.getState());
+}
+
 bool isObjectOf(QualType t, QualType to) {
   QualType canonicalTypeT = t.getCanonicalType();
   QualType canonicalTypeTo = to.getCanonicalType();
@@ -163,6 +181,12 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+    auto Caller = getCaller(Call, C);
+    if (Caller) {
+      if (Caller->isInSystemHeader()) {
+        return;
+      }
+    }
     if (StdGet.matches(Call)) {
       handleStdGetCall(Call, C);
       return;
