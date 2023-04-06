@@ -24,9 +24,6 @@ using namespace variant_modeling;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
 
-
-
-
 // Get the non pointer type behind any pointer type
 // For example if we have an int*** we get int
 static const Type* getPointeeType (const QualType& qt) {
@@ -111,18 +108,14 @@ const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
               "std::get should have at least 1 template argument!");
   return FD->getTemplateSpecializationArgs()->asArray()[0];
 }
-
-
 }}}
-
-
-
 
 static bool isStdVariant(const Type *Type) {
   auto Decl = Type->getAsRecordDecl();
   if (!Decl) {
     return false;
-  } 
+  }
+
   return (Decl->getNameAsString() == std::string("variant"))
           && Decl->isInStdNamespace();
 }
@@ -134,14 +127,10 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
       && "We are in a variant instance. It must be a template specialization!");
   return TempSpecType->template_arguments();
 }
-
-
 static QualType getNthTmplateTypeArgFromVariant
                                             (const Type* varType, unsigned i) {
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
-
-
 
 class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
@@ -150,7 +139,6 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
-  
   ProgramStateRef
     checkRegionChanges(ProgramStateRef State,
                        const InvalidatedSymbols *Invalidated,
@@ -174,7 +162,6 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     return State;
   }
 
-  
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
     if (StdGet.matches(Call)) {
       handleStdGetCall(Call, C);
@@ -223,7 +210,8 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     auto MemRegion = ThisSVal.getAsRegion();
     if (!MemRegion) {
       return;
-    } 
+    }
+
     State = State->set<VariantHeldMap>(MemRegion,
           getNthTmplateTypeArgFromVariant(getPointeeType
                                       (ThisSVal.getType(C.getASTContext())),0));
@@ -235,7 +223,6 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     auto TypeOut = getFirstTemplateArgument(Call);
     auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
                                       getPointeeType().getTypePtr();
-    
     if (!isStdVariant(ArgType)) {
       return;
     }
@@ -244,7 +231,7 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     auto TypeStored = State->get<VariantHeldMap>(ArgMemRegion);
     if (!TypeStored) {
       return;
-    } 
+    }
 
     auto GetType = [&]() {
     switch (TypeOut.getKind()) {
@@ -273,7 +260,7 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
        << " not a(n) " << GetType.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(
       VariantCreated, OS.str(), ErrNode);
-    C.emitReport(std::move(R));  
+    C.emitReport(std::move(R));
   }
 };
 
