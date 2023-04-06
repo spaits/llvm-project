@@ -22,6 +22,25 @@ using namespace ento;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, QualType)
 
+auto getCaller(const CallEvent &Call, CheckerContext &C) {
+  auto CallLocationContext = Call.getLocationContext();
+  if (!CallLocationContext) {
+    return CallEventRef<CallEvent>(nullptr); 
+  }
+
+  if (CallLocationContext->inTopFrame()) {
+    return CallEventRef<CallEvent>(nullptr); 
+  }
+  auto CallStackFrameContext = CallLocationContext->getStackFrame();
+  if (!CallStackFrameContext) {
+    return CallEventRef<CallEvent>(nullptr);
+  }
+
+  CallEventManager &CEMgr = C.getState()->getStateManager().getCallEventManager();
+  return CEMgr.getCaller(CallStackFrameContext, C.getState());
+
+}
+
 static bool isStdAny(const Type *Type) {
   auto Decl = Type->getAsRecordDecl();
   if (!Decl) {
@@ -72,16 +91,19 @@ ProgramStateRef
   }
 
   void checkPreCall(const CallEvent& Call, CheckerContext& C) const {
+    auto Caller = getCaller(Call, C);
+    if (Caller) {
+      if (Caller->isInSystemHeader()) {
+        return;
+      }
+    }
+    
     if (AnyCast.matches(Call)) {
       handleAnyCall(Call, C);
       return;
     }
-    if (AnyReset.matches(Call)) {
-      llvm::errs() << "reset found\n";
-      auto ThisMemRegion = dyn_cast<CXXMemberCall>(&Call)->getCXXThisVal().getAsRegion();
-      setNullTypeAny(ThisMemRegion, C);
-      return;
-    }
+    
+
 
     bool isAnyConstructor = isa<CXXConstructorCall>(Call) &&
                                           AnyConstructorCall.matches(Call);
@@ -90,13 +112,11 @@ ProgramStateRef
 
     if (isAnyConstructor || isAnyAssignmentOperatorCall) {
       auto State = C.getState();
-      llvm::errs() << "Any ctor w value\n";
       SVal ThisSVal = [&]() {
         if (isAnyConstructor) {
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
         } else if (isAnyAssignmentOperatorCall) {
-          llvm::errs() << "ASOP\n";
           auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
           return AsMemberOpCall->getCXXThisVal();
         } else {
@@ -107,10 +127,6 @@ ProgramStateRef
 
       auto ThisMemRegion = ThisSVal.getAsRegion();
       if(isAnyConstructor && Call.getNumArgs() == 0) {
-        llvm::errs() << '\n';
-        Call.dump();
-        llvm::errs() << '\n';
-        //removeAnyFromState(ThisMemRegion, C);
         setNullTypeAny(ThisMemRegion, C);
         return;
       }
@@ -123,11 +139,16 @@ ProgramStateRef
       auto ArgQType = ArgSVal.getType(C.getASTContext()); 
       auto ArgQTypeWoPtr = ArgQType.getTypePtr()->getPointeeType();
       ArgQType.removeLocalFastQualifiers();
-      llvm::errs() << "Type assigned is: " << ArgQType.getAsString() << " " << ArgQTypeWoPtr.getAsString() << "\n";
       State = State->set<AnyHeldMap>(ThisMemRegion, ArgQTypeWoPtr);
       C.addTransition(State);
+      return;
     }
-
+    
+    if (AnyReset.matches(Call)) {
+      auto ThisMemRegion = dyn_cast<CXXMemberCall>(&Call)->getCXXThisVal().getAsRegion();
+      setNullTypeAny(ThisMemRegion, C);
+      return;
+    }
     //if (AnyConstructorCall.matches(Call)) {
     //    llvm::errs() << "Any ctor call found\n";
     //}
@@ -148,7 +169,6 @@ ProgramStateRef
       return;
     }
     auto argSVal = Call.getArgSVal(0);
-    llvm::errs() << "AnyCall: " << argSVal.getType(C.getASTContext()).getAsString() << '\n';
     //??
     auto ArgType = argSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
     if (!isStdAny(ArgType)) {
@@ -169,7 +189,6 @@ ProgramStateRef
     }
     auto TypeStored = State->get<AnyHeldMap>(AnyMemRegion);
     if(TypeStored->isNull()) {
-      llvm::errs() << "Any was not initilaized\n";
       ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
       if (!ErrNode)
         return;

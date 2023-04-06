@@ -93,7 +93,7 @@ void assignemntOp () {
   std::any a;
   a = 5;
   int i = std::any_cast<int>(a);
-  char c = std::any_cast<char>(a);
+  char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
   (void*)i;
   (void*)c;
 
