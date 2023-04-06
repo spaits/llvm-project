@@ -5,6 +5,8 @@
 
 #include <variant>
 
+class Foo{};
+
 //helper functions
 void changeVariantType(std::variant<int, char> &v) {
   v = 25;
@@ -64,6 +66,30 @@ void stdGetType() {
   char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
+}
+
+void stdGetPointer() {
+  std::variant<int*, char> v = new int;
+  int *a = std::get<int*>(v);
+  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) char}}
+  (void**)a;
+  (void*)c;
+}
+
+void stdGetObject() {
+  std::variant<int, char, Foo> v = Foo{};
+  Foo f = std::get<Foo>(v);
+  int i = std::get<int>(v); // expected-warning {{variant 'v' held a(n) Foo not a(n) int}}
+  (void*)i;
+}
+
+void stdGetPointerAndPointee() {
+  int a = 5;
+  std::variant<int, int*> v = &a;
+  int *b = std::get<int*>(v);
+  int c = std::get<int>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) int}}
+  (void*)c;
+  (void**)b;
 }
 
 //----------------------------------------------------------------------------//

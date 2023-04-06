@@ -21,6 +21,13 @@ using namespace clang;
 using namespace ento;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
+static int ite = 0;
+
+static bool isObjectOf(QualType t, QualType to) {
+  QualType canonicalTypeT = t.getCanonicalType();
+  QualType canonicalTypeTo = to.getCanonicalType();
+  return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
+}
 
 // Get the non pointer type behind any pointer type
 // For example if we have an int*** we get int
@@ -265,8 +272,7 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     "An std::get's first template argument can only be a type or an integral");
     }}();
 
-    bool matches = GetType == *TypeStored;
-    if (matches) {
+    if (GetType == *TypeStored || isObjectOf(GetType, *TypeStored)) {
       return;
     }
 
