@@ -32,6 +32,7 @@ static bool isStdAny(const Type *Type) {
 }
 
 const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
+bool isObjectOf(QualType t, QualType to);
 
 class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
   CallDescription AnyConstructorCall{{"std", "any"}};
@@ -135,6 +136,7 @@ ProgramStateRef
     C.addTransition(State);
   }
 
+  //this function name is terrible
   void handleAnyCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = C.getState();
 
@@ -173,6 +175,10 @@ ProgramStateRef
       auto R = std::make_unique<PathSensitiveBugReport>(
         NullAnyType, OS.str(), ErrNode);
       C.emitReport(std::move(R));  
+      return;
+    }
+
+    if (*TypeStored == TypeOut || isObjectOf(TypeOut, *TypeStored)) {
       return;
     }
 

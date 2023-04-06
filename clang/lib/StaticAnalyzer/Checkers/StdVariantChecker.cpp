@@ -21,9 +21,8 @@ using namespace clang;
 using namespace ento;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
-static int ite = 0;
 
-static bool isObjectOf(QualType t, QualType to) {
+bool isObjectOf(QualType t, QualType to) {
   QualType canonicalTypeT = t.getCanonicalType();
   QualType canonicalTypeTo = to.getCanonicalType();
   return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
@@ -114,7 +113,7 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
   return TempSpecType->template_arguments();
 }
 
-static const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
+const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
   const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
   const FunctionDecl* FD = CE->getDirectCallee();
   assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
@@ -227,7 +226,7 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
     State = [&]() {if (isCopyConstructorCallEvent(Call) ||
                                           isCopyAssignmentOperatorCall(Call)) {
       auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-      if (!State->contains<VariantHeldMap>(ArgMemRegion))
+      if (!State->contains<VariantHeldMap>(ArgMemRegion)) // Think of the case when other is unknown
         return IntrusiveRefCntPtr<const ProgramState>{}; //Prog state
       auto OtherQType = State->get<VariantHeldMap>(ArgMemRegion);
         return State->set<VariantHeldMap>(ThisRegion, *OtherQType);
