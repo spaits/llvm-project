@@ -150,13 +150,76 @@ static QualType getNthTmplateTypeArgFromVariant
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
 
-class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
+class StdVariantChecker : public Checker<check::PreCall,
+                                         check::RegionChanges,
+                                         check::PostStmt<BinaryOperator>> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}};
   BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
 
   public:
+  void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
+    if (!BinOp->isAssignmentOp()) {
+      return;
+    }
+    llvm::errs() << "\n As Op Beg\n";
+    BinOp->dump();
+    llvm::errs() << "\n As Op End\n";
+    auto RHSExpr = BinOp->getRHS();
+    if (!RHSExpr) {
+      return;
+    }
+
+    llvm::errs() <<"\n RHS:\n";
+    RHSExpr->dump();
+    llvm::errs() << '\n';
+    auto RHSCall = dyn_cast<CallExpr>(RHSExpr);
+    auto RHSCast = dyn_cast<CastExpr>(RHSExpr);
+    while (!RHSCall && RHSCast) {
+      auto SubExpr = RHSCast->getSubExpr();
+      if (!SubExpr) {
+        return;
+      }
+      RHSCall = dyn_cast<CallExpr>(SubExpr);
+    }
+    if (!RHSCall) {
+      llvm::errs() << "\nnot a call\n";
+      return;
+    }
+    if (!StdGet.matchesAsWritten(*RHSCall)) {
+      return;
+    }
+    llvm::errs() << "\ngetting there\n";
+    llvm::errs() << RHSCall->getNumArgs() << '\n';
+    if (RHSCall->getNumArgs() != 1) {
+      return;
+    }
+    
+    auto Arg = RHSCall->getArg(0);
+    if (!Arg) {
+      llvm::errs() << "Can not get arg\n";
+      return;
+    }
+    Arg->dump();
+    auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
+    auto VDecl = dyn_cast<VarDecl>(ArgDeclRef->getDecl());
+    llvm::errs() << "\nVDecl\n";
+    VDecl->dump();
+    llvm::errs() << "\nVDecl\n";
+
+
+    auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
+    llvm::errs() << "\nArg Sval type\n" << ArgSVal.getType(C.getASTContext()).getAsString() << '\n';
+    ArgSVal.dump();
+    auto ArgMemRegion = ArgSVal.getAsRegion();
+    if (ArgMemRegion) {
+      llvm::errs() << "\nmem reg found\n";
+    } else {
+      llvm::errs() << "\n not mem\n";
+    }
+  }
+
   ProgramStateRef
     checkRegionChanges(ProgramStateRef State,
                        const InvalidatedSymbols *Invalidated,
@@ -187,6 +250,7 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
         return;
       }
     }
+
     if (StdGet.matches(Call)) {
       handleStdGetCall(Call, C);
       return;
@@ -245,6 +309,9 @@ class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges> {
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = Call.getState();
     auto TypeOut = getFirstTemplateArgument(Call);
+    llvm::errs() << "\n Callevent arg expr\n";
+    Call.getArgExpr(0)->dump();
+    llvm::errs() << "\n end \n";
     auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
                                       getPointeeType().getTypePtr();
     if (!isStdVariant(ArgType)) {

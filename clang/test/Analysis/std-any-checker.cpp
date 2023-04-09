@@ -86,7 +86,7 @@ void typedefedTypedefedAny () {
 }
 
 //----------------------------------------------------------------------------//
-// Constructors and assignemnets
+// Constructors and assignments
 //----------------------------------------------------------------------------//
 
 void assignemntOp () {
