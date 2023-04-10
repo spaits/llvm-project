@@ -23,6 +23,7 @@ using namespace ento;
 using namespace variant_modeling;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(AnyMap, const MemRegion*, SVal)
 
 
 
@@ -125,7 +126,7 @@ class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
         return;
       }
 
-      handleConstructorAndAssignment<AnyHeldMap>(Call, C, ThisSVal);
+      handleConstructorAndAssignment<AnyHeldMap, AnyMap>(Call, C, ThisSVal);
       return;
     }
   }

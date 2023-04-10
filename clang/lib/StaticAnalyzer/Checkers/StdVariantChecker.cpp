@@ -23,6 +23,7 @@ using namespace ento;
 using namespace variant_modeling;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantMap, const MemRegion*, SVal)
 
 // Get the non pointer type behind any pointer type
 // For example if we have an int*** we get int
@@ -217,6 +218,18 @@ class StdVariantChecker : public Checker<check::PreCall,
       llvm::errs() << "\nmem reg found\n";
     } else {
       llvm::errs() << "\n not mem\n";
+      return;
+    }
+    llvm::errs() << "\nSVal\n";
+    auto State = C.getState();
+    llvm::errs() << "\n";
+    State->dump();
+    llvm::errs() << "\n";
+    auto SValGet = State->get<VariantMap>(ArgMemRegion);
+    if (SValGet) {
+      llvm::errs() << "\nGood news\n";
+      SValGet->dump();
+      llvm::errs() << "\naaa\n";
     }
   }
 
@@ -280,7 +293,7 @@ class StdVariantChecker : public Checker<check::PreCall,
                           "We must have an assignment operator or constructor");
         }
       }();
-      handleConstructorAndAssignment<VariantHeldMap>(Call, C, thisSVal);
+      handleConstructorAndAssignment<VariantHeldMap, VariantMap>(Call, C, thisSVal);
       return;
     }
   }
@@ -309,9 +322,6 @@ class StdVariantChecker : public Checker<check::PreCall,
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = Call.getState();
     auto TypeOut = getFirstTemplateArgument(Call);
-    llvm::errs() << "\n Callevent arg expr\n";
-    Call.getArgExpr(0)->dump();
-    llvm::errs() << "\n end \n";
     auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
                                       getPointeeType().getTypePtr();
     if (!isStdVariant(ArgType)) {

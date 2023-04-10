@@ -22,7 +22,7 @@ bool isMoveAssignemntCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 
-template <class T>
+template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call,
                                       CheckerContext &C,
                                       const SVal &thisSVal) {
@@ -30,6 +30,18 @@ void handleConstructorAndAssignment(const CallEvent &Call,
     auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
     const Type* ArgTypePtr = argQType.getTypePtr();
     auto ThisRegion = thisSVal.getAsRegion();
+    auto ArgSVal = Call.getArgSVal(0);
+    llvm::errs() << "\n";
+    ArgSVal.dump();
+    llvm::errs() << "\n";
+    auto AsMemRegSVal = dyn_cast<Loc>(ArgSVal);
+    if (!AsMemRegSVal) {
+      llvm::errs() << "\nNot Loc\n";
+    } else {
+      llvm::errs() << "\nGood\n";
+      ArgSVal = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegSVal);
+    }
+
     auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
 
     State = [&]() {if (isCopyConstructorCallEvent(Call) ||
@@ -40,6 +52,8 @@ void handleConstructorAndAssignment(const CallEvent &Call,
           return State->remove<T>(ThisRegion);
         } 
         auto OtherQType = State->get<T>(ArgMemRegion);
+        auto OtherSVal = State->get<U>(ArgMemRegion);
+        State = State->set<U>(ThisRegion, *OtherSVal);
         return State->set<T>(ThisRegion, *OtherQType);
       } else if(isMoveConstructorCall(Call) || isMoveAssignemntCall(Call)) {
         if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
@@ -50,6 +64,7 @@ void handleConstructorAndAssignment(const CallEvent &Call,
         return State->set<T>(ThisRegion, *OtherQType);
       } else {
         auto WoPointer = ArgTypePtr->getPointeeType();
+        State = State->set<U>(ThisRegion, ArgSVal);
         return State->set<T>(ThisRegion, WoPointer);
     }}();
 
