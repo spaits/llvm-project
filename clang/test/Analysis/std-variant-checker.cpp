@@ -159,10 +159,12 @@ void pointerTypeHeld() {
 
 int idk() {return 5;}
 void justToSee () {
-  std::variant<int, char> v = 25;
+  std::variant<int, char> v = 0;
   int jts = idk();
   jts = idk();
   jts = std::get<int>(v);
+  int res = 5/jts;
+
 }
 
 //----------------------------------------------------------------------------//

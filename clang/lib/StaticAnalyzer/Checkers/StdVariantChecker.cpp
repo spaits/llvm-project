@@ -127,7 +127,9 @@ const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
               "std::get should have at least 1 template argument!");
   return FD->getTemplateSpecializationArgs()->asArray()[0];
 }
-}}}
+} // end of namespace variant_modeling
+} // end of namespace ento
+} // end of namespace clang
 
 static bool isStdVariant(const Type *Type) {
   auto Decl = Type->getAsRecordDecl();
@@ -161,20 +163,16 @@ class StdVariantChecker : public Checker<check::PreCall,
 
   public:
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
+  
     if (!BinOp->isAssignmentOp()) {
       return;
     }
-    llvm::errs() << "\n As Op Beg\n";
-    BinOp->dump();
-    llvm::errs() << "\n As Op End\n";
+
     auto RHSExpr = BinOp->getRHS();
     if (!RHSExpr) {
       return;
     }
 
-    llvm::errs() <<"\n RHS:\n";
-    RHSExpr->dump();
-    llvm::errs() << '\n';
     auto RHSCall = dyn_cast<CallExpr>(RHSExpr);
     auto RHSCast = dyn_cast<CastExpr>(RHSExpr);
     while (!RHSCall && RHSCast) {
@@ -184,18 +182,22 @@ class StdVariantChecker : public Checker<check::PreCall,
       }
       RHSCall = dyn_cast<CallExpr>(SubExpr);
     }
+
     if (!RHSCall) {
-      llvm::errs() << "\nnot a call\n";
       return;
     }
+
     if (!StdGet.matchesAsWritten(*RHSCall)) {
       return;
     }
-    llvm::errs() << "\ngetting there\n";
-    llvm::errs() << RHSCall->getNumArgs() << '\n';
+
+    
     if (RHSCall->getNumArgs() != 1) {
       return;
     }
+    // We know that at this point we assign value to the LValue on the left from
+    // and std::variant
+
     
     auto Arg = RHSCall->getArg(0);
     if (!Arg) {
@@ -231,6 +233,32 @@ class StdVariantChecker : public Checker<check::PreCall,
       SValGet->dump();
       llvm::errs() << "\naaa\n";
     }
+
+    auto LeftHandExpr = BinOp->getLHS();
+    llvm::errs() << "\nlhs\n";
+    LeftHandExpr->dump();
+    llvm::errs() << '\n';
+    auto LHSSVal = C.getSVal(LeftHandExpr);
+    llvm::errs() << "\nLeft hand\n";
+    LHSSVal.dump();
+    llvm::errs() << "\n";
+    auto LHSLoc = dyn_cast<Loc>(LHSSVal);
+    if (!LHSLoc) {
+      llvm::errs() << "\nPls\n";
+      return;
+    }
+    State = State->killBinding(*LHSLoc);
+    llvm::errs() << "\nState no bindState\n";
+    State->dump();
+    llvm::errs() << '\n';
+
+
+    State = State->bindLoc(*LHSLoc, *SValGet, C.getLocationContext());
+    llvm::errs() << "\nNew State\n";
+    State->dump();
+    llvm::errs() << '\n';
+
+    C.addTransition(State);
   }
 
   ProgramStateRef
