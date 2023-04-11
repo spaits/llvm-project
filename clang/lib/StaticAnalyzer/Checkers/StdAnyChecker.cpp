@@ -36,7 +36,9 @@ static bool isStdAny(const Type *Type) {
           && Decl->isInStdNamespace();
 }
 
-class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
+class StdAnyChecker : public Checker<check::PreCall,
+                                     check::RegionChanges,
+                                     check::PostStmt<BinaryOperator>> {
   CallDescription AnyConstructorCall{{"std", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
   CallDescription AnyReset{{"std", "any", "reset"}};
@@ -46,6 +48,10 @@ class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges> {
   BugType NullAnyType{this, "NullAnyType", "NullAnyType"};
   
   public:
+  void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
+    bindFromVariant<AnyMap>(BinOp, C, AnyCast);
+  }
+
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
                                     const InvalidatedSymbols *Invalidated,
                                     ArrayRef<const MemRegion *> ExplicitRegions,
