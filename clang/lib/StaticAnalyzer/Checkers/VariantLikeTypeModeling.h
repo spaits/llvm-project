@@ -79,54 +79,54 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallD
   llvm::errs() << "\nVDecl\n";
 
 
-    auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
-    llvm::errs() << "\nArg Sval type\n" << ArgSVal.getType(C.getASTContext()).getAsString() << '\n';
-    ArgSVal.dump();
-    auto ArgMemRegion = ArgSVal.getAsRegion();
-    if (ArgMemRegion) {
-      llvm::errs() << "\nmem reg found\n";
-    } else {
-      llvm::errs() << "\n not mem\n";
-      return;
-    }
-    llvm::errs() << "\nSVal\n";
-    auto State = C.getState();
-    llvm::errs() << "\n";
-    State->dump();
-    llvm::errs() << "\n";
-    //add check if
-    auto SValGet = State->get<T>(ArgMemRegion);
-    if (SValGet) {
-      llvm::errs() << "\nGood news\n";
-      SValGet->dump();
-      llvm::errs() << "\naaa\n";
-    }
+  auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
+  llvm::errs() << "\nArg Sval type\n" << ArgSVal.getType(C.getASTContext()).getAsString() << '\n';
+  ArgSVal.dump();
+  auto ArgMemRegion = ArgSVal.getAsRegion();
+  if (ArgMemRegion) {
+    llvm::errs() << "\nmem reg found\n";
+  } else {
+    llvm::errs() << "\n not mem\n";
+    return;
+  }
+  llvm::errs() << "\nSVal\n";
+  auto State = C.getState();
+  llvm::errs() << "\n";
+  State->dump();
+  llvm::errs() << "\n";
+  //add check if
+  auto SValGet = State->get<T>(ArgMemRegion);
+  if (SValGet) {
+    llvm::errs() << "\nGood news\n";
+    SValGet->dump();
+    llvm::errs() << "\naaa\n";
+  }
 
-    auto LeftHandExpr = BinOp->getLHS();
-    llvm::errs() << "\nlhs\n";
-    LeftHandExpr->dump();
-    llvm::errs() << '\n';
-    auto LHSSVal = C.getSVal(LeftHandExpr);
-    llvm::errs() << "\nLeft hand\n";
-    LHSSVal.dump();
-    llvm::errs() << "\n";
-    auto LHSLoc = dyn_cast<Loc>(LHSSVal);
-    if (!LHSLoc) {
-      llvm::errs() << "\nPls\n";
-      return;
-    }
-    State = State->killBinding(*LHSLoc);
-    llvm::errs() << "\nState no bindState\n";
-    State->dump();
-    llvm::errs() << '\n';
+  auto LeftHandExpr = BinOp->getLHS();
+  llvm::errs() << "\nlhs\n";
+  LeftHandExpr->dump();
+  llvm::errs() << '\n';
+  auto LHSSVal = C.getSVal(LeftHandExpr);
+  llvm::errs() << "\nLeft hand\n";
+  LHSSVal.dump();
+  llvm::errs() << "\n";
+  auto LHSLoc = dyn_cast<Loc>(LHSSVal);
+  if (!LHSLoc) {
+    llvm::errs() << "\nPls\n";
+    return;
+  }
+  State = State->killBinding(*LHSLoc);
+  llvm::errs() << "\nState no bindState\n";
+  State->dump();
+  llvm::errs() << '\n';
 
 
-    State = State->bindLoc(*LHSLoc, *SValGet, C.getLocationContext());
-    llvm::errs() << "\nNew State\n";
-    State->dump();
-    llvm::errs() << '\n';
+  State = State->bindLoc(*LHSLoc, *SValGet, C.getLocationContext());
+  llvm::errs() << "\nNew State\n";
+  State->dump();
+  llvm::errs() << '\n';
 
-    C.addTransition(State);
+  C.addTransition(State);
 }
 
 template <class T, class U>

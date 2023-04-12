@@ -25,17 +25,7 @@ using namespace variant_modeling;
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantMap, const MemRegion*, SVal)
 
-// Get the non pointer type behind any pointer type
-// For example if we have an int*** we get int
-static const Type* getPointeeType (const QualType& qt) {
-  QualType Type = qt;
-  QualType NextType = qt.getTypePtr()->getPointeeType();
-  while (!NextType.isNull()) {
-    Type = NextType;
-    NextType = Type.getTypePtr()->getPointeeType();
-  }
-  return Type.getTypePtr();
-}
+
 namespace clang {
 namespace ento {
 namespace variant_modeling {
@@ -150,7 +140,17 @@ bool isStdAny(const Type *Type) {
 } // end of namespace ento
 } // end of namespace clang
 
-
+// Get the non pointer type behind any pointer type
+// For example if we have an int*** we get int
+static const Type* getPointeeType (const QualType& qt) {
+  QualType Type = qt;
+  QualType NextType = qt.getTypePtr()->getPointeeType();
+  while (!NextType.isNull()) {
+    Type = NextType;
+    NextType = Type.getTypePtr()->getPointeeType();
+  }
+  return Type.getTypePtr();
+}
 
 static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
                                                     (const Type* VariantType) {
@@ -159,6 +159,7 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
       && "We are in a variant instance. It must be a template specialization!");
   return TempSpecType->template_arguments();
 }
+
 static QualType getNthTmplateTypeArgFromVariant
                                             (const Type* varType, unsigned i) {
   return getTemplateArgsFromVariant(varType)[i].getAsType();
