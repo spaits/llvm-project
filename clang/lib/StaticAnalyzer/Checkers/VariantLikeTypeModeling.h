@@ -24,6 +24,7 @@ CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 
 template <class T>
 void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallDescription &StdGet) {
+  llvm::errs() << "Bin op ok\n";
   if (!BinOp->isAssignmentOp()) {
     return;
   }
@@ -41,6 +42,7 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallD
       return;
     }
     RHSCall = dyn_cast<CallExpr>(SubExpr);
+    RHSCast = dyn_cast<CastExpr>(SubExpr);
   }
 
   if (!RHSCall) {
@@ -50,6 +52,7 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallD
   if (!StdGet.matchesAsWritten(*RHSCall)) {
     return;
   }
+  llvm::errs() << "matches\n";
     
   if (RHSCall->getNumArgs() != 1) {
     return;
@@ -59,16 +62,16 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallD
 
     
   auto Arg = RHSCall->getArg(0);
-    if (!Arg) {
-      llvm::errs() << "Can not get arg\n";
-      return;
-    }
-    Arg->dump();
-    auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
-    auto VDecl = dyn_cast<VarDecl>(ArgDeclRef->getDecl());
-    llvm::errs() << "\nVDecl\n";
-    VDecl->dump();
-    llvm::errs() << "\nVDecl\n";
+  if (!Arg) {
+    llvm::errs() << "Can not get arg\n";
+    return;
+  }
+  Arg->dump();
+  auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
+  auto VDecl = dyn_cast<VarDecl>(ArgDeclRef->getDecl());
+  llvm::errs() << "\nVDecl\n";
+  VDecl->dump();
+  llvm::errs() << "\nVDecl\n";
 
 
     auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
