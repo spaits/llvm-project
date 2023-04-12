@@ -33,8 +33,8 @@ class StdAnyChecker : public Checker<check::PreCall,
   CallDescription AnyAsOp{{"std", "any", "operator="}};
   CallDescription AnyReset{{"std", "any", "reset"}};
   CallDescription AnyCast{{"std", "any_cast"}};
-  BugType BadAnyType{this, "BadAnyType", "BadAnyType"};
 
+  BugType BadAnyType{this, "BadAnyType", "BadAnyType"};
   BugType NullAnyType{this, "NullAnyType", "NullAnyType"};
   
   public:
@@ -128,6 +128,8 @@ class StdAnyChecker : public Checker<check::PreCall,
   }
 
   private:
+  // When an std::any is rested or default constructed it has a null type.
+  // We represent it by storing a null QualType.
   void setNullTypeAny(const MemRegion *Mem, CheckerContext &C) const {
     auto State = C.getState();
     State = State->set<AnyHeldMap>(Mem, QualType{});
@@ -138,11 +140,14 @@ class StdAnyChecker : public Checker<check::PreCall,
   void handleAnyCastCall(const CallEvent &Call, CheckerContext &C) const {
     auto State = C.getState();
 
+    // std::any_cast should have only one template argument
     if (Call.getNumArgs() != 1) {
       return;
     }
     auto ArgSVal = Call.getArgSVal(0);
-    //??
+
+    //The argument is aether a const reference or a right value reference
+    // We need the type referred
     auto ArgType = ArgSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr();
     if (!isStdAny(ArgType)) {
       return;
@@ -160,7 +165,10 @@ class StdAnyChecker : public Checker<check::PreCall,
     if (!State->contains<AnyHeldMap>(AnyMemRegion)) {
       return;
     }
+
     auto TypeStored = State->get<AnyHeldMap>(AnyMemRegion);
+
+    // Report when we try to use std::any_cast on an std::any that held a null type
     if(TypeStored->isNull()) {
       ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
       if (!ErrNode)
@@ -178,6 +186,7 @@ class StdAnyChecker : public Checker<check::PreCall,
       return;
     }
 
+    // Report when the type we want to get out of std::any is wrong
     ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
     if (!ErrNode)
       return;

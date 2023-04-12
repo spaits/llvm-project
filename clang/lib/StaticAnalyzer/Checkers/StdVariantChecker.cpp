@@ -30,6 +30,9 @@ namespace clang {
 namespace ento {
 namespace variant_modeling {
 
+// Returns the CallEvent representing the caller of the function
+// It is needed because the CallEvent class does not cantain enough information
+// to tell who called it. Checker context is needed
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C) {
   auto CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
@@ -48,12 +51,19 @@ CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C) {
   return CEMgr.getCaller(CallStackFrameContext, C.getState());
 }
 
+// When we try to get out an object type of an (lets call the class Foo from
+// which the object was made from) std::variant we find that
+// the std::get<Foo>s template parameters QualType is 'class Foo', while
+// when we get the QualType of the right hand site of
+// std::variant<Foo, int> = Foo{} it is just 'Foo' the reason for that is
+//TODO
 bool isObjectOf(QualType t, QualType to) {
   QualType canonicalTypeT = t.getCanonicalType();
   QualType canonicalTypeTo = to.getCanonicalType();
   return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
+// Check if a CallEvent represents a copy constructor by checking wether it
 bool isCopyConstructorCallEvent (const CallEvent& Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
@@ -178,13 +188,12 @@ class StdVariantChecker : public Checker<check::PreCall,
     bindFromVariant<VariantMap>(BinOp, C, StdGet);
   }
 
-  ProgramStateRef
-    checkRegionChanges(ProgramStateRef State,
-                       const InvalidatedSymbols *Invalidated,
-                       ArrayRef<const MemRegion *> ExplicitRegions,
-                       ArrayRef<const MemRegion *> Regions,
-                       const LocationContext *LCtx,
-                       const CallEvent *Call) const {
+  ProgramStateRef checkRegionChanges(ProgramStateRef State,
+                                     const InvalidatedSymbols *,
+                                     ArrayRef<const MemRegion *>,
+                                     ArrayRef<const MemRegion *> Regions,
+                                     const LocationContext *,
+                                     const CallEvent *Call) const {
     if (!Call) {
       return State;
     }
@@ -202,6 +211,8 @@ class StdVariantChecker : public Checker<check::PreCall,
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+    // Check if the call was not made from a system header. If it was then
+    // we do an early return because it is part of the implementation
     auto Caller = getCaller(Call, C);
     if (Caller) {
       if (Caller->isInSystemHeader()) {
@@ -226,6 +237,7 @@ class StdVariantChecker : public Checker<check::PreCall,
       }
       if (Call.getNumArgs() != 1)
         return;
+      // Maybe create a template class
       SVal thisSVal = [&]() {
         if (IsVariantConstructor) {
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
@@ -244,9 +256,12 @@ class StdVariantChecker : public Checker<check::PreCall,
   }
 
   private:
+  // The default constructed std::variant must be handled separately
+  // by default the std::variant is going to hold a default constructed instance
+  // of the first type of the possible types
   void handleDefaultConstructor(const CallEvent &Call,
                                 CheckerContext &C) const {
-    auto State = Call.getState();
+    ProgramStateRef State = Call.getState();
     auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
     if (!AsConstructorCall) {
       return;
@@ -258,15 +273,22 @@ class StdVariantChecker : public Checker<check::PreCall,
       return;
     }
 
-    State = State->set<VariantHeldMap>(MemRegion,
-          getNthTmplateTypeArgFromVariant(getPointeeType
-                                      (ThisSVal.getType(C.getASTContext())),0));
+    // Getting the first type from the possible types list
+    QualType DefaultType = getNthTmplateTypeArgFromVariant(getPointeeType
+                                      (ThisSVal.getType(C.getASTContext())),0);
+
+    State = State->set<VariantHeldMap>(MemRegion, DefaultType);
     C.addTransition(State);
   }
 
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
-    auto State = Call.getState();
+    ProgramStateRef State = Call.getState();
+    // std::get has 1 + n template arguments, where n is number of types
+    // that the variants typelist has that we are std::get with.
+    // When people use std::get they usually do not think about it because the
+    // the other types are deduced. {REALLY?????}
     auto TypeOut = getFirstTemplateArgument(Call);
+
     auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
                                       getPointeeType().getTypePtr();
     if (!isStdVariant(ArgType)) {
@@ -279,23 +301,32 @@ class StdVariantChecker : public Checker<check::PreCall,
       return;
     }
 
+    // std::gets first template parameter can be the type we want to get
+    // out of the std::variant or a natural number which is the position of
+    // the wished type in the argument std::variants type list.
     auto GetType = [&]() {
-    switch (TypeOut.getKind()) {
-      case TemplateArgument::ArgKind::Type:
-        return TypeOut.getAsType();
-      case TemplateArgument::ArgKind::Integral:
-        return getNthTmplateTypeArgFromVariant(
-          ArgType,
-          TypeOut.getAsIntegral().getSExtValue());
-      default:
-        llvm_unreachable(
+      switch (TypeOut.getKind()) {
+        case TemplateArgument::ArgKind::Type:
+          return TypeOut.getAsType();
+        case TemplateArgument::ArgKind::Integral:
+          // In the natural number case we look up which type corresponds to the
+          // number.
+          return getNthTmplateTypeArgFromVariant(
+            ArgType,
+            TypeOut.getAsIntegral().getSExtValue());
+        default:
+          llvm_unreachable(
     "An std::get's first template argument can only be a type or an integral");
     }}();
 
+    // Here we must treat object types specially. It is described why by
+    // the definition of isObjectOf
     if (GetType == *TypeStored || isObjectOf(GetType, *TypeStored)) {
       return;
     }
 
+    // If the types do not match we create a sink node. The analysis will
+    // not continue on this path. [REALLY??????]
     ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
     if (!ErrNode)
       return;

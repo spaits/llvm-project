@@ -157,16 +157,6 @@ void pointerTypeHeld() {
   (void*)c;
 }
 
-int idk() {return 5;}
-void justToSee () {
-  std::variant<int, char> v = 0;
-  int jts = idk();
-  jts = idk();
-  jts = std::get<int>(v);
-  int res = 5/jts;
-
-}
-
 //----------------------------------------------------------------------------//
 // typedef
 //----------------------------------------------------------------------------//
