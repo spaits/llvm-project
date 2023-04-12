@@ -102,50 +102,49 @@ template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call,
                                       CheckerContext &C,
                                       const SVal &thisSVal) {
-    auto State = Call.getState(); // check
-    auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
-    const Type* ArgTypePtr = argQType.getTypePtr();
-    auto ThisRegion = thisSVal.getAsRegion();
-    auto ArgSVal = Call.getArgSVal(0);
-    llvm::errs() << "\n";
-    ArgSVal.dump();
-    llvm::errs() << "\n";
-    auto AsMemRegSVal = dyn_cast<Loc>(ArgSVal);
-    if (AsMemRegSVal) {
-      ArgSVal = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegSVal);
-    }
+  ProgramStateRef State = Call.getState(); // check
+  auto argQType = Call.getArgSVal(0).getType(C.getASTContext());
+  const Type* ArgTypePtr = argQType.getTypePtr();
+  auto ThisRegion = thisSVal.getAsRegion();
+  auto ArgSVal = Call.getArgSVal(0);
+  auto AsMemRegSVal = dyn_cast<Loc>(ArgSVal);
 
-    auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+  if (AsMemRegSVal) {
+    ArgSVal = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegSVal);
+  }
 
-    State = [&]() {if (isCopyConstructorCallEvent(Call) ||
+  auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+
+  State = [&]() {
+    if (isCopyConstructorCallEvent(Call) ||
                                           isCopyAssignmentOperatorCall(Call)) {
-        // if the argument of a copy constructor or assignment is unknown then
-        // we will not know the argument of the copied to object
-        if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
-          return State->remove<T>(ThisRegion);
-        } 
-        auto OtherQType = State->get<T>(ArgMemRegion);
-        auto OtherSVal = State->get<U>(ArgMemRegion);
-        State = State->set<U>(ThisRegion, *OtherSVal);
-        return State->set<T>(ThisRegion, *OtherQType);
-      } else if(isMoveConstructorCall(Call) || isMoveAssignemntCall(Call)) {
-        if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
-          return State->remove<T>(ThisRegion);
-        }
-        auto OtherQType = State->get<T>(ArgMemRegion);
-        State = State->remove<T>(ArgMemRegion);
-        return State->set<T>(ThisRegion, *OtherQType);
-      } else {
-        auto WoPointer = ArgTypePtr->getPointeeType();
-        State = State->set<U>(ThisRegion, ArgSVal);
-        return State->set<T>(ThisRegion, WoPointer);
-    }}();
-
-    if (State) {
-      C.addTransition(State);
+      // if the argument of a copy constructor or assignment is unknown then
+      // we will not know the argument of the copied to object
+      if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
+        return State->remove<T>(ThisRegion);
+      }  
+      auto OtherQType = State->get<T>(ArgMemRegion);
+      auto OtherSVal = State->get<U>(ArgMemRegion);
+      State = State->set<U>(ThisRegion, *OtherSVal);
+      return State->set<T>(ThisRegion, *OtherQType);
+    } else if(isMoveConstructorCall(Call) || isMoveAssignemntCall(Call)) {
+      if (!State->contains<T>(ArgMemRegion)) {// Think of the case when other is unknown
+        return State->remove<T>(ThisRegion);
+      }
+      auto OtherQType = State->get<T>(ArgMemRegion);
+      State = State->remove<T>(ArgMemRegion);
+      return State->set<T>(ThisRegion, *OtherQType);
     } else {
-      C.addTransition(Call.getState()->remove<T>(ThisRegion));
-    }
+      auto WoPointer = ArgTypePtr->getPointeeType();
+      State = State->set<U>(ThisRegion, ArgSVal);
+      return State->set<T>(ThisRegion, WoPointer);
+  }}();
+
+  if (State) {
+    C.addTransition(State);
+  } else {
+    C.addTransition(Call.getState()->remove<T>(ThisRegion));
+  }
 }
 
 } //namespace variant_modeling
