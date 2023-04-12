@@ -21,6 +21,9 @@ bool isCopyAssignmentOperatorCall(const CallEvent& Call);
 bool isMoveAssignemntCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
+bool isStdType(const Type *Type, const std::string &TypeName);
+bool isStdVariant(const Type *Type);
+bool isStdAny(const Type *Type);
 
 template <class T>
 void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallDescription &StdGet) {
@@ -30,6 +33,7 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallD
   }
 
   auto RHSExpr = BinOp->getRHS();
+
   if (!RHSExpr) {
     return;
   }
@@ -60,7 +64,8 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C, const CallD
   // We know that at this point we assign value to the LValue on the left from
   // and std::variant
 
-    
+  // what if we assign value to std::variant or std::any the map should still
+  // be updated  
   auto Arg = RHSCall->getArg(0);
   if (!Arg) {
     llvm::errs() << "Can not get arg\n";

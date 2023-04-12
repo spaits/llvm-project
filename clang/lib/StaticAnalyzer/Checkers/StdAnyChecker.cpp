@@ -26,16 +26,6 @@ REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, QualType)
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyMap, const MemRegion*, SVal)
 
 
-
-static bool isStdAny(const Type *Type) {
-  auto Decl = Type->getAsRecordDecl();
-  if (!Decl) {
-    return false;
-  } 
-  return (Decl->getNameAsString() == std::string("any"))
-          && Decl->isInStdNamespace();
-}
-
 class StdAnyChecker : public Checker<check::PreCall,
                                      check::RegionChanges,
                                      check::PostStmt<BinaryOperator>> {

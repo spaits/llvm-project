@@ -127,19 +127,30 @@ const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
               "std::get should have at least 1 template argument!");
   return FD->getTemplateSpecializationArgs()->asArray()[0];
 }
-} // end of namespace variant_modeling
-} // end of namespace ento
-} // end of namespace clang
 
-static bool isStdVariant(const Type *Type) {
+bool isStdType(const Type *Type, const std::string &TypeName) {
   auto Decl = Type->getAsRecordDecl();
   if (!Decl) {
     return false;
   }
 
-  return (Decl->getNameAsString() == std::string("variant"))
+  return (Decl->getNameAsString() == TypeName)
           && Decl->isInStdNamespace();
 }
+
+bool isStdVariant(const Type *Type) {
+  return isStdType(Type, std::string("variant"));
+}
+
+bool isStdAny(const Type *Type) {
+  return isStdType(Type, std::string("any"));
+}
+
+} // end of namespace variant_modeling
+} // end of namespace ento
+} // end of namespace clang
+
+
 
 static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
                                                     (const Type* VariantType) {
