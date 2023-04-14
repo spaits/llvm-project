@@ -136,7 +136,9 @@ void handleConstructorAndAssignment(const CallEvent &Call,
       return State->set<T>(ThisRegion, *OtherQType);
     } else {
       auto WoPointer = ArgTypePtr->getPointeeType();
-      State = State->set<U>(ThisRegion, ArgSVal);
+      if (AsMemRegSVal) {
+        State = State->set<U>(ThisRegion, ArgSVal);
+      }
       return State->set<T>(ThisRegion, WoPointer);
   }}();
 
