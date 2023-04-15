@@ -46,6 +46,8 @@ void bindFromVariant(const BinaryOperator *BinOp,
     return;
   }
 
+  // If the right hand site expression is a cast then we want go get the casted
+  // expression.
   auto RHSCall = dyn_cast<CallExpr>(RHSExpr);
   auto RHSCast = dyn_cast<CastExpr>(RHSExpr);
   while (!RHSCall && RHSCast) {
@@ -64,7 +66,8 @@ void bindFromVariant(const BinaryOperator *BinOp,
   if (!StdGet.matchesAsWritten(*RHSCall)) {
     return;
   }
-    
+
+  //Both std::get and std::any_cast have one argument
   if (RHSCall->getNumArgs() != 1) {
     return;
   }
@@ -104,8 +107,12 @@ void bindFromVariant(const BinaryOperator *BinOp,
   if (!LHSLoc) {
     return;
   }
+
+  // Remove the original binding which was made by inlining the implementation
+  // of the class
   State = State->killBinding(*LHSLoc);
 
+  // Replace it with our non implementation dependent information
   State = State->bindLoc(*LHSLoc, *SValGet, C.getLocationContext());
 
   C.addTransition(State);
@@ -114,25 +121,19 @@ void bindFromVariant(const BinaryOperator *BinOp,
 template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call,
                                       CheckerContext &C,
-                                      const SVal &thisSVal) {
+                                      const SVal &ThisSVal) {
   ProgramStateRef State = Call.getState(); // check
 
-  auto ArgQType = Call.getArgSVal(0).getType(C.getASTContext());
-  const Type* ArgTypePtr = ArgQType.getTypePtr();
-  auto ThisRegion = thisSVal.getAsRegion();
   auto ArgSVal = Call.getArgSVal(0);
-  auto AsMemRegSVal = dyn_cast<Loc>(ArgSVal);
-
-  if (AsMemRegSVal) {
-    ArgSVal = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegSVal);
-  }
-
+  auto ThisRegion = ThisSVal.getAsRegion();
+  
   auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
 
   State = [&]() {
     bool IsCopy = isCopyConstructorCallEvent(Call) ||
                                           isCopyAssignmentOperatorCall(Call);
     bool IsMove = isMoveConstructorCall(Call) || isMoveAssignemntCall(Call);
+
     if (IsCopy || IsMove) {
       // If the argument of a copy constructor or assignment is unknown then
       // we will not know the argument of the copied to object.
@@ -153,9 +154,6 @@ void handleConstructorAndAssignment(const CallEvent &Call,
         return State->remove<U>(ThisRegion);
       }
 
-
-      // Get the information known abut the other object
-
       // When move semantics is used we can only know that the moved from
       // object must be in a destructible state. Other usage of the object
       // than destruction is undefined.
@@ -166,32 +164,21 @@ void handleConstructorAndAssignment(const CallEvent &Call,
       State = State->set<U>(ThisRegion, *OtherSVal);
       return State->set<T>(ThisRegion, *OtherQType);
     }
-    if (isCopyConstructorCallEvent(Call) ||
-                                          isCopyAssignmentOperatorCall(Call)) {
-      
+  auto ArgQType = ArgSVal.getType(C.getASTContext());
+  const Type* ArgTypePtr = ArgQType.getTypePtr();
 
-      // Get the QualType and SVal held by the other std::variant/std::any.
-      
-      // Set the QualType and SVal to the copied to object
-    } else if(isMoveConstructorCall(Call) || isMoveAssignemntCall(Call)) {
-      // Similarly to the copy constructor and assignment we have to check
-      // if we know information of the copied from std::variant/std::any.
-      if (!State->contains<T>(ArgMemRegion)) {
-        return State->remove<T>(ThisRegion);
-      }
+    auto AsMemRegLoc = dyn_cast<Loc>(ArgSVal);
 
-      auto OtherQType = State->get<T>(ArgMemRegion);
-      auto OtherSVal = State->get<U>(ArgMemRegion);
+    SVal ToStore;
 
-      State = State->set<U>(ThisRegion, *OtherSVal);
-      return State->set<T>(ThisRegion, *OtherQType);
-    } else {
-      auto WoPointer = ArgTypePtr->getPointeeType();
-      if (AsMemRegSVal) {
-        State = State->set<U>(ThisRegion, ArgSVal);
-      }
-      return State->set<T>(ThisRegion, WoPointer);
-  }}();
+    //if (AsMemRegLoc) {
+    ToStore = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
+    State = State->set<U>(ThisRegion, ToStore);
+    //}
+
+    QualType WoPointer = ArgTypePtr->getPointeeType();
+    return State->set<T>(ThisRegion, WoPointer);
+  }();
 
   if (State) {
     C.addTransition(State);

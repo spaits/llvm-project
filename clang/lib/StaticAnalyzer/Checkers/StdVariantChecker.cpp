@@ -181,7 +181,7 @@ class StdVariantChecker : public Checker<check::PreCall,
   CallDescription VariantConstructorCall{{"std", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}};
-  BugType VariantCreated{this, "VariantCreated", "VariantCreated"};
+  BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
   public:
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
@@ -336,7 +336,7 @@ class StdVariantChecker : public Checker<check::PreCall,
        << TypeStored->getAsString()
        << " not a(n) " << GetType.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(
-      VariantCreated, OS.str(), ErrNode);
+      BadVariantType, OS.str(), ErrNode);
     C.emitReport(std::move(R));
   }
 };
