@@ -5,6 +5,10 @@
 
 #include <any>
 
+void clang_analyzer_warnIfReached();
+void clang_analyzer_eval(int);
+
+
 class DummyClass{
   public:
   void foo(){};
@@ -156,4 +160,15 @@ void inlinedCall() {
   char c = std::any_cast<char>(a); // expected-warning {{std::any 'a' held a(n) int not a(n) char}}
   (void*)i;
   (void*)c;
+}
+
+// imp dep
+
+void valueHeld() {
+  std::any a = 0;
+  int i = std::any_cast<int>(a);
+  clang_analyzer_eval(0 == i); // expected-warning{{TRUE}}
+  int res = 5/i;
+  clang_analyzer_warnIfReached(); // no-warning
+  (void*)res;
 }

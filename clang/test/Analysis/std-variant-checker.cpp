@@ -7,6 +7,9 @@
 
 class Foo{};
 
+void clang_analyzer_warnIfReached();
+void clang_analyzer_eval(int);
+
 //helper functions
 void changeVariantType(std::variant<int, char> &v) {
   v = 25;
@@ -291,8 +294,8 @@ void inlineFunctionCall() {
 void nonInleneFunctionCall() {
   std::variant<int, char> v = 'c';
   changesToInt(v);
-  int a = std::get<int> (v);
-  char c = std::get<char> (v);
+  int a = std::get<int> (v); // no-waring
+  char c = std::get<char> (v); // no-warning
   (void*)a;
   (void*)c;
 }
@@ -300,8 +303,8 @@ void nonInleneFunctionCall() {
 void nonInleneFunctionCallPtr() {
   std::variant<int, char> v = 'c';
   changesToInt(&v);
-  int a = std::get<int> (v);
-  char c = std::get<char> (v);
+  int a = std::get<int> (v); // no-warning
+  char c = std::get<char> (v); // no-warning
   (void*)a;
   (void*)c;
 }
@@ -311,7 +314,9 @@ void nonInleneFunctionCallPtr() {
 void valueHeld() {
   std::variant<int, char> v = 0;
   int a = std::get<int>(v);
+  clang_analyzer_eval(0 == a); // expected-warning{{TRUE}}
   int div = 10/a; // we should report a divison by 0 here
+  clang_analyzer_warnIfReached(); // no-warning
   (void*)div;
   (void*)a;
 }
@@ -319,10 +324,8 @@ void valueHeld() {
 void stdGetIf() {
   std::variant<int, char> v = 'c';
   int* i = std::get_if<int>(&v);
+  clang_analyzer_eval(nullptr == i); // expected-warning{{TRUE}}
   (*i)++; //we should report a dereference of a null pointer here
+  clang_analyzer_warnIfReached(); // no-warning
   (void**)i;
 }
-
-//move constructor
-//move assignment
-// Temporary objects
