@@ -180,7 +180,7 @@ class StdVariantChecker : public Checker<check::PreCall,
                                          check::PostStmt<BinaryOperator>> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
-  CallDescription StdGet{{"std", "get"}};
+  CallDescription StdGet{{"std", "get"}, 1, 1};
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
   public:
@@ -291,6 +291,8 @@ class StdVariantChecker : public Checker<check::PreCall,
 
     auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
                                       getPointeeType().getTypePtr();
+    // We have to make sure that the argument is an std::variant.
+    // There is another std::get with std::pair argument
     if (!isStdVariant(ArgType)) {
       return;
     }

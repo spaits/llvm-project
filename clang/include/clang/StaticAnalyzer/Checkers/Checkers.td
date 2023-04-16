@@ -237,6 +237,14 @@ def NonnullGlobalConstantsChecker: Checker<"NonnilStringConstants">,
   Documentation<NotDocumented>,
   Hidden;
 
+def StdVariantChecker : Checker<"StdVariant">,
+  HelpText<"Check wether we access the right type stored in std::variant">,
+  Documentation<NotDocumented>;
+
+def StdAnyChecker : Checker<"StdAny">,
+  HelpText<"Check wether we access the right type stored in std::any">,
+  Documentation<NotDocumented>;
+
 } // end "core"
 
 let ParentPackage = CoreAlpha in {
@@ -305,13 +313,6 @@ def C11LockChecker : Checker<"C11Lock">,
   Dependencies<[PthreadLockBase]>,
   Documentation<HasDocumentation>;
 
-def StdVariantChecker : Checker<"StdVariant">,
-  HelpText<"Check std::variant">,
-  Documentation<NotDocumented>;
-
-def StdAnyChecker : Checker<"StdAny">,
-  HelpText<"Check std::any">,
-  Documentation<NotDocumented>;
 
 } // end "alpha.core"
 
