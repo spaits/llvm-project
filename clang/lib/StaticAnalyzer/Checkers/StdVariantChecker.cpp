@@ -34,7 +34,7 @@ namespace variant_modeling {
 // Returns the CallEvent representing the caller of the function
 // It is needed because the CallEvent class does not cantain enough information
 // to tell who called it. Checker context is needed
-CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C) {
+CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
   auto CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
     return nullptr; 
@@ -48,8 +48,8 @@ CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C) {
     return nullptr;
   }
 
-  CallEventManager &CEMgr = C.getState()->getStateManager().getCallEventManager();
-  return CEMgr.getCaller(CallStackFrameContext, C.getState());
+  CallEventManager &CEMgr = State->getStateManager().getCallEventManager();
+  return CEMgr.getCaller(CallStackFrameContext, State);
 }
 
 // When we try to get out an object type of an (lets call the class Foo from
@@ -146,15 +146,15 @@ bool isStdAny(const Type *Type) {
   return isStdType(Type, std::string("any"));
 }
 
-
-bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
-auto Caller = getCaller(Call, C);
-    if (Caller) {
-      if (Caller->isInSystemHeader()) {
-        return true;
-      }
-    }
+bool calledFromSystemHeader(const CallEvent &Call, const ProgramStateRef &State) {
+  auto Caller = getCaller(Call, State);
+  if (Caller) {
+    return Caller->isInSystemHeader();
+  }
   return false;
+}
+bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
+  return calledFromSystemHeader(Call, C.getState());
 }
 
 } // end of namespace variant_modeling
