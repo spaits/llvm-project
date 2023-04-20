@@ -22,8 +22,9 @@ using namespace clang;
 using namespace ento;
 using namespace variant_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, QualType)
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantMap, const MemRegion*, SVal)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion*, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, SVal)
+
 
 
 namespace clang {
@@ -36,15 +37,15 @@ namespace variant_modeling {
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C) {
   auto CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
-    return CallEventRef<>(nullptr); 
+    return nullptr; 
   }
 
   if (CallLocationContext->inTopFrame()) {
-    return CallEventRef<>(nullptr); 
+    return nullptr; 
   }
   auto CallStackFrameContext = CallLocationContext->getStackFrame();
   if (!CallStackFrameContext) {
-    return CallEventRef<>(nullptr);
+    return nullptr;
   }
 
   CallEventManager &CEMgr = C.getState()->getStateManager().getCallEventManager();
@@ -63,7 +64,6 @@ bool isObjectOf(QualType t, QualType to) {
   return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
-// Check if a CallEvent represents a copy constructor by checking wether it
 bool isCopyConstructorCallEvent (const CallEvent& Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
@@ -150,18 +150,6 @@ bool isStdAny(const Type *Type) {
 } // end of namespace ento
 } // end of namespace clang
 
-// Get the non pointer type behind any pointer type
-// For example if we have an int*** we get int
-static const Type* getPointeeType (const QualType& qt) {
-  QualType Type = qt;
-  QualType NextType = qt.getTypePtr()->getPointeeType();
-  while (!NextType.isNull()) {
-    Type = NextType;
-    NextType = Type.getTypePtr()->getPointeeType();
-  }
-  return Type.getTypePtr();
-}
-
 static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
                                                     (const Type* VariantType) {
   auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
@@ -179,13 +167,14 @@ class StdVariantChecker : public Checker<check::PreCall,
                                          check::RegionChanges,
                                          check::PostStmt<BinaryOperator>> {
   CallDescription VariantConstructorCall{{"std", "variant"}};
+  CallDescription VariantDestructorCall{{"std", "~variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}, 1, 1};
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
   public:
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
-    bindFromVariant<VariantMap>(BinOp, C, StdGet);
+    bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
@@ -194,17 +183,22 @@ class StdVariantChecker : public Checker<check::PreCall,
                                      ArrayRef<const MemRegion *> Regions,
                                      const LocationContext *,
                                      const CallEvent *Call) const {
+    // If we do not know anything about the call we shall not continue
     if (!Call) {
       return State;
     }
 
+    // If the call is coming from a system header it is implementation detail
+    // We should not take it into consideration
     if (Call->isInSystemHeader()) {
       return State;
     }
 
+    // Remove the information we know about the invalidate region
+    // It is not relevant anymore
     for (auto currentMemRegion : Regions) {
-      if (State->contains<VariantHeldMap>(currentMemRegion)) {
-        State = State->remove<VariantHeldMap>(currentMemRegion);
+      if (State->contains<VariantHeldTypeMap>(currentMemRegion)) {
+        State = State->remove<VariantHeldTypeMap>(currentMemRegion);
       }
     }
     return State;
@@ -250,7 +244,7 @@ class StdVariantChecker : public Checker<check::PreCall,
                           "We must have an assignment operator or constructor");
         }
       }();
-      handleConstructorAndAssignment<VariantHeldMap, VariantMap>(Call, C, thisSVal);
+      handleConstructorAndAssignment<VariantHeldTypeMap, VariantHeldMap>(Call, C, thisSVal);
       return;
     }
   }
@@ -261,23 +255,25 @@ class StdVariantChecker : public Checker<check::PreCall,
   // of the first type of the possible types
   void handleDefaultConstructor(const CallEvent &Call,
                                 CheckerContext &C) const {
+
     ProgramStateRef State = Call.getState();
     auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
     if (!AsConstructorCall) {
       return;
     }
 
-    auto ThisSVal = AsConstructorCall->getCXXThisVal();
-    auto MemRegion = ThisSVal.getAsRegion();
+    SVal ThisSVal = AsConstructorCall->getCXXThisVal();
+    const auto MemRegion = ThisSVal.getAsRegion();
+
     if (!MemRegion) {
       return;
     }
 
     // Getting the first type from the possible types list
-    QualType DefaultType = getNthTmplateTypeArgFromVariant(getPointeeType
-                                      (ThisSVal.getType(C.getASTContext())),0);
+    QualType DefaultType = getNthTmplateTypeArgFromVariant(
+                                      ThisSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr(),0);
 
-    State = State->set<VariantHeldMap>(MemRegion, DefaultType);
+    State = State->set<VariantHeldTypeMap>(MemRegion, DefaultType);
     C.addTransition(State);
   }
 
@@ -298,7 +294,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     }
 
     auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-    auto TypeStored = State->get<VariantHeldMap>(ArgMemRegion);
+    auto TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
     if (!TypeStored) {
       return;
     }
