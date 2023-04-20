@@ -146,6 +146,17 @@ bool isStdAny(const Type *Type) {
   return isStdType(Type, std::string("any"));
 }
 
+
+bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
+auto Caller = getCaller(Call, C);
+    if (Caller) {
+      if (Caller->isInSystemHeader()) {
+        return true;
+      }
+    }
+  return false;
+}
+
 } // end of namespace variant_modeling
 } // end of namespace ento
 } // end of namespace clang
@@ -207,11 +218,8 @@ class StdVariantChecker : public Checker<check::PreCall,
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
     // Check if the call was not made from a system header. If it was then
     // we do an early return because it is part of the implementation
-    auto Caller = getCaller(Call, C);
-    if (Caller) {
-      if (Caller->isInSystemHeader()) {
-        return;
-      }
+    if (calledFromSystemHeader(Call, C)) {
+      return;
     }
 
     if (StdGet.matches(Call)) {

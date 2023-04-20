@@ -35,6 +35,7 @@ CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
 bool isStdAny(const Type *Type);
+bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
 
 template <class T>
 

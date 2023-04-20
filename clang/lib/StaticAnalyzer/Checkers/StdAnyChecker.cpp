@@ -65,12 +65,11 @@ class StdAnyChecker : public Checker<check::PreCall,
   }
 
   void checkPreCall(const CallEvent& Call, CheckerContext& C) const {
-    auto Caller = getCaller(Call, C);
-    if (Caller) {
-      if (Caller->isInSystemHeader()) {
-        return;
-      }
+
+    if (calledFromSystemHeader(Call, C)) {
+      return;
     }
+    
     
     if (AnyCast.matches(Call)) {
       handleAnyCastCall(Call, C);
