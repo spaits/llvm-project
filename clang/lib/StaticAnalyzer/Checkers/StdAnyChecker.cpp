@@ -65,7 +65,7 @@ class StdAnyChecker : public Checker<check::PreCall,
   }
 
   void checkPreCall(const CallEvent& Call, CheckerContext& C) const {
-
+    // Do not take implementation details into consideration 
     if (calledFromSystemHeader(Call, C)) {
       return;
     }
