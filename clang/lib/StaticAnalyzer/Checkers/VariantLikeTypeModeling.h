@@ -135,14 +135,15 @@ void handleConstructorAndAssignment(const CallEvent &Call,
 
   auto ArgSVal = Call.getArgSVal(0);
   auto ThisRegion = ThisSVal.getAsRegion();
-  
-  auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+  auto ArgMemRegion = ArgSVal.getAsRegion();
 
+  // Make changes to the state according to type of constructor/assignment
   State = [&]() {
     bool IsCopy = isCopyConstructorCallEvent(Call) ||
                                           isCopyAssignmentOperatorCall(Call);
     bool IsMove = isMoveConstructorCall(Call) || isMoveAssignemntCall(Call);
 
+    // First we handle copy and move operations
     if (IsCopy || IsMove) {
       // If the argument of a copy constructor or assignment is unknown then
       // we will not know the argument of the copied to object.
@@ -153,37 +154,36 @@ void handleConstructorAndAssignment(const CallEvent &Call,
       if (OtherQTypeKnown) {
         OtherQType = State->get<T>(ArgMemRegion);
       } else {
-        return State->remove<T>(ThisRegion);
+        return State->contains<T>(ThisRegion) ? State->remove<T>(ThisRegion) : State;
       }
 
       const SVal *OtherSVal;
       if (OtherSValKnown) {
         OtherSVal =  State->get<U>(ArgMemRegion);
       } else {
-        return State->remove<U>(ThisRegion);
+        return State->contains<U>(ThisRegion) ? State->remove<U>(ThisRegion) : State;
       }
 
       // When move semantics is used we can only know that the moved from
       // object must be in a destructible state. Other usage of the object
       // than destruction is undefined.
       if (IsMove) {
-        State = State->remove<T>(ArgMemRegion);
-        State = State->remove<U>(ArgMemRegion);
+        State = State->contains<T>(ArgMemRegion) ? State->remove<T>(ArgMemRegion) : State;
+        State = State->contains<U>(ArgMemRegion) ? State->remove<U>(ArgMemRegion) : State;
       }
       State = State->set<U>(ThisRegion, *OtherSVal);
       return State->set<T>(ThisRegion, *OtherQType);
     }
-  auto ArgQType = ArgSVal.getType(C.getASTContext());
-  const Type* ArgTypePtr = ArgQType.getTypePtr();
-
+    // Then the other constructor/assignment where the argument is the new
+    // object held by the std::variant or std::any
+    auto ArgQType = ArgSVal.getType(C.getASTContext());
+    const Type* ArgTypePtr = ArgQType.getTypePtr();
     auto AsMemRegLoc = dyn_cast<Loc>(ArgSVal);
 
     SVal ToStore;
 
-    //if (AsMemRegLoc) {
     ToStore = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
     State = State->set<U>(ThisRegion, ToStore);
-    //}
 
     QualType WoPointer = ArgTypePtr->getPointeeType();
     return State->set<T>(ThisRegion, WoPointer);

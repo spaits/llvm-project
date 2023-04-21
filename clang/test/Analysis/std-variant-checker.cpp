@@ -136,6 +136,7 @@ void defaultConstructor() {
   (void*)c;
 }
 
+// Verify that we handle temporary objects correctly
 void temporaryObjectsConstructor() {
   std::variant<int, char> v(std::variant<int, char>('c'));
   char c = std::get<char>(v);
@@ -152,11 +153,36 @@ void temporaryObjectsAssignment() {
   (void*)c;
 }
 
+// Verify that we handle pointer types correctly
 void pointerTypeHeld() {
   std::variant<int*, char> v = new int;
   int *a = std::get<int*>(v);
   char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) char}}
   (void**)a;
+  (void*)c;
+}
+
+std::variant<int, char> get_unknown_variant();
+// Verify that the copy constructor is handles properly when the std::variant
+// has no previously activated type and we copy an object of unknown value in it.
+void copyFromUnknownVariant() {
+  std::variant<int, char> u = get_unknown_variant();
+  std::variant<int, char> v(u);
+  int a = std::get<int>(v); // no-waring
+  char c = std::get<char>(v); // no-warning
+  (void*)a;
+  (void*)c;
+}
+
+// Verify that the copy constructor is handles properly when the std::variant
+// has previously activated type and we copy an object of unknown value in it.
+void copyFromUnknownVariantBef() {
+  std::variant<int, char> v = 25;
+  std::variant<int, char> u = get_unknown_variant();
+  v = u;
+  int a = std::get<int>(v); // no-waring
+  char c = std::get<char>(v); // no-warning
+  (void*)a;
   (void*)c;
 }
 
