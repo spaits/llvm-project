@@ -64,7 +64,7 @@ bool isObjectOf(QualType t, QualType to) {
   return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
-bool isCopyConstructorCallEvent (const CallEvent& Call) {
+bool isCopyConstructorCallEvent(const CallEvent& Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
     return false;
@@ -153,6 +153,7 @@ bool calledFromSystemHeader(const CallEvent &Call, const ProgramStateRef &State)
   }
   return false;
 }
+
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
   return calledFromSystemHeader(Call, C.getState());
 }
@@ -169,7 +170,7 @@ static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
   return TempSpecType->template_arguments();
 }
 
-static QualType getNthTmplateTypeArgFromVariant
+static QualType getNthTemplateTypeArgFromVariant
                                             (const Type* varType, unsigned i) {
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
@@ -177,8 +178,7 @@ static QualType getNthTmplateTypeArgFromVariant
 class StdVariantChecker : public Checker<check::PreCall,
                                          check::RegionChanges,
                                          check::PostStmt<BinaryOperator>> {
-  CallDescription VariantConstructorCall{{"std", "variant"}};
-  CallDescription VariantDestructorCall{{"std", "~variant"}};
+  CallDescription VariantConstructorCall{{"std", "variant", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}, 1, 1};
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
@@ -264,23 +264,25 @@ class StdVariantChecker : public Checker<check::PreCall,
   void handleDefaultConstructor(const CallEvent &Call,
                                 CheckerContext &C) const {
 
-    ProgramStateRef State = Call.getState();
+
     auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
-    if (!AsConstructorCall) {
-      return;
-    }
+    assert(AsConstructorCall && "A constructor call must be passed!");
 
+    // Get the memory region of the constructed std::variant
     SVal ThisSVal = AsConstructorCall->getCXXThisVal();
-    const auto MemRegion = ThisSVal.getAsRegion();
 
+    const auto MemRegion = ThisSVal.getAsRegion();
     if (!MemRegion) {
       return;
     }
 
     // Getting the first type from the possible types list
-    QualType DefaultType = getNthTmplateTypeArgFromVariant(
+    QualType DefaultType = getNthTemplateTypeArgFromVariant(
                                       ThisSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr(),0);
 
+
+    // Update the state for the default constructed std::variant
+    ProgramStateRef State = Call.getState();
     State = State->set<VariantHeldTypeMap>(MemRegion, DefaultType);
     C.addTransition(State);
   }
@@ -317,7 +319,7 @@ class StdVariantChecker : public Checker<check::PreCall,
         case TemplateArgument::ArgKind::Integral:
           // In the natural number case we look up which type corresponds to the
           // number.
-          return getNthTmplateTypeArgFromVariant(
+          return getNthTemplateTypeArgFromVariant(
             ArgType,
             TypeOut.getAsIntegral().getSExtValue());
         default:
