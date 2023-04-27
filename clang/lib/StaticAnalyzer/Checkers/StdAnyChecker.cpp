@@ -29,7 +29,7 @@ REGISTER_MAP_WITH_PROGRAMSTATE(AnyMap, const MemRegion*, SVal)
 class StdAnyChecker : public Checker<check::PreCall,
                                      check::RegionChanges,
                                      check::PostStmt<BinaryOperator>> {
-  CallDescription AnyConstructorCall{{"std", "any"}};
+  CallDescription AnyConstructor{{"std", "any", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
   CallDescription AnyReset{{"std", "any", "reset"}};
   CallDescription AnyCast{{"std", "any_cast"}};
@@ -70,7 +70,6 @@ class StdAnyChecker : public Checker<check::PreCall,
       return;
     }
     
-    
     if (AnyCast.matches(Call)) {
       handleAnyCastCall(Call, C);
       return;
@@ -90,7 +89,7 @@ class StdAnyChecker : public Checker<check::PreCall,
     }
 
     bool IsAnyConstructor = isa<CXXConstructorCall>(Call) &&
-                                          AnyConstructorCall.matches(Call);
+                                          AnyConstructor.matches(Call);
     bool IsAnyAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
                                                       AnyAsOp.matches(Call);
 
@@ -151,7 +150,12 @@ class StdAnyChecker : public Checker<check::PreCall,
     if (!isStdAny(ArgType)) {
       return;
     }
-
+    
+    auto AnyMemRegion = ArgSVal.getAsRegion();
+    
+    if (!State->contains<AnyHeldMap>(AnyMemRegion)) {
+      return;
+    }
     // get the type we are trying to get from any
     auto FirstTemplateArgument = getFirstTemplateArgument(Call);
     if (FirstTemplateArgument.getKind() != TemplateArgument::ArgKind::Type) {
@@ -159,12 +163,6 @@ class StdAnyChecker : public Checker<check::PreCall,
     }
 
     auto TypeOut = FirstTemplateArgument.getAsType();
-    auto AnyMemRegion = ArgSVal.getAsRegion();
-
-    if (!State->contains<AnyHeldMap>(AnyMemRegion)) {
-      return;
-    }
-
     auto TypeStored = State->get<AnyHeldMap>(AnyMemRegion);
 
     // Report when we try to use std::any_cast on an std::any that held a null type
@@ -181,6 +179,8 @@ class StdAnyChecker : public Checker<check::PreCall,
       return;
     }
 
+    // Check if the right type is being accessed
+    // There is spacial case for object types.
     if (*TypeStored == TypeOut || isObjectOf(TypeOut, *TypeStored)) {
       return;
     }

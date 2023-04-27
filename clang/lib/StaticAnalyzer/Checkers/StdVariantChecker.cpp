@@ -178,7 +178,7 @@ static QualType getNthTemplateTypeArgFromVariant
 class StdVariantChecker : public Checker<check::PreCall,
                                          check::RegionChanges,
                                          check::PostStmt<BinaryOperator>> {
-  CallDescription VariantConstructorCall{{"std", "variant", "variant"}};
+  CallDescription VariantConstructor{{"std", "variant", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}, 1, 1};
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
@@ -228,7 +228,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     }
 
     bool IsVariantConstructor = isa<CXXConstructorCall>(Call) &&
-                                          VariantConstructorCall.matches(Call);
+                                          VariantConstructor.matches(Call);
     bool IsVariantAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
                                                       VariantAsOp.matches(Call);
 

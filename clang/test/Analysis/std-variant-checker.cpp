@@ -222,7 +222,7 @@ void typedefedPack() {
   (void*)c;
 }
 
-void fromVarianble() {
+void fromVariable() {
   char o = 'c';
   std::variant<int, char> v(o);
   char c = std::get<char>(v);

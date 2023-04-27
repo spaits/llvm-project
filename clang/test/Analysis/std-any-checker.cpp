@@ -119,6 +119,13 @@ void copyCtor() {
   (void*)c;
 }
 
+void copyCtorNullType() {
+  std::any a;
+  std::any b(a);
+  char c = std::any_cast<char>(a); // expected-warning {{any 'a' held a null type}}
+  (void*)c;
+}
+
 void copyAssignment() {
   std::any a = 5;
   std::any b = 'c';
