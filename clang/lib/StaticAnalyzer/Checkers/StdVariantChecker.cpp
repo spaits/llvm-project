@@ -77,11 +77,7 @@ bool isCopyConstructorCallEvent(const CallEvent& Call) {
 }
 
 bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
-  auto CopyAssignmentCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-  if (!CopyAssignmentCall) {
-    return false;
-  }
-  auto CopyAssignmentDecl = CopyAssignmentCall->getDecl();
+  const Decl *CopyAssignmentDecl = Call.getDecl();
   if (!CopyAssignmentDecl) {
     return false;
   }
@@ -104,12 +100,8 @@ bool isMoveConstructorCall(const CallEvent &Call) {
   return ConstructorDecl->isMoveConstructor();
 }
 
-bool isMoveAssignemntCall(const CallEvent &Call) {
-  auto CopyAssignmentCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-  if (!CopyAssignmentCall) {
-    return false;
-  }
-  auto CopyAssignmentDecl = CopyAssignmentCall->getDecl();
+bool isMoveAssignmentCall(const CallEvent &Call) {
+  const Decl *CopyAssignmentDecl = Call.getDecl();
   if (!CopyAssignmentDecl) {
     return false;
   }

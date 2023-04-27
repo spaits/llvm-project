@@ -31,8 +31,8 @@ class StdAnyChecker : public Checker<check::PreCall,
                                      check::PostStmt<BinaryOperator>> {
   CallDescription AnyConstructor{{"std", "any", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
-  CallDescription AnyReset{{"std", "any", "reset"}};
-  CallDescription AnyCast{{"std", "any_cast"}};
+  CallDescription AnyReset{{"std", "any", "reset"}, 0, 0};
+  CallDescription AnyCast{{"std", "any_cast"}, 1, 1};
 
   BugType BadAnyType{this, "BadAnyType", "BadAnyType"};
   BugType NullAnyType{this, "NullAnyType", "NullAnyType"};

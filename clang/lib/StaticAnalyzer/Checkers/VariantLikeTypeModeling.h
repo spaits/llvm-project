@@ -25,13 +25,13 @@ namespace variant_modeling {
 
 // The implementation of all these functions can be found in the
 // StdVariantChecker.cpp file under the same directory as this file.
+CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
 bool isObjectOf(QualType t, QualType to);
 bool isCopyConstructorCallEvent (const CallEvent& Call);
 bool isCopyAssignmentOperatorCall(const CallEvent& Call);
-bool isMoveAssignemntCall(const CallEvent &Call);
+bool isMoveAssignmentCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
-CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
 bool isStdAny(const Type *Type);
@@ -152,7 +152,7 @@ void handleConstructorAndAssignment(const CallEvent &Call,
   State = [&]() {
     bool IsCopy = isCopyConstructorCallEvent(Call) ||
                                           isCopyAssignmentOperatorCall(Call);
-    bool IsMove = isMoveConstructorCall(Call) || isMoveAssignemntCall(Call);
+    bool IsMove = isMoveConstructorCall(Call) || isMoveAssignmentCall(Call);
 
     // First we handle copy and move operations
     if (IsCopy || IsMove) {
