@@ -38,23 +38,11 @@ bool isStdAny(const Type *Type);
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
 
 template <class T>
-
-// We handle the retrieving of objects from an std::variant or std::any
-void bindFromVariant(const BinaryOperator *BinOp,
-                     CheckerContext &C,
-                     const CallDescription &StdGet) {
-  // First we check if the right hand site of the call is matches the
-  // CallDescription we gave as argument.
-  if (!BinOp->isAssignmentOp()) {
+void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const CallDescription &StdGet, CheckerContext &C) {
+  auto LHSLoc = dyn_cast<Loc>(LHSVal);
+  if (!LHSLoc) {
     return;
   }
-
-  auto RHSExpr = BinOp->getRHS();
-
-  if (!RHSExpr) {
-    return;
-  }
-
   // If the right hand site expression is a cast then we want go get the casted
   // expression.
   auto RHSCall = dyn_cast<CallExpr>(RHSExpr);
@@ -88,7 +76,15 @@ void bindFromVariant(const BinaryOperator *BinOp,
     return;
   }
   auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
-  auto VDecl = dyn_cast<VarDecl>(ArgDeclRef->getDecl());
+  if (!ArgDeclRef) {
+    return;
+  }
+  auto ActualArgDecl = ArgDeclRef->getDecl();
+  if (!ActualArgDecl) {
+    return;
+  }
+  auto VDecl = dyn_cast<VarDecl>(ActualArgDecl);
+
 
 
   auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
@@ -108,15 +104,6 @@ void bindFromVariant(const BinaryOperator *BinOp,
     return;
   }
 
-  // Now we get the memory region for the LValue we assign the result of
-  // std::get or std::any_cast call to.
-  auto LeftHandExpr = BinOp->getLHS();
-  auto LHSSVal = C.getSVal(LeftHandExpr);
-  auto LHSLoc = dyn_cast<Loc>(LHSSVal);
-  if (!LHSLoc) {
-    return;
-  }
-
   // Remove the original binding which was made by inlining the implementation
   // of the class
   State = State->killBinding(*LHSLoc);
@@ -125,6 +112,30 @@ void bindFromVariant(const BinaryOperator *BinOp,
   State = State->bindLoc(*LHSLoc, *SValGet, C.getLocationContext());
 
   C.addTransition(State);
+}
+
+template <class T>
+// We handle the retrieving of objects from an std::variant or std::any
+void bindFromVariant(const BinaryOperator *BinOp,
+                     CheckerContext &C,
+                     const CallDescription &StdGet) {
+  // First we check if the right hand site of the call is matches the
+  // CallDescription we gave as argument.
+  if (!BinOp->isAssignmentOp()) {
+    return;
+  }
+  
+  // Now we get the memory region for the LValue we assign the result of
+  // std::get or std::any_cast call to.
+  auto LeftHandExpr = BinOp->getLHS();
+  auto LHSVal = C.getSVal(LeftHandExpr);
+  
+
+  const Expr *RHSExpr = BinOp->getRHS();
+  if (!RHSExpr) {
+    return;
+  }
+  bindVariableFromVariant<T>(RHSExpr, LHSVal, StdGet, C);
 }
 
 template <class T, class U>

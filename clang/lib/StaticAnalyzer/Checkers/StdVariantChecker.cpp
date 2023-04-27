@@ -189,7 +189,6 @@ class StdVariantChecker : public Checker<check::PreCall,
     bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
   }
   void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
-    //llvm::errs() << "I am found\n";
     const Decl * Declaration = DeclS->getSingleDecl();
     if (!Declaration) {
       return;
@@ -233,60 +232,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     if (!RHSCall) {
       return;
     }
-
-    // cc
-if (!StdGet.matchesAsWritten(*RHSCall)) {
-    return;
-  }
-
-  //Both std::get and std::any_cast have one argument
-  if (RHSCall->getNumArgs() != 1) {
-    return;
-  }
-  // We know that at this point we assign value to the LValue on the left from
-  // and a call we want.
-
-  auto Arg = RHSCall->getArg(0);
-  if (!Arg) {
-    return;
-  }
-  auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
-  if (!ArgDeclRef) {
-    return;
-  }
-  auto ActualArgDecl = ArgDeclRef->getDecl();
-  if (!ActualArgDecl) {
-    return;
-  }
-  auto VDecl = dyn_cast<VarDecl>(ActualArgDecl);
-
-
-  auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
-  // In ArgMemRegion we have the memory region of the calls argument.
-  // The call in our case is an std::get with an std::variant argument
-  // or an std::any_case with an std::any argument.
-  auto ArgMemRegion = ArgSVal.getAsRegion();
-  if (!ArgMemRegion) {
-    return;
-  }
-  //add check if
-  //  We get the value held in std::variant or std::any.
-  auto SValGet = State->get<VariantHeldMap>(ArgMemRegion);
-  if (!SValGet) {
-    return;
-  }
-
-  // Now we get the memory region for the LValue we assign the result of
-  // std::get or std::any_cast call to.
-
-  // Remove the original binding which was made by inlining the implementation
-  // of the class
-  State = State->killBinding(*DecVarLocation);
-
-  // Replace it with our non implementation dependent information
-  State = State->bindLoc(*DecVarLocation, *SValGet, C.getLocationContext());
-
-  C.addTransition(State);
+    bindVariableFromVariant<VariantHeldMap>(RHSExpr, DeclaredVariable, StdGet, C);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
