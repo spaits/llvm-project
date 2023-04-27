@@ -64,19 +64,23 @@ bool isObjectOf(QualType t, QualType to) {
   return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
-bool isCopyConstructorCallEvent(const CallEvent& Call) {
+const CXXConstructorDecl * getConstructorDeclarationForCall(const CallEvent &Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
-    return false;
+    return nullptr;
   }
-  auto ConstructorDecl = ConstructorCall->getDecl();
+  return ConstructorCall->getDecl();
+}
+
+bool isCopyConstructorCall(const CallEvent& Call) {
+  const CXXConstructorDecl *ConstructorDecl = getConstructorDeclarationForCall(Call);
   if (!ConstructorDecl) {
     return false;
   }
   return ConstructorDecl->isCopyConstructor();
 }
 
-bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
+bool isCopyAssignmentCall(const CallEvent& Call) {
   const Decl *CopyAssignmentDecl = Call.getDecl();
   if (!CopyAssignmentDecl) {
     return false;
@@ -89,11 +93,7 @@ bool isCopyAssignmentOperatorCall(const CallEvent& Call) {
 }
 
 bool isMoveConstructorCall(const CallEvent &Call) {
-  auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
-  if (!ConstructorCall) {
-    return false;
-  }
-  auto ConstructorDecl = ConstructorCall->getDecl();
+  const CXXConstructorDecl *ConstructorDecl = getConstructorDeclarationForCall(Call);
   if (!ConstructorDecl) {
     return false;
   }

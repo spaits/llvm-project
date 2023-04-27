@@ -22,20 +22,23 @@ namespace clang {
 namespace ento {
 namespace variant_modeling {
 
+enum class ConstructorAssignmentType {copyConstructor, moveConstructor,
+                                      copyAssignment, moveAssignment};
 
 // The implementation of all these functions can be found in the
 // StdVariantChecker.cpp file under the same directory as this file.
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
 bool isObjectOf(QualType t, QualType to);
-bool isCopyConstructorCallEvent (const CallEvent& Call);
-bool isCopyAssignmentOperatorCall(const CallEvent& Call);
+bool isCopyConstructorCall (const CallEvent& Call);
+bool isCopyAssignmentCall(const CallEvent& Call);
 bool isMoveAssignmentCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
 bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
 bool isStdAny(const Type *Type);
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
+ConstructorAssignmentType getConstructorAssignmentType(const CallEvent &Call);
 
 template <class T>
 void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const CallDescription &StdGet, CheckerContext &C) {
@@ -150,8 +153,8 @@ void handleConstructorAndAssignment(const CallEvent &Call,
 
   // Make changes to the state according to type of constructor/assignment
   State = [&]() {
-    bool IsCopy = isCopyConstructorCallEvent(Call) ||
-                                          isCopyAssignmentOperatorCall(Call);
+    bool IsCopy = isCopyConstructorCall(Call) ||
+                                          isCopyAssignmentCall(Call);
     bool IsMove = isMoveConstructorCall(Call) || isMoveAssignmentCall(Call);
 
     // First we handle copy and move operations
