@@ -28,7 +28,8 @@ REGISTER_MAP_WITH_PROGRAMSTATE(AnyMap, const MemRegion*, SVal)
 
 class StdAnyChecker : public Checker<check::PreCall,
                                      check::RegionChanges,
-                                     check::PostStmt<BinaryOperator>> {
+                                     check::PostStmt<BinaryOperator>,
+                                     check::PostStmt<DeclStmt>> {
   CallDescription AnyConstructor{{"std", "any", "any"}};
   CallDescription AnyAsOp{{"std", "any", "operator="}};
   CallDescription AnyReset{{"std", "any", "reset"}, 0, 0};
@@ -40,6 +41,9 @@ class StdAnyChecker : public Checker<check::PreCall,
   public:
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
     bindFromVariant<AnyMap>(BinOp, C, AnyCast);
+  }
+  void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
+    bindFromVariantDecl<AnyMap>(DeclS, C, AnyCast);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,

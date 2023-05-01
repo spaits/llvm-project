@@ -141,6 +141,40 @@ void bindFromVariant(const BinaryOperator *BinOp,
   bindVariableFromVariant<T>(RHSExpr, LHSVal, StdGet, C);
 }
 
+template<class T>
+void bindFromVariantDecl(const DeclStmt *DeclS,
+                     CheckerContext &C,
+                     const CallDescription &StdGet) {
+  const Decl * Declaration = DeclS->getSingleDecl();
+    if (!Declaration) {
+      return;
+    }
+    const auto VariableDeclaration = dyn_cast<VarDecl>(Declaration);
+    if (!VariableDeclaration) {
+      return;
+    }
+
+    // Get the SVal of the declared variable
+    auto State = C.getState();
+    const LocationContext *CurrentLocation = C.getLocationContext();
+    if (!CurrentLocation) {
+      return;
+    }
+    SVal DeclaredVariable = State->getLValue(VariableDeclaration, CurrentLocation);
+    auto DecVarLocation = dyn_cast<Loc>(DeclaredVariable);
+    if (!DecVarLocation) {
+      return;
+    }
+
+    //get the SVal returned by the initial expression
+    const Expr *RHSExpr = VariableDeclaration->getInit();
+    if (!RHSExpr) {
+      return;
+    }
+    
+    bindVariableFromVariant<T>(RHSExpr, DeclaredVariable, StdGet, C);
+}
+
 template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call,
                                       CheckerContext &C,

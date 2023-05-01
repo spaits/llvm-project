@@ -181,50 +181,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
   }
   void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
-    const Decl * Declaration = DeclS->getSingleDecl();
-    if (!Declaration) {
-      return;
-    }
-    const auto VariableDeclaration = dyn_cast<VarDecl>(Declaration);
-    if (!VariableDeclaration) {
-      return;
-    }
-
-    // Get the SVal of the declared variable
-    auto State = C.getState();
-    const LocationContext *CurrentLocation = C.getLocationContext();
-    if (!CurrentLocation) {
-      return;
-    }
-    SVal DeclaredVariable = State->getLValue(VariableDeclaration, CurrentLocation);
-    auto DecVarLocation = dyn_cast<Loc>(DeclaredVariable);
-    if (!DecVarLocation) {
-      return;
-    }
-
-    //get the SVal returned by the initial expression
-    const Expr *RHSExpr = VariableDeclaration->getInit();
-    if (!RHSExpr) {
-      return;
-    }
-    //const auto InitCall = dyn_cast<CallExpr>(RightHandSiteExpr);
-    //if (!InitCall) {
-    //  llvm::errs() << "Not call\n";
-    //}
-    auto RHSCall = dyn_cast<CallExpr>(RHSExpr);
-    auto RHSCast = dyn_cast<CastExpr>(RHSExpr);
-    while (!RHSCall && RHSCast) {
-    auto SubExpr = RHSCast->getSubExpr();
-      if (!SubExpr) {
-        return;
-      }
-      RHSCall = dyn_cast<CallExpr>(SubExpr);
-      RHSCast = dyn_cast<CastExpr>(SubExpr);
-    }
-    if (!RHSCall) {
-      return;
-    }
-    bindVariableFromVariant<VariantHeldMap>(RHSExpr, DeclaredVariable, StdGet, C);
+    bindFromVariantDecl<VariantHeldMap>(DeclS, C, StdGet);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
