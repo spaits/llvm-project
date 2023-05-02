@@ -88,8 +88,6 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
   }
   auto VDecl = dyn_cast<VarDecl>(ActualArgDecl);
 
-
-
   auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
   // In ArgMemRegion we have the memory region of the calls argument.
   // The call in our case is an std::get with an std::variant argument

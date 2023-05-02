@@ -22,8 +22,8 @@ using namespace clang;
 using namespace ento;
 using namespace variant_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, QualType)
-REGISTER_MAP_WITH_PROGRAMSTATE(AnyMap, const MemRegion*, SVal)
+REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldTypeMap, const MemRegion*, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion*, SVal)
 
 
 class StdAnyChecker : public Checker<check::PreCall,
@@ -40,10 +40,10 @@ class StdAnyChecker : public Checker<check::PreCall,
   
   public:
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
-    bindFromVariant<AnyMap>(BinOp, C, AnyCast);
+    bindFromVariant<AnyHeldMap>(BinOp, C, AnyCast);
   }
   void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
-    bindFromVariantDecl<AnyMap>(DeclS, C, AnyCast);
+    bindFromVariantDecl<AnyHeldMap>(DeclS, C, AnyCast);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
@@ -61,8 +61,8 @@ class StdAnyChecker : public Checker<check::PreCall,
     }
 
     for (auto currentMemRegion : Regions) {
-      if (State->contains<AnyHeldMap>(currentMemRegion)) {
-        State = State->remove<AnyHeldMap>(currentMemRegion);
+      if (State->contains<AnyHeldTypeMap>(currentMemRegion)) {
+        State = State->remove<AnyHeldTypeMap>(currentMemRegion);
       }
     }
     return State;
@@ -124,7 +124,7 @@ class StdAnyChecker : public Checker<check::PreCall,
         return;
       }
 
-      handleConstructorAndAssignment<AnyHeldMap, AnyMap>(Call, C, ThisSVal);
+      handleConstructorAndAssignment<AnyHeldTypeMap, AnyHeldMap>(Call, C, ThisSVal);
       return;
     }
   }
@@ -134,7 +134,7 @@ class StdAnyChecker : public Checker<check::PreCall,
   // We represent it by storing a null QualType.
   void setNullTypeAny(const MemRegion *Mem, CheckerContext &C) const {
     auto State = C.getState();
-    State = State->set<AnyHeldMap>(Mem, QualType{});
+    State = State->set<AnyHeldTypeMap>(Mem, QualType{});
     C.addTransition(State);
   }
 
@@ -157,7 +157,7 @@ class StdAnyChecker : public Checker<check::PreCall,
     
     auto AnyMemRegion = ArgSVal.getAsRegion();
     
-    if (!State->contains<AnyHeldMap>(AnyMemRegion)) {
+    if (!State->contains<AnyHeldTypeMap>(AnyMemRegion)) {
       return;
     }
     // get the type we are trying to get from any
@@ -167,7 +167,7 @@ class StdAnyChecker : public Checker<check::PreCall,
     }
 
     auto TypeOut = FirstTemplateArgument.getAsType();
-    auto TypeStored = State->get<AnyHeldMap>(AnyMemRegion);
+    auto TypeStored = State->get<AnyHeldTypeMap>(AnyMemRegion);
 
     // Report when we try to use std::any_cast on an std::any that held a null type
     if(TypeStored->isNull()) {
