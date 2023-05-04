@@ -52,20 +52,7 @@ class StdAnyChecker : public Checker<check::PreCall,
                                     ArrayRef<const MemRegion *> Regions,
                                     const LocationContext *LCtx,
                                     const CallEvent *Call) const {
-    if (!Call) {
-      return State;
-    }
-
-    if (Call->isInSystemHeader()) {
-      return State;
-    }
-
-    for (auto currentMemRegion : Regions) {
-      if (State->contains<AnyHeldTypeMap>(currentMemRegion)) {
-        State = State->remove<AnyHeldTypeMap>(currentMemRegion);
-      }
-    }
-    return State;
+    return removeInformationStoredForDeadInstances<AnyHeldTypeMap, AnyHeldMap>(Call, State, Regions);
   }
 
   void checkPreCall(const CallEvent& Call, CheckerContext& C) const {

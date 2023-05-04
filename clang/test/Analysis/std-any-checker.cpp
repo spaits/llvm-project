@@ -170,13 +170,13 @@ void inlinedCall() {
   (void*)c;
 }
 
-// imp dep
+//What we do not report on, but we should
 
 void valueHeld() {
   std::any a = 0;
   int i = std::any_cast<int>(a);
   clang_analyzer_eval(0 == i); // expected-warning{{TRUE}}
-  int res = 5/i;
+  int res = 5/i; // Should report division by zero here
   clang_analyzer_warnIfReached(); // no-warning
   (void*)res;
 }

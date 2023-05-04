@@ -1,4 +1,4 @@
-//===- StdVariantChecker.cpp -------------------------------------*- C++ -*-==//
+//===- VariantLikeModeling.h -------------------------------------*- C++ -*-==//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,6 +17,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/FoldingSet.h"
+#include <numeric>
 
 namespace clang {
 namespace ento {
@@ -35,6 +36,36 @@ bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
 bool isStdAny(const Type *Type);
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
+
+// When invalidating regions we also have to follow that with our data
+// storages in the program state.
+template <class T, class S>
+ProgramStateRef removeInformationStoredForDeadInstances(const CallEvent *Call, ProgramStateRef State, ArrayRef<const MemRegion *> Regions) {
+  // If we do not know anything about the call we shall not continue.
+  if (!Call) {
+    return State;
+  }
+
+  // If the call is coming from a system header it is implementation detail.
+  // We should not take it into consideration.
+  if (Call->isInSystemHeader()) {
+    return State;
+  }
+
+  // Remove the information we know about the invalidate region.
+  // It is not relevant anymore.
+  State = std::accumulate(Regions.begin(), Regions.end(), State,[](ProgramStateRef State, const MemRegion * CurrentMemRegion) {
+    if (State->contains<T>(CurrentMemRegion)) {
+      State = State->remove<T>(CurrentMemRegion);
+    }
+    if (State->contains<S>(CurrentMemRegion)) {
+      State = State->remove<S>(CurrentMemRegion);
+    }
+    return State;
+  });
+  return State;
+}
+
 
 template <class T>
 void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const CallDescription &StdGet, CheckerContext &C) {
@@ -184,7 +215,7 @@ template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call,
                                       CheckerContext &C,
                                       const SVal &ThisSVal) {
-  ProgramStateRef State = Call.getState(); // check
+  ProgramStateRef State = Call.getState();
 
   auto ArgSVal = Call.getArgSVal(0);
   auto ThisRegion = ThisSVal.getAsRegion();

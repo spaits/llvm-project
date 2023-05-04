@@ -190,25 +190,7 @@ class StdVariantChecker : public Checker<check::PreCall,
                                      ArrayRef<const MemRegion *> Regions,
                                      const LocationContext *,
                                      const CallEvent *Call) const {
-    // If we do not know anything about the call we shall not continue
-    if (!Call) {
-      return State;
-    }
-
-    // If the call is coming from a system header it is implementation detail
-    // We should not take it into consideration
-    if (Call->isInSystemHeader()) {
-      return State;
-    }
-
-    // Remove the information we know about the invalidate region
-    // It is not relevant anymore
-    for (auto currentMemRegion : Regions) {
-      if (State->contains<VariantHeldTypeMap>(currentMemRegion)) {
-        State = State->remove<VariantHeldTypeMap>(currentMemRegion);
-      }
-    }
-    return State;
+    return removeInformationStoredForDeadInstances<VariantHeldTypeMap, VariantHeldMap>(Call, State, Regions);
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
@@ -233,9 +215,9 @@ class StdVariantChecker : public Checker<check::PreCall,
         handleDefaultConstructor(Call, C);
         return;
       }
-      if (Call.getNumArgs() != 1)
+      if (Call.getNumArgs() != 1) {
         return;
-      // Maybe create a template class
+      }
       SVal thisSVal = [&]() {
         if (IsVariantConstructor) {
           auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
