@@ -176,7 +176,7 @@ class StdAnyChecker : public Checker<check::PreCall,
         return;
       llvm::SmallString<128> Str;
       llvm::raw_svector_ostream OS(Str);
-      OS << "any " << AnyMemRegion->getDescriptiveName() << " held a null type";
+      OS << "any " << AnyMemRegion->getDescriptiveName() << " is empty.";
       auto R = std::make_unique<PathSensitiveBugReport>(
         NullAnyType, OS.str(), ErrNode);
       C.emitReport(std::move(R));  

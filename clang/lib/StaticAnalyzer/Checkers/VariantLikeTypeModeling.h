@@ -22,9 +22,6 @@ namespace clang {
 namespace ento {
 namespace variant_modeling {
 
-enum class ConstructorAssignmentType {copyConstructor, moveConstructor,
-                                      copyAssignment, moveAssignment};
-
 // The implementation of all these functions can be found in the
 // StdVariantChecker.cpp file under the same directory as this file.
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
@@ -38,7 +35,6 @@ bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
 bool isStdAny(const Type *Type);
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
-ConstructorAssignmentType getConstructorAssignmentType(const CallEvent &Call);
 
 template <class T>
 void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const CallDescription &StdGet, CheckerContext &C) {
@@ -59,10 +55,12 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
     RHSCast = dyn_cast<CastExpr>(SubExpr);
   }
 
+  // Check if there is really a function call on the right.
   if (!RHSCall) {
     return;
   }
 
+  // Check wether the interesting function is called
   if (!StdGet.matchesAsWritten(*RHSCall)) {
     return;
   }
@@ -71,13 +69,21 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
   if (RHSCall->getNumArgs() != 1) {
     return;
   }
+
   // We know that at this point we assign value to the LValue on the left from
   // and a call we want.
 
+  // Now our goal is to get the SVal symbolizing the argument.
+  // With the help of that the information stored in the
+  // program state can be accessed.
+
+  // Get the first argument of the function
   auto Arg = RHSCall->getArg(0);
   if (!Arg) {
     return;
   }
+
+  //Get the declaration of the instance
   auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
   if (!ArgDeclRef) {
     return;
@@ -88,7 +94,9 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
   }
   auto VDecl = dyn_cast<VarDecl>(ActualArgDecl);
 
-  auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());//C.getSVal(Arg);
+  // Get the argument SVal from store manager with the declaration.
+  auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());
+
   // In ArgMemRegion we have the memory region of the calls argument.
   // The call in our case is an std::get with an std::variant argument
   // or an std::any_case with an std::any argument.
@@ -98,8 +106,8 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
   }
 
   auto State = C.getState();
-  //add check if
-  //  We get the value held in std::variant or std::any.
+
+  // We get the value held in std::variant or std::any.
   auto SValGet = State->get<T>(ArgMemRegion);
   if (!SValGet) {
     return;
@@ -130,7 +138,6 @@ void bindFromVariant(const BinaryOperator *BinOp,
   // std::get or std::any_cast call to.
   auto LeftHandExpr = BinOp->getLHS();
   auto LHSVal = C.getSVal(LeftHandExpr);
-  
 
   const Expr *RHSExpr = BinOp->getRHS();
   if (!RHSExpr) {
@@ -226,9 +233,7 @@ void handleConstructorAndAssignment(const CallEvent &Call,
     const Type* ArgTypePtr = ArgQType.getTypePtr();
     auto AsMemRegLoc = dyn_cast<Loc>(ArgSVal);
 
-    SVal ToStore;
-
-    ToStore = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
+    SVal ToStore = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
     State = State->set<U>(ThisRegion, ToStore);
 
     QualType WoPointer = ArgTypePtr->getPointeeType();

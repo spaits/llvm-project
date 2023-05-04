@@ -53,18 +53,19 @@ void pointerHeld() {
 }
 
 //----------------------------------------------------------------------------//
-// Null type
+// Empty std::any
 //----------------------------------------------------------------------------//
 
 void noTypeHeld() {
   std::any a;
-  int i = std::any_cast<int>(a); // expected-warning {{any 'a' held a null type}}
+  int i = std::any_cast<int>(a); // expected-warning {{any 'a' is empty}}
   (void*)i;
 }
+
 void reset() {
   std::any a = 15;
   a.reset();
-  int i = std::any_cast<int>(a); // expected-warning {{any 'a' held a null type}}
+  int i = std::any_cast<int>(a); // expected-warning {{any 'a' is empty}}
   (void*)i;
 }
 
@@ -122,7 +123,7 @@ void copyCtor() {
 void copyCtorNullType() {
   std::any a;
   std::any b(a);
-  char c = std::any_cast<char>(a); // expected-warning {{any 'a' held a null type}}
+  char c = std::any_cast<char>(a); // expected-warning {{any 'a' is empty}}
   (void*)c;
 }
 
