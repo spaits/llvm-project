@@ -171,9 +171,11 @@ class StdVariantChecker : public Checker<check::PreCall,
                                          check::RegionChanges,
                                          check::PostStmt<BinaryOperator>,
                                          check::PostStmt<DeclStmt>> {
+  // Call descriptors to find relevant calls
   CallDescription VariantConstructor{{"std", "variant", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
   CallDescription StdGet{{"std", "get"}, 1, 1};
+
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
   public:
@@ -181,7 +183,7 @@ class StdVariantChecker : public Checker<check::PreCall,
     bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
   }
   void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
-    bindFromVariantDecl<VariantHeldMap>(DeclS, C, StdGet);
+    bindFromVariant<VariantHeldMap>(DeclS, C, StdGet);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,

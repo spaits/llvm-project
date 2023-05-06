@@ -43,7 +43,7 @@ class StdAnyChecker : public Checker<check::PreCall,
     bindFromVariant<AnyHeldMap>(BinOp, C, AnyCast);
   }
   void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
-    bindFromVariantDecl<AnyHeldMap>(DeclS, C, AnyCast);
+    bindFromVariant<AnyHeldMap>(DeclS, C, AnyCast);
   }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,

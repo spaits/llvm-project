@@ -171,7 +171,6 @@ void inlinedCall() {
 }
 
 //What we do not report on, but we should
-
 void valueHeld() {
   std::any a = 0;
   int i = std::any_cast<int>(a);

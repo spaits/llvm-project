@@ -40,7 +40,9 @@ bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
 // When invalidating regions we also have to follow that with our data
 // storages in the program state.
 template <class T, class S>
-ProgramStateRef removeInformationStoredForDeadInstances(const CallEvent *Call, ProgramStateRef State, ArrayRef<const MemRegion *> Regions) {
+ProgramStateRef removeInformationStoredForDeadInstances(const CallEvent *Call,
+                                                        ProgramStateRef State,
+                                                        ArrayRef<const MemRegion *> Regions) {
   // If we do not know anything about the call we shall not continue.
   if (!Call) {
     return State;
@@ -54,7 +56,8 @@ ProgramStateRef removeInformationStoredForDeadInstances(const CallEvent *Call, P
 
   // Remove the information we know about the invalidate region.
   // It is not relevant anymore.
-  State = std::accumulate(Regions.begin(), Regions.end(), State,[](ProgramStateRef State, const MemRegion * CurrentMemRegion) {
+  State = std::accumulate(Regions.begin(), Regions.end(), State,
+    [](ProgramStateRef State, const MemRegion * CurrentMemRegion) {
     if (State->contains<T>(CurrentMemRegion)) {
       State = State->remove<T>(CurrentMemRegion);
     }
@@ -178,37 +181,39 @@ void bindFromVariant(const BinaryOperator *BinOp,
 }
 
 template<class T>
-void bindFromVariantDecl(const DeclStmt *DeclS,
+void bindFromVariant(const DeclStmt *DeclS,
                      CheckerContext &C,
                      const CallDescription &StdGet) {
   const Decl * Declaration = DeclS->getSingleDecl();
-    if (!Declaration) {
-      return;
-    }
-    const auto VariableDeclaration = dyn_cast<VarDecl>(Declaration);
-    if (!VariableDeclaration) {
-      return;
-    }
+  if (!Declaration) {
+    return;
+  }
+  const auto VariableDeclaration = dyn_cast<VarDecl>(Declaration);
+  
+  if (!VariableDeclaration) {
+    return;
+  }
 
-    // Get the SVal of the declared variable
-    auto State = C.getState();
-    const LocationContext *CurrentLocation = C.getLocationContext();
-    if (!CurrentLocation) {
-      return;
-    }
-    SVal DeclaredVariable = State->getLValue(VariableDeclaration, CurrentLocation);
-    auto DecVarLocation = dyn_cast<Loc>(DeclaredVariable);
-    if (!DecVarLocation) {
-      return;
-    }
+  // Get the SVal of the declared variable
+  auto State = C.getState();
+  const LocationContext *CurrentLocation = C.getLocationContext();
+  if (!CurrentLocation) {
+    return;
+  }
+  
+  SVal DeclaredVariable = State->getLValue(VariableDeclaration, CurrentLocation);
+  auto DecVarLocation = dyn_cast<Loc>(DeclaredVariable);
+  if (!DecVarLocation) {
+    return;
+  }
 
-    //get the SVal returned by the initial expression
-    const Expr *RHSExpr = VariableDeclaration->getInit();
-    if (!RHSExpr) {
-      return;
-    }
+  //get the SVal returned by the initial expression
+  const Expr *RHSExpr = VariableDeclaration->getInit();
+  if (!RHSExpr) {
+    return;
+  }
     
-    bindVariableFromVariant<T>(RHSExpr, DeclaredVariable, StdGet, C);
+  bindVariableFromVariant<T>(RHSExpr, DeclaredVariable, StdGet, C);
 }
 
 template <class T, class U>
