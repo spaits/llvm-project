@@ -58,7 +58,7 @@ void stdGetIntegral() {
   // variants are identifieb by their memory region
   std::variant<int, char> t = 'c';
   int a = std::get<0>(v);
-  char c = std::get<1>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<1>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -66,7 +66,7 @@ void stdGetIntegral() {
 void stdGetType() {
   std::variant<int, char> v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -74,7 +74,7 @@ void stdGetType() {
 void stdGetPointer() {
   std::variant<int*, char> v = new int;
   int *a = std::get<int*>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int * not a(n) char}}
   (void**)a;
   (void*)c;
 }
@@ -82,7 +82,7 @@ void stdGetPointer() {
 void stdGetObject() {
   std::variant<int, char, Foo> v = Foo{};
   Foo f = std::get<Foo>(v);
-  int i = std::get<int>(v); // expected-warning {{variant 'v' held a(n) Foo not a(n) int}}
+  int i = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) Foo not a(n) int}}
   (void*)i;
 }
 
@@ -90,7 +90,7 @@ void stdGetPointerAndPointee() {
   int a = 5;
   std::variant<int, int*> v = &a;
   int *b = std::get<int*>(v);
-  int c = std::get<int>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) int}}
+  int c = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) int * not a(n) int}}
   (void*)c;
   (void**)b;
 }
@@ -102,7 +102,7 @@ void copyConstructor() {
   std::variant<int, char> v = 25;
   std::variant<int, char> t(v);
   int a = std::get<int> (t);
-  char c = std::get<char> (t); // expected-warning {{variant 't' held a(n) int not a(n) char}}
+  char c = std::get<char> (t); // expected-warning {{std::variant 't' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -112,7 +112,7 @@ void copyAssignemntOperator() {
   std::variant<int, char> t = 'c';
   t = v;
   int a = std::get<int> (t);
-  char c = std::get<char> (t); // expected-warning {{variant 't' held a(n) int not a(n) char}}
+  char c = std::get<char> (t); // expected-warning {{std::variant 't' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -123,7 +123,7 @@ void assignemntOperator() {
   (void*)a;
   v = 'c';
   char c = std::get<char>(v);
-  a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}} 
+  a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}} 
   (void*)a;
   (void*)c;
 }
@@ -131,7 +131,7 @@ void assignemntOperator() {
 void defaultConstructor() {
   std::variant<int, char> v;
   int i = std::get<int>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)i;
   (void*)c;
 }
@@ -140,7 +140,7 @@ void defaultConstructor() {
 void temporaryObjectsConstructor() {
   std::variant<int, char> v(std::variant<int, char>('c'));
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -148,7 +148,7 @@ void temporaryObjectsConstructor() {
 void temporaryObjectsAssignment() {
   std::variant<int, char> v = std::variant<int, char>('c');
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -157,7 +157,7 @@ void temporaryObjectsAssignment() {
 void pointerTypeHeld() {
   std::variant<int*, char> v = new int;
   int *a = std::get<int*>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int * not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int * not a(n) char}}
   (void**)a;
   (void*)c;
 }
@@ -193,7 +193,7 @@ void copyFromUnknownVariantBef() {
 void typefdefedVariant() {
   var_t v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -201,7 +201,7 @@ void typefdefedVariant() {
 void typedefedTypedfefedVariant() {
   var_tt v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -209,7 +209,7 @@ void typedefedTypedfefedVariant() {
 void typdefedGet() {
   std::variant<char, int> v = 25;
   int a = std::get<int_t>(v);
-  char c = std::get<char_t>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char_t>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -217,7 +217,7 @@ void typdefedGet() {
 void typedefedPack() {
   std::variant<int_t, char_t> v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -226,7 +226,7 @@ void fromVariable() {
   char o = 'c';
   std::variant<int, char> v(o);
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -235,7 +235,7 @@ void unknowValueButKnownType() {
   char o = getUnknownChar();
   std::variant<int, char> v(o);
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -244,7 +244,7 @@ void createPointer() {
   std::variant<int, char> *v = new std::variant<int, char>(15);
   int a = std::get<int>(*v);
   //PROBLEM W VAR NAMES
-  char c = std::get<char>(*v); // expected-warning {{variant  held a(n) int not a(n) char}}
+  char c = std::get<char>(*v); // expected-warning {{std::variant  held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }
@@ -259,7 +259,7 @@ void constNonInlineRef() {
   std::variant<int, char> v = 'c';
   cannotChnageRef(v);
   char c = std::get<char>(v); 
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -268,7 +268,7 @@ void contNonInlinePtr() {
   std::variant<int, char> v = 'c';
   cannotChnagePtr(&v);
   char c = std::get<char>(v); 
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -277,7 +277,7 @@ void copyInAFunction() {
   std::variant<int, char> v = 'c';
   cantDo(v);
   char c = std::get<char>(v); 
-  int a = std::get<int>(v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 
@@ -289,7 +289,7 @@ void changeThruPointers() {
   std::variant<int, char> v = 15;
   changeVariantPtr(&v);
   char c = std::get<char> (v);
-  int a = std::get<int> (v); // expected-warning {{variant 'v' held a(n) char not a(n) int}}
+  int a = std::get<int> (v); // expected-warning {{std::variant 'v' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -301,7 +301,7 @@ void functionCallWithCopyAssignment() {
   int a = std::get<int> (v2);
   (void*)a;
   char c = std::get<char> (v1);
-  a = std::get<int> (v1); // expected-warning {{variant 'v1' held a(n) char not a(n) int}}
+  a = std::get<int> (v1); // expected-warning {{std::variant 'v1' held a(n) char not a(n) int}}
   (void*)a;
   (void*)c;
 }
@@ -310,7 +310,7 @@ void inlineFunctionCall() {
   std::variant<int, char> v = 'c';
   changeVariantType(v);
   int a = std::get<int> (v);
-  char c = std::get<char> (v); // expected-warning {{variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char> (v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }

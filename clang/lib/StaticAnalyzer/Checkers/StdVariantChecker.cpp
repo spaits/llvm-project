@@ -320,7 +320,7 @@ class StdVariantChecker : public Checker<check::PreCall,
       return;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << "variant " << ArgMemRegion->getDescriptiveName() << " held a(n) "
+    OS << "std::variant " << ArgMemRegion->getDescriptiveName() << " held a(n) "
        << TypeStored->getAsString()
        << " not a(n) " << GetType.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(
