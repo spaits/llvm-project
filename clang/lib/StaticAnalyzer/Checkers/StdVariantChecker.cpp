@@ -269,13 +269,8 @@ class StdVariantChecker : public Checker<check::PreCall,
 
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
     ProgramStateRef State = Call.getState();
-    // std::get has 1 + n template arguments, where n is number of types
-    // that the variants typelist has that we are std::get with.
-    // When people use std::get they usually do not think about it because the
-    // the other types are deduced. {REALLY?????}
-    auto TypeOut = getFirstTemplateArgument(Call);
 
-    auto ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
+    const auto &ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
                                       getPointeeType().getTypePtr();
     // We have to make sure that the argument is an std::variant.
     // There is another std::get with std::pair argument
@@ -289,6 +284,7 @@ class StdVariantChecker : public Checker<check::PreCall,
       return;
     }
 
+    const auto &TypeOut = getFirstTemplateArgument(Call);
     // std::gets first template parameter can be the type we want to get
     // out of the std::variant or a natural number which is the position of
     // the wished type in the argument std::variants type list.
