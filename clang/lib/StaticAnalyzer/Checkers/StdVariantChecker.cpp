@@ -15,17 +15,15 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/FoldingSet.h"
 
-#include <string>
 #include "VariantLikeTypeModeling.h"
+#include <string>
 
 using namespace clang;
 using namespace ento;
 using namespace variant_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion*, QualType)
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion*, SVal)
-
-
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion *, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion *, SVal)
 
 namespace clang {
 namespace ento {
@@ -37,11 +35,11 @@ namespace variant_modeling {
 CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
   auto CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
-    return nullptr; 
+    return nullptr;
   }
 
   if (CallLocationContext->inTopFrame()) {
-    return nullptr; 
+    return nullptr;
   }
   auto CallStackFrameContext = CallLocationContext->getStackFrame();
   if (!CallStackFrameContext) {
@@ -57,14 +55,15 @@ CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
 // the std::get<Foo>s template parameters QualType is 'class Foo', while
 // when we get the QualType of the right hand site of
 // std::variant<Foo, int> = Foo{} it is just 'Foo' the reason for that is
-//TODO
+// TODO
 bool isObjectOf(QualType t, QualType to) {
   QualType canonicalTypeT = t.getCanonicalType();
   QualType canonicalTypeTo = to.getCanonicalType();
   return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
-const CXXConstructorDecl * getConstructorDeclarationForCall(const CallEvent &Call) {
+const CXXConstructorDecl *
+getConstructorDeclarationForCall(const CallEvent &Call) {
   auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
     return nullptr;
@@ -72,15 +71,16 @@ const CXXConstructorDecl * getConstructorDeclarationForCall(const CallEvent &Cal
   return ConstructorCall->getDecl();
 }
 
-bool isCopyConstructorCall(const CallEvent& Call) {
-  const CXXConstructorDecl *ConstructorDecl = getConstructorDeclarationForCall(Call);
+bool isCopyConstructorCall(const CallEvent &Call) {
+  const CXXConstructorDecl *ConstructorDecl =
+      getConstructorDeclarationForCall(Call);
   if (!ConstructorDecl) {
     return false;
   }
   return ConstructorDecl->isCopyConstructor();
 }
 
-bool isCopyAssignmentCall(const CallEvent& Call) {
+bool isCopyAssignmentCall(const CallEvent &Call) {
   const Decl *CopyAssignmentDecl = Call.getDecl();
   if (!CopyAssignmentDecl) {
     return false;
@@ -93,7 +93,8 @@ bool isCopyAssignmentCall(const CallEvent& Call) {
 }
 
 bool isMoveConstructorCall(const CallEvent &Call) {
-  const CXXConstructorDecl *ConstructorDecl = getConstructorDeclarationForCall(Call);
+  const CXXConstructorDecl *ConstructorDecl =
+      getConstructorDeclarationForCall(Call);
   if (!ConstructorDecl) {
     return false;
   }
@@ -112,11 +113,11 @@ bool isMoveAssignmentCall(const CallEvent &Call) {
   return AsMethodDecl->isMoveAssignmentOperator();
 }
 
-const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call) {
-  const CallExpr* CE = cast<CallExpr>(Call.getOriginExpr());
-  const FunctionDecl* FD = CE->getDirectCallee();
+const TemplateArgument &getFirstTemplateArgument(const CallEvent &Call) {
+  const CallExpr *CE = cast<CallExpr>(Call.getOriginExpr());
+  const FunctionDecl *FD = CE->getDirectCallee();
   assert(1 <= FD->getTemplateSpecializationArgs()->asArray().size() &&
-              "std::get should have at least 1 template argument!");
+         "std::get should have at least 1 template argument!");
   return FD->getTemplateSpecializationArgs()->asArray()[0];
 }
 
@@ -126,19 +127,17 @@ bool isStdType(const Type *Type, const std::string &TypeName) {
     return false;
   }
 
-  return (Decl->getNameAsString() == TypeName)
-          && Decl->isInStdNamespace();
+  return (Decl->getNameAsString() == TypeName) && Decl->isInStdNamespace();
 }
 
 bool isStdVariant(const Type *Type) {
   return isStdType(Type, std::string("variant"));
 }
 
-bool isStdAny(const Type *Type) {
-  return isStdType(Type, std::string("any"));
-}
+bool isStdAny(const Type *Type) { return isStdType(Type, std::string("any")); }
 
-bool calledFromSystemHeader(const CallEvent &Call, const ProgramStateRef &State) {
+bool calledFromSystemHeader(const CallEvent &Call,
+                            const ProgramStateRef &State) {
   auto Caller = getCaller(Call, State);
   if (Caller) {
     return Caller->isInSystemHeader();
@@ -154,21 +153,20 @@ bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
 } // end of namespace ento
 } // end of namespace clang
 
-static ArrayRef<TemplateArgument> getTemplateArgsFromVariant
-                                                    (const Type* VariantType) {
+static ArrayRef<TemplateArgument>
+getTemplateArgsFromVariant(const Type *VariantType) {
   auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
-  assert(TempSpecType
-      && "We are in a variant instance. It must be a template specialization!");
+  assert(TempSpecType &&
+         "We are in a variant instance. It must be a template specialization!");
   return TempSpecType->template_arguments();
 }
 
-static QualType getNthTemplateTypeArgFromVariant
-                                            (const Type* varType, unsigned i) {
+static QualType getNthTemplateTypeArgFromVariant(const Type *varType,
+                                                 unsigned i) {
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
 
-class StdVariantChecker : public Checker<check::PreCall,
-                                         check::RegionChanges,
+class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges,
                                          check::PostStmt<BinaryOperator>,
                                          check::PostStmt<DeclStmt>> {
   // Call descriptors to find relevant calls
@@ -178,7 +176,7 @@ class StdVariantChecker : public Checker<check::PreCall,
 
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
-  public:
+public:
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
     bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
   }
@@ -192,7 +190,9 @@ class StdVariantChecker : public Checker<check::PreCall,
                                      ArrayRef<const MemRegion *> Regions,
                                      const LocationContext *,
                                      const CallEvent *Call) const {
-    return removeInformationStoredForDeadInstances<VariantHeldTypeMap, VariantHeldMap>(Call, State, Regions);
+    return removeInformationStoredForDeadInstances<VariantHeldTypeMap,
+                                                   VariantHeldMap>(Call, State,
+                                                                   Regions);
   }
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
@@ -207,10 +207,10 @@ class StdVariantChecker : public Checker<check::PreCall,
       return;
     }
 
-    bool IsVariantConstructor = isa<CXXConstructorCall>(Call) &&
-                                          VariantConstructor.matches(Call);
-    bool IsVariantAssignmentOperatorCall = isa<CXXMemberOperatorCall>(Call) &&
-                                                      VariantAsOp.matches(Call);
+    bool IsVariantConstructor =
+        isa<CXXConstructorCall>(Call) && VariantConstructor.matches(Call);
+    bool IsVariantAssignmentOperatorCall =
+        isa<CXXMemberOperatorCall>(Call) && VariantAsOp.matches(Call);
 
     if (IsVariantConstructor || IsVariantAssignmentOperatorCall) {
       if (IsVariantConstructor && Call.getNumArgs() == 0) {
@@ -229,21 +229,21 @@ class StdVariantChecker : public Checker<check::PreCall,
           return AsMemberOpCall->getCXXThisVal();
         } else {
           llvm_unreachable(
-                          "We must have an assignment operator or constructor");
+              "We must have an assignment operator or constructor");
         }
       }();
-      handleConstructorAndAssignment<VariantHeldTypeMap, VariantHeldMap>(Call, C, thisSVal);
+      handleConstructorAndAssignment<VariantHeldTypeMap, VariantHeldMap>(
+          Call, C, thisSVal);
       return;
     }
   }
 
-  private:
+private:
   // The default constructed std::variant must be handled separately
   // by default the std::variant is going to hold a default constructed instance
   // of the first type of the possible types
   void handleDefaultConstructor(const CallEvent &Call,
                                 CheckerContext &C) const {
-
 
     auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
     assert(AsConstructorCall && "A constructor call must be passed!");
@@ -257,9 +257,12 @@ class StdVariantChecker : public Checker<check::PreCall,
     }
 
     // Getting the first type from the possible types list
-    QualType DefaultType = getNthTemplateTypeArgFromVariant(
-                                      ThisSVal.getType(C.getASTContext()).getTypePtr()->getPointeeType().getTypePtr(),0);
-
+    QualType DefaultType =
+        getNthTemplateTypeArgFromVariant(ThisSVal.getType(C.getASTContext())
+                                             .getTypePtr()
+                                             ->getPointeeType()
+                                             .getTypePtr(),
+                                         0);
 
     // Update the state for the default constructed std::variant
     ProgramStateRef State = Call.getState();
@@ -270,8 +273,11 @@ class StdVariantChecker : public Checker<check::PreCall,
   void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
     ProgramStateRef State = Call.getState();
 
-    const auto &ArgType = Call.getArgSVal(0).getType(C.getASTContext()).getTypePtr()->
-                                      getPointeeType().getTypePtr();
+    const auto &ArgType = Call.getArgSVal(0)
+                              .getType(C.getASTContext())
+                              .getTypePtr()
+                              ->getPointeeType()
+                              .getTypePtr();
     // We have to make sure that the argument is an std::variant.
     // There is another std::get with std::pair argument
     if (!isStdVariant(ArgType)) {
@@ -290,18 +296,18 @@ class StdVariantChecker : public Checker<check::PreCall,
     // the wished type in the argument std::variants type list.
     auto GetType = [&]() {
       switch (TypeOut.getKind()) {
-        case TemplateArgument::ArgKind::Type:
-          return TypeOut.getAsType();
-        case TemplateArgument::ArgKind::Integral:
-          // In the natural number case we look up which type corresponds to the
-          // number.
-          return getNthTemplateTypeArgFromVariant(
-            ArgType,
-            TypeOut.getAsIntegral().getSExtValue());
-        default:
-          llvm_unreachable(
-    "An std::get's first template argument can only be a type or an integral");
-    }}();
+      case TemplateArgument::ArgKind::Type:
+        return TypeOut.getAsType();
+      case TemplateArgument::ArgKind::Integral:
+        // In the natural number case we look up which type corresponds to the
+        // number.
+        return getNthTemplateTypeArgFromVariant(
+            ArgType, TypeOut.getAsIntegral().getSExtValue());
+      default:
+        llvm_unreachable("An std::get's first template argument can only be a "
+                         "type or an integral");
+      }
+    }();
 
     // Here we must treat object types specially. It is described why by
     // the definition of isObjectOf
@@ -311,16 +317,15 @@ class StdVariantChecker : public Checker<check::PreCall,
 
     // If the types do not match we create a sink node. The analysis will
     // not continue on this path. [REALLY??????]
-    ExplodedNode* ErrNode = C.generateNonFatalErrorNode();
+    ExplodedNode *ErrNode = C.generateNonFatalErrorNode();
     if (!ErrNode)
       return;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << "std::variant " << ArgMemRegion->getDescriptiveName() << " held a(n) "
-       << TypeStored->getAsString()
-       << " not a(n) " << GetType.getAsString();
-    auto R = std::make_unique<PathSensitiveBugReport>(
-      BadVariantType, OS.str(), ErrNode);
+       << TypeStored->getAsString() << " not a(n) " << GetType.getAsString();
+    auto R = std::make_unique<PathSensitiveBugReport>(BadVariantType, OS.str(),
+                                                      ErrNode);
     C.emitReport(std::move(R));
   }
 };

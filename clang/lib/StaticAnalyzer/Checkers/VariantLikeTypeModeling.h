@@ -26,10 +26,10 @@ namespace variant_modeling {
 // The implementation of all these functions can be found in the
 // StdVariantChecker.cpp file under the same directory as this file.
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
-const TemplateArgument& getFirstTemplateArgument(const CallEvent &Call);
+const TemplateArgument &getFirstTemplateArgument(const CallEvent &Call);
 bool isObjectOf(QualType t, QualType to);
-bool isCopyConstructorCall (const CallEvent& Call);
-bool isCopyAssignmentCall(const CallEvent& Call);
+bool isCopyConstructorCall(const CallEvent &Call);
+bool isCopyAssignmentCall(const CallEvent &Call);
 bool isMoveAssignmentCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
 bool isStdType(const Type *Type, const std::string &TypeName);
@@ -40,9 +40,10 @@ bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
 // When invalidating regions we also have to follow that with our data
 // storages in the program state.
 template <class T, class S>
-ProgramStateRef removeInformationStoredForDeadInstances(const CallEvent *Call,
-                                                        ProgramStateRef State,
-                                                        ArrayRef<const MemRegion *> Regions) {
+ProgramStateRef
+removeInformationStoredForDeadInstances(const CallEvent *Call,
+                                        ProgramStateRef State,
+                                        ArrayRef<const MemRegion *> Regions) {
   // If we do not know anything about the call we shall not continue.
   if (!Call) {
     return State;
@@ -56,22 +57,23 @@ ProgramStateRef removeInformationStoredForDeadInstances(const CallEvent *Call,
 
   // Remove the information we know about the invalidate region.
   // It is not relevant anymore.
-  State = std::accumulate(Regions.begin(), Regions.end(), State,
-    [](ProgramStateRef State, const MemRegion * CurrentMemRegion) {
-    if (State->contains<T>(CurrentMemRegion)) {
-      State = State->remove<T>(CurrentMemRegion);
-    }
-    if (State->contains<S>(CurrentMemRegion)) {
-      State = State->remove<S>(CurrentMemRegion);
-    }
-    return State;
-  });
+  State = std::accumulate(
+      Regions.begin(), Regions.end(), State,
+      [](ProgramStateRef State, const MemRegion *CurrentMemRegion) {
+        if (State->contains<T>(CurrentMemRegion)) {
+          State = State->remove<T>(CurrentMemRegion);
+        }
+        if (State->contains<S>(CurrentMemRegion)) {
+          State = State->remove<S>(CurrentMemRegion);
+        }
+        return State;
+      });
   return State;
 }
 
-
 template <class T>
-void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const CallDescription &StdGet, CheckerContext &C) {
+void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
+                             const CallDescription &StdGet, CheckerContext &C) {
   auto LHSLoc = dyn_cast<Loc>(LHSVal);
   if (!LHSLoc) {
     return;
@@ -99,7 +101,7 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
     return;
   }
 
-  //Both std::get and std::any_cast have one argument
+  // Both std::get and std::any_cast have one argument
   if (RHSCall->getNumArgs() != 1) {
     return;
   }
@@ -117,7 +119,7 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
     return;
   }
 
-  //Get the declaration of the instance
+  // Get the declaration of the instance
   auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
   if (!ArgDeclRef) {
     return;
@@ -129,7 +131,8 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
   auto VDecl = dyn_cast<VarDecl>(ActualArgDecl);
 
   // Get the argument SVal from store manager with the declaration.
-  auto ArgSVal = C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());
+  auto ArgSVal =
+      C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());
 
   // In ArgMemRegion we have the memory region of the calls argument.
   // The call in our case is an std::get with an std::variant argument
@@ -159,15 +162,14 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal, const Call
 
 template <class T>
 // We handle the retrieving of objects from an std::variant or std::any
-void bindFromVariant(const BinaryOperator *BinOp,
-                     CheckerContext &C,
+void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C,
                      const CallDescription &StdGet) {
   // First we check if the right hand site of the call is matches the
   // CallDescription we gave as argument.
   if (!BinOp->isAssignmentOp()) {
     return;
   }
-  
+
   // Now we get the memory region for the LValue we assign the result of
   // std::get or std::any_cast call to.
   auto LeftHandExpr = BinOp->getLHS();
@@ -180,16 +182,15 @@ void bindFromVariant(const BinaryOperator *BinOp,
   bindVariableFromVariant<T>(RHSExpr, LHSVal, StdGet, C);
 }
 
-template<class T>
-void bindFromVariant(const DeclStmt *DeclS,
-                     CheckerContext &C,
+template <class T>
+void bindFromVariant(const DeclStmt *DeclS, CheckerContext &C,
                      const CallDescription &StdGet) {
-  const Decl * Declaration = DeclS->getSingleDecl();
+  const Decl *Declaration = DeclS->getSingleDecl();
   if (!Declaration) {
     return;
   }
   const auto VariableDeclaration = dyn_cast<VarDecl>(Declaration);
-  
+
   if (!VariableDeclaration) {
     return;
   }
@@ -200,26 +201,26 @@ void bindFromVariant(const DeclStmt *DeclS,
   if (!CurrentLocation) {
     return;
   }
-  
-  SVal DeclaredVariable = State->getLValue(VariableDeclaration, CurrentLocation);
+
+  SVal DeclaredVariable =
+      State->getLValue(VariableDeclaration, CurrentLocation);
   auto DecVarLocation = dyn_cast<Loc>(DeclaredVariable);
   if (!DecVarLocation) {
     return;
   }
 
-  //get the SVal returned by the initial expression
+  // get the SVal returned by the initial expression
   const Expr *RHSExpr = VariableDeclaration->getInit();
   if (!RHSExpr) {
     return;
   }
-    
+
   bindVariableFromVariant<T>(RHSExpr, DeclaredVariable, StdGet, C);
 }
 
 template <class T, class U>
-void handleConstructorAndAssignment(const CallEvent &Call,
-                                      CheckerContext &C,
-                                      const SVal &ThisSVal) {
+void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
+                                    const SVal &ThisSVal) {
   ProgramStateRef State = Call.getState();
 
   auto ArgSVal = Call.getArgSVal(0);
@@ -228,8 +229,7 @@ void handleConstructorAndAssignment(const CallEvent &Call,
 
   // Make changes to the state according to type of constructor/assignment
   State = [&]() {
-    bool IsCopy = isCopyConstructorCall(Call) ||
-                                          isCopyAssignmentCall(Call);
+    bool IsCopy = isCopyConstructorCall(Call) || isCopyAssignmentCall(Call);
     bool IsMove = isMoveConstructorCall(Call) || isMoveAssignmentCall(Call);
 
     // First we handle copy and move operations
@@ -243,22 +243,28 @@ void handleConstructorAndAssignment(const CallEvent &Call,
       if (OtherQTypeKnown) {
         OtherQType = State->get<T>(ArgMemRegion);
       } else {
-        return State->contains<T>(ThisRegion) ? State->remove<T>(ThisRegion) : State;
+        return State->contains<T>(ThisRegion) ? State->remove<T>(ThisRegion)
+                                              : State;
       }
 
       const SVal *OtherSVal;
       if (OtherSValKnown) {
-        OtherSVal =  State->get<U>(ArgMemRegion);
+        OtherSVal = State->get<U>(ArgMemRegion);
       } else {
-        return State->contains<U>(ThisRegion) ? State->remove<U>(ThisRegion) : State;
+        return State->contains<U>(ThisRegion) ? State->remove<U>(ThisRegion)
+                                              : State;
       }
 
       // When move semantics is used we can only know that the moved from
       // object must be in a destructible state. Other usage of the object
       // than destruction is undefined.
       if (IsMove) {
-        State = State->contains<T>(ArgMemRegion) ? State->remove<T>(ArgMemRegion) : State;
-        State = State->contains<U>(ArgMemRegion) ? State->remove<U>(ArgMemRegion) : State;
+        State = State->contains<T>(ArgMemRegion)
+                    ? State->remove<T>(ArgMemRegion)
+                    : State;
+        State = State->contains<U>(ArgMemRegion)
+                    ? State->remove<U>(ArgMemRegion)
+                    : State;
       }
       State = State->set<U>(ThisRegion, *OtherSVal);
       return State->set<T>(ThisRegion, *OtherQType);
@@ -266,10 +272,11 @@ void handleConstructorAndAssignment(const CallEvent &Call,
     // Then the other constructor/assignment where the argument is the new
     // object held by the std::variant or std::any
     auto ArgQType = ArgSVal.getType(C.getASTContext());
-    const Type* ArgTypePtr = ArgQType.getTypePtr();
+    const Type *ArgTypePtr = ArgQType.getTypePtr();
     auto AsMemRegLoc = dyn_cast<Loc>(ArgSVal);
 
-    SVal ToStore = C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
+    SVal ToStore =
+        C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
     State = State->set<U>(ThisRegion, ToStore);
 
     QualType WoPointer = ArgTypePtr->getPointeeType();
@@ -283,8 +290,8 @@ void handleConstructorAndAssignment(const CallEvent &Call,
   }
 }
 
-} //namespace variant_modeling
-} //namespace ento
-} //namespace clang
+} // namespace variant_modeling
+} // namespace ento
+} // namespace clang
 
 #endif // LLVM_CLANG_LIB_STATICANALYZER_CHECKER_VARIANTLIKETYPEMODELING_H

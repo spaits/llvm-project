@@ -2,8 +2,7 @@
 #define VARIANT_H
 
 namespace std {
-  template<class... Types>
-  class variant {};
-} //end of namespace std
+template <class... Types> class variant {};
+} // end of namespace std
 
-#endif //VARIANT_H
+#endif // VARIANT_H
