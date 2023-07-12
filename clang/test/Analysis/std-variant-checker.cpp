@@ -66,7 +66,7 @@ void stdGetIntegral() {
 void stdGetType() {
   std::variant<int, char> v = 25;
   int a = std::get<int>(v);
-  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
+  char c = std::get<char>(v); // expected-warning {{a std::variant 'v' held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
 }

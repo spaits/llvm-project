@@ -17,6 +17,7 @@
 
 #include "VariantLikeTypeModeling.h"
 #include <string>
+#include <iostream>
 
 using namespace clang;
 using namespace ento;
@@ -254,6 +255,75 @@ private:
     const auto ThisMemRegion = ThisSVal.getAsRegion();
     if (!ThisMemRegion) {
       return;
+    }
+
+    // Try to use SymbolicRef insted of MemRegions
+
+    // Try one: get the Symbol from the SVal
+    SymbolRef AsSymbol = ThisSVal.getAsSymbol();
+    if (AsSymbol) {
+      std::cout << "AsSymbol OK\n";
+    } else {
+      std::cout << "AsSymbol NOK\n";
+    }
+
+    SymbolRef AsLocSymbolT = ThisSVal.getAsLocSymbol(true);
+    if (AsLocSymbolT) {
+      std::cout << "AsLocSymbolT OK\n";
+    } else {
+      std::cout << "AsLocSymbolT NOK\n";
+    }
+    
+    SymbolRef AsLocSymbolF = ThisSVal.getAsLocSymbol(false);
+    if (AsLocSymbolF) {
+      std::cout << "AsLocSymbolF OK\n";
+    } else {
+      std::cout << "AsLocSymbolF NOK\n";
+    }
+
+    SymbolRef LocSymbolInBase = ThisSVal.getLocSymbolInBase();
+    if (LocSymbolInBase) {
+      std::cout << "AsLocSymbolInBase OK\n";
+    } else {
+      std::cout << "AsLocSymbolInBase NOK\n";
+    }
+    // Result all of the failed
+
+    // Take a look at the MemRegion
+    // The subclass of MemRegion which std::variant or std::any instances are: NonParamVarRegion
+    // A NonParamVarRegion knows it's: Declaration, Type of object located on it, SuperRegion(Is it on stack? heap? static mem?), SymbolicRegion
+
+    const NonParamVarRegion *ThisNPVRegion = ThisMemRegion->castAs<NonParamVarRegion>();
+    
+    const SymbolicRegion *ThisSymRegion = ThisNPVRegion->getSymbolicBase();
+    if (ThisSymRegion) {
+      std::cout << "Got Sym region OK\n";
+    } else {
+      std::cout << "Got Sym region NOK\n";
+    }
+
+    const MemRegion *ThisSuperReg = ThisNPVRegion->getSuperRegion();
+    if (ThisSuperReg) {
+      // It is a stack local spec region
+      const SymbolicRegion *SupSymReg = ThisSuperReg->getSymbolicBase();
+      if (SupSymReg) {
+        std::cout << "SupSymReg OK\n";
+      } else {
+        std::cout << "SupSymReg NOK\n";
+      }
+    }
+
+    // Try getting it with the help of symbol manager
+    SymbolManager &SymMan = C.getSymbolManager();
+
+    SymbolRef VariantSymbolRef = SymMan.getRegionValueSymbol(ThisNPVRegion);
+    if (VariantSymbolRef) {
+      std::cout << "Var sym Ref OK\n";
+      llvm::errs() << "Sym ref\n";
+      VariantSymbolRef->dumpToStream(llvm::errs());
+      llvm::errs() << "\n";
+    } else {
+      std::cout << "Var sym ref NOK\n";
     }
 
     // Getting the first type from the possible types list
