@@ -36,10 +36,11 @@ bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
 bool isStdAny(const Type *Type);
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
+SymbolRef getSymbolOnMemRegion(CheckerContext &C, const MemRegion *MR);
 
 // When invalidating regions we also have to follow that with our data
 // storages in the program state.
-template <class T, class S>
+template <class S>
 ProgramStateRef
 removeInformationStoredForDeadInstances(const CallEvent *Call,
                                         ProgramStateRef State,
@@ -60,9 +61,6 @@ removeInformationStoredForDeadInstances(const CallEvent *Call,
   State = std::accumulate(
       Regions.begin(), Regions.end(), State,
       [](ProgramStateRef State, const MemRegion *CurrentMemRegion) {
-        if (State->contains<T>(CurrentMemRegion)) {
-          State = State->remove<T>(CurrentMemRegion);
-        }
         if (State->contains<S>(CurrentMemRegion)) {
           State = State->remove<S>(CurrentMemRegion);
         }
@@ -221,11 +219,18 @@ void bindFromVariant(const DeclStmt *DeclS, CheckerContext &C,
 template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
                                     const SVal &ThisSVal) {
+                                      llvm::errs() << "\nAAAAAAAAAAAAAAAAAAAAAAAAAAA\n";
   ProgramStateRef State = Call.getState();
 
   auto ArgSVal = Call.getArgSVal(0);
   auto ThisRegion = ThisSVal.getAsRegion();
   auto ArgMemRegion = ArgSVal.getAsRegion();
+llvm::errs() << "\nDump this\n";
+ThisRegion->dump();
+llvm::errs() << "\nend\n";
+
+  auto ThisSymbol = getSymbolOnMemRegion(C, ThisRegion);
+  auto ArgSymbol = getSymbolOnMemRegion(C, ArgMemRegion);
 
   // Make changes to the state according to type of constructor/assignment
   State = [&]() {
@@ -236,14 +241,14 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
     if (IsCopy || IsMove) {
       // If the argument of a copy constructor or assignment is unknown then
       // we will not know the argument of the copied to object.
-      bool OtherQTypeKnown = State->contains<T>(ArgMemRegion);
+      bool OtherQTypeKnown = State->contains<T>(ArgSymbol);
       bool OtherSValKnown = State->contains<U>(ArgMemRegion);
 
       const QualType *OtherQType;
       if (OtherQTypeKnown) {
-        OtherQType = State->get<T>(ArgMemRegion);
+        OtherQType = State->get<T>(ArgSymbol);
       } else {
-        return State->contains<T>(ThisRegion) ? State->remove<T>(ThisRegion)
+        return State->contains<T>(ThisSymbol) ? State->remove<T>(ThisSymbol)
                                               : State;
       }
 
@@ -259,15 +264,15 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
       // object must be in a destructible state. Other usage of the object
       // than destruction is undefined.
       if (IsMove) {
-        State = State->contains<T>(ArgMemRegion)
-                    ? State->remove<T>(ArgMemRegion)
+        State = State->contains<T>(ArgSymbol)
+                    ? State->remove<T>(ArgSymbol)
                     : State;
         State = State->contains<U>(ArgMemRegion)
                     ? State->remove<U>(ArgMemRegion)
                     : State;
       }
       State = State->set<U>(ThisRegion, *OtherSVal);
-      return State->set<T>(ThisRegion, *OtherQType);
+      return State->set<T>(ThisSymbol, *OtherQType);
     }
     // Then the other constructor/assignment where the argument is the new
     // object held by the std::variant or std::any
@@ -280,13 +285,13 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
     State = State->set<U>(ThisRegion, ToStore);
 
     QualType WoPointer = ArgTypePtr->getPointeeType();
-    return State->set<T>(ThisRegion, WoPointer);
+    return State->set<T>(ThisSymbol, WoPointer);
   }();
 
   if (State) {
     C.addTransition(State);
   } else {
-    C.addTransition(Call.getState()->remove<T>(ThisRegion));
+    C.addTransition(Call.getState()->remove<T>(ThisSymbol));
   }
 }
 

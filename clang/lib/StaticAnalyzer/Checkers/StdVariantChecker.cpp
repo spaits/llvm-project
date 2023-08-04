@@ -22,7 +22,7 @@ using namespace clang;
 using namespace ento;
 using namespace variant_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion *, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, SymbolRef, QualType)
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion *, SVal)
 
 namespace clang {
@@ -149,6 +149,15 @@ bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
   return calledFromSystemHeader(Call, C.getState());
 }
 
+SymbolRef getSymbolOnMemRegion(CheckerContext &C, const MemRegion *MR) {
+  if (const TypedValueRegion *AsTypedValueRegion = MR->getAs<TypedValueRegion>()) {
+    SymbolManager &SM = C.getSymbolManager();
+    return SM.getRegionValueSymbol(AsTypedValueRegion);
+  } else if (const SymbolicRegion *AsSymbolicRegion = MR->getAs<SymbolicRegion>()) {
+    return AsSymbolicRegion->getSymbol();
+  }
+}
+
 } // end of namespace variant_modeling
 } // end of namespace ento
 } // end of namespace clang
@@ -168,7 +177,8 @@ static QualType getNthTemplateTypeArgFromVariant(const Type *varType,
 
 class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges,
                                          check::PostStmt<BinaryOperator>,
-                                         check::PostStmt<DeclStmt>> {
+                                         check::PostStmt<DeclStmt>>,
+                                         check::DeadSymbols {
   // Call descriptors to find relevant calls
   CallDescription VariantConstructor{{"std", "variant", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
@@ -190,8 +200,7 @@ public:
                                      ArrayRef<const MemRegion *> Regions,
                                      const LocationContext *,
                                      const CallEvent *Call) const {
-    return removeInformationStoredForDeadInstances<VariantHeldTypeMap,
-                                                   VariantHeldMap>(Call, State,
+    return removeInformationStoredForDeadInstances<VariantHeldMap>(Call, State,
                                                                    Regions);
   }
 
@@ -266,7 +275,8 @@ private:
 
     // Update the state for the default constructed std::variant
     ProgramStateRef State = Call.getState();
-    State = State->set<VariantHeldTypeMap>(ThisMemRegion, DefaultType);
+    SymbolRef VariantInstanceSymbolRef = getSymbolOnMemRegion(C, ThisMemRegion);
+    State = State->set<VariantHeldTypeMap>(VariantInstanceSymbolRef, DefaultType);
     C.addTransition(State);
   }
 
@@ -285,7 +295,8 @@ private:
     }
 
     auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-    auto TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
+    SymbolRef ArgSymbolRef = getSymbolOnMemRegion(C, ArgMemRegion);
+    auto TypeStored = State->get<VariantHeldTypeMap>(ArgSymbolRef);
     if (!TypeStored) {
       return;
     }

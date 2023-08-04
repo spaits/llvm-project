@@ -22,7 +22,7 @@ using namespace clang;
 using namespace ento;
 using namespace variant_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldTypeMap, const MemRegion *, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldTypeMap, SymbolRef, QualType)
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion *, SVal)
 
 class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges,
@@ -50,7 +50,7 @@ public:
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,
                      const LocationContext *LCtx, const CallEvent *Call) const {
-    return removeInformationStoredForDeadInstances<AnyHeldTypeMap, AnyHeldMap>(
+    return removeInformationStoredForDeadInstances<AnyHeldMap>(
         Call, State, Regions);
   }
 
@@ -121,7 +121,8 @@ private:
   // We represent it by storing a null QualType.
   void setNullTypeAny(const MemRegion *Mem, CheckerContext &C) const {
     auto State = C.getState();
-    State = State->set<AnyHeldTypeMap>(Mem, QualType{});
+    SymbolRef AnyInstanceSymbolRef = getSymbolOnMemRegion(C, Mem);
+    State = State->set<AnyHeldTypeMap>(AnyInstanceSymbolRef, QualType{});
     C.addTransition(State);
   }
 
@@ -146,8 +147,9 @@ private:
     }
 
     auto AnyMemRegion = ArgSVal.getAsRegion();
+    SymbolRef AnySymRef = getSymbolOnMemRegion(C, AnyMemRegion);
 
-    if (!State->contains<AnyHeldTypeMap>(AnyMemRegion)) {
+    if (!State->contains<AnyHeldTypeMap>(AnySymRef)) {
       return;
     }
     // get the type we are trying to get from any
@@ -157,7 +159,7 @@ private:
     }
 
     auto TypeOut = FirstTemplateArgument.getAsType();
-    auto TypeStored = State->get<AnyHeldTypeMap>(AnyMemRegion);
+    auto TypeStored = State->get<AnyHeldTypeMap>(AnySymRef);
 
     // Report when we try to use std::any_cast on an std::any that held a null
     // type
