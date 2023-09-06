@@ -175,7 +175,7 @@ static QualType getNthTemplateTypeArgFromVariant(const Type *varType,
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
 
-class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges,
+class StdVariantChecker : public Checker<check::PostCall, check::RegionChanges,
                                          check::PostStmt<BinaryOperator>,
                                          check::PostStmt<DeclStmt>>
                                          {
@@ -204,7 +204,7 @@ public:
                                                                    Regions);
   }
 
-  void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+  void checkPostCall(const CallEvent &Call, CheckerContext &C) const {
     // Check if the call was not made from a system header. If it was then
     // we do an early return because it is part of the implementation
     if (calledFromSystemHeader(Call, C)) {
@@ -265,7 +265,6 @@ private:
       return;
     }
     llvm::errs() << "Before sym ref\n";
-    assert(ThisSVal.getAsSymbol() && "NO Symbol for SVal");
     llvm::errs() << "Sym REF Was found!\n";
 
     // Getting the first type from the possible types list
