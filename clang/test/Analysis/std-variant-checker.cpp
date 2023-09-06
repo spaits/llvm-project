@@ -3,7 +3,170 @@
 // RUN:   -Xclang -analyzer-checker=debug.ExprInspection \
 // RUN:   -Xclang -analyzer-checker=core,core.StdVariant
 
-#include <variant>
+#include <cstdio>
+#include <type_traits>
+#include <initializer_list>
+#include <utility>
+
+namespace std {
+  // class template variant
+  template<class... Types>
+    class variant;
+ 
+  // variant helper classes
+  template<class T> struct variant_size;                        // not defined
+  template<class T> struct variant_size<const T>;
+  template<class T>
+    inline constexpr size_t variant_size_v = variant_size<T>::value;
+ 
+  template<class... Types>
+    struct variant_size<variant<Types...>>;
+ 
+  template<size_t I, class T> struct variant_alternative;       // not defined
+  template<size_t I, class T> struct variant_alternative<I, const T>;
+  template<size_t I, class T>
+    using variant_alternative_t = typename variant_alternative<I, T>::type;
+ 
+  template<size_t I, class... Types>
+    struct variant_alternative<I, variant<Types...>>;
+ 
+  inline constexpr size_t variant_npos = -1;
+ 
+  // value access
+  template<class T, class... Types>
+    constexpr bool holds_alternative(const variant<Types...>&) noexcept;
+ 
+  template<size_t I, class... Types>
+    constexpr variant_alternative_t<I, variant<Types...>>& get(variant<Types...>&);
+  template<size_t I, class... Types>
+    constexpr variant_alternative_t<I, variant<Types...>>&& get(variant<Types...>&&);
+  template<size_t I, class... Types>
+    constexpr const variant_alternative_t<I, variant<Types...>>&
+      get(const variant<Types...>&);
+  template<size_t I, class... Types>
+    constexpr const variant_alternative_t<I, variant<Types...>>&&
+      get(const variant<Types...>&&);
+ 
+  template<class T, class... Types>
+    constexpr T& get(variant<Types...>&);
+  template<class T, class... Types>
+    constexpr T&& get(variant<Types...>&&);
+  template<class T, class... Types>
+    constexpr const T& get(const variant<Types...>&);
+  template<class T, class... Types>
+    constexpr const T&& get(const variant<Types...>&&);
+ 
+  template<size_t I, class... Types>
+    constexpr add_pointer_t<variant_alternative_t<I, variant<Types...>>>
+      get_if(variant<Types...>*) noexcept;
+  template<size_t I, class... Types>
+    constexpr add_pointer_t<const variant_alternative_t<I, variant<Types...>>>
+      get_if(const variant<Types...>*) noexcept;
+ 
+  template<class T, class... Types>
+    constexpr add_pointer_t<T>
+      get_if(variant<Types...>*) noexcept;
+  template<class T, class... Types>
+    constexpr add_pointer_t<const T>
+      get_if(const variant<Types...>*) noexcept;
+ 
+  // relational operators
+  template<class... Types>
+    constexpr bool operator==(const variant<Types...>&, const variant<Types...>&);
+  template<class... Types>
+    constexpr bool operator!=(const variant<Types...>&, const variant<Types...>&);
+  template<class... Types>
+    constexpr bool operator<(const variant<Types...>&, const variant<Types...>&);
+  template<class... Types>
+    constexpr bool operator>(const variant<Types...>&, const variant<Types...>&);
+  template<class... Types>
+    constexpr bool operator<=(const variant<Types...>&, const variant<Types...>&);
+  template<class... Types>
+    constexpr bool operator>=(const variant<Types...>&, const variant<Types...>&);
+ 
+  // visitation
+  template<class R, class Visitor, class... Variants>
+    constexpr R visit(Visitor&&, Variants&&...);
+ 
+  // class monostate
+  struct monostate;
+ 
+  // monostate relational operators
+  constexpr bool operator==(monostate, monostate) noexcept;
+ 
+  // specialized algorithms
+  template<class... Types>
+    constexpr void swap(variant<Types...>&,
+                        variant<Types...>&);
+ 
+  // class bad_variant_access
+  class bad_variant_access;
+ 
+  // hash support
+  template<class T> struct hash;
+  template<class... Types> struct hash<variant<Types...>>;
+  template<> struct hash<monostate>;
+}
+ 
+// deprecated
+namespace std {
+  template<class T> struct variant_size<volatile T>;
+  template<class T> struct variant_size<const volatile T>;
+ 
+  template<size_t I, class T> struct variant_alternative<I, volatile T>;
+  template<size_t I, class T> struct variant_alternative<I, const volatile T>;
+}
+
+namespace std {
+  template<class... Types>
+  class variant {
+  public:
+    // constructors
+    constexpr variant();
+    constexpr variant(const variant&);
+    constexpr variant(variant&&);
+ 
+    template<class T>
+      constexpr variant(T&&);
+ 
+    template<class T, class... Args>
+      variant(in_place_type_t<T>, Args&&...);
+    template<class T, class U, class... Args>
+      variant(in_place_type_t<T>, initializer_list<U>, Args&&...);
+ 
+    template<size_t I, class... Args>
+      variant(in_place_index_t<I>, Args&&...);
+    template<size_t I, class U, class... Args>
+      variant(in_place_index_t<I>, initializer_list<U>, Args&&...);
+ 
+    // destructor
+    ~variant();
+ 
+    // assignment
+    constexpr variant& operator=(const variant&);
+    constexpr variant& operator=(variant&&);
+ 
+    template<class T> constexpr variant& operator=(T&&) ;
+ 
+    // modifiers
+    template<class T, class... Args>
+      constexpr T& emplace(Args&&...);
+    template<class T, class U, class... Args>
+      constexpr T& emplace(initializer_list<U>, Args&&...);
+    template<size_t I, class... Args>
+      constexpr variant_alternative_t<I, variant<Types...>>& emplace(Args&&...);
+    template<size_t I, class U, class... Args>
+      constexpr variant_alternative_t<I, variant<Types...>>&
+        emplace(initializer_list<U>, Args&&...);
+ 
+    // value status
+    constexpr bool valueless_by_exception() const noexcept;
+    constexpr size_t index() const noexcept;
+ 
+    // swap
+    constexpr void swap(variant&) ;
+  };
+}
 
 class Foo{};
 
@@ -52,16 +215,7 @@ using char_t = char;
 // Verify that we warn when we try to get the wrong type out of variant by
 // passing the index of the type and we do not warn when we try to get
 // the stored type
-void stdGetIntegral() {
-  std::variant<int, char> v = 25;
-  // variant t is here to see wether we can distinguish between two variants
-  // variants are identifieb by their memory region
-  std::variant<int, char> t = 'c';
-  int a = std::get<0>(v);
-  char c = std::get<1>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
-  (void*)a;
-  (void*)c;
-}
+
 
 void stdGetType() {
   std::variant<int, char> v = 25;

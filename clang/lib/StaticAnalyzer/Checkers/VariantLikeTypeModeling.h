@@ -219,18 +219,18 @@ void bindFromVariant(const DeclStmt *DeclS, CheckerContext &C,
 template <class T, class U>
 void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
                                     const SVal &ThisSVal) {
-                                      llvm::errs() << "\nAAAAAAAAAAAAAAAAAAAAAAAAAAA\n";
   ProgramStateRef State = Call.getState();
 
   auto ArgSVal = Call.getArgSVal(0);
   auto ThisRegion = ThisSVal.getAsRegion();
   auto ArgMemRegion = ArgSVal.getAsRegion();
-llvm::errs() << "\nDump this\n";
-ThisRegion->dump();
-llvm::errs() << "\nend\n";
-
   auto ThisSymbol = getSymbolOnMemRegion(C, ThisRegion);
   auto ArgSymbol = getSymbolOnMemRegion(C, ArgMemRegion);
+  if (ArgSVal.getAsSymbol()) {
+    llvm::errs() << "Arg got as Symbol Ref\n";
+  } else {
+    llvm::errs() << "Arg NOT Symbol Ref\n";
+  }
 
   // Make changes to the state according to type of constructor/assignment
   State = [&]() {

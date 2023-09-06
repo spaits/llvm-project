@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
@@ -33,7 +32,7 @@ namespace variant_modeling {
 // It is needed because the CallEvent class does not cantain enough information
 // to tell who called it. Checker context is needed
 CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
-  auto CallLocationContext = Call.getLocationContext();
+  const auto *CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
     return nullptr;
   }
@@ -156,6 +155,7 @@ SymbolRef getSymbolOnMemRegion(CheckerContext &C, const MemRegion *MR) {
   } else if (const SymbolicRegion *AsSymbolicRegion = MR->getAs<SymbolicRegion>()) {
     return AsSymbolicRegion->getSymbol();
   }
+  return nullptr;
 }
 
 } // end of namespace variant_modeling
@@ -177,8 +177,8 @@ static QualType getNthTemplateTypeArgFromVariant(const Type *varType,
 
 class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges,
                                          check::PostStmt<BinaryOperator>,
-                                         check::PostStmt<DeclStmt>>,
-                                         check::DeadSymbols {
+                                         check::PostStmt<DeclStmt>>
+                                         {
   // Call descriptors to find relevant calls
   CallDescription VariantConstructor{{"std", "variant", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
@@ -264,6 +264,9 @@ private:
     if (!ThisMemRegion) {
       return;
     }
+    llvm::errs() << "Before sym ref\n";
+    assert(ThisSVal.getAsSymbol() && "NO Symbol for SVal");
+    llvm::errs() << "Sym REF Was found!\n";
 
     // Getting the first type from the possible types list
     QualType DefaultType =
