@@ -33,7 +33,7 @@ namespace variant_modeling {
 // It is needed because the CallEvent class does not cantain enough information
 // to tell who called it. Checker context is needed
 CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
-  auto CallLocationContext = Call.getLocationContext();
+  const auto *CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
     return nullptr;
   }
@@ -41,7 +41,7 @@ CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
   if (CallLocationContext->inTopFrame()) {
     return nullptr;
   }
-  auto CallStackFrameContext = CallLocationContext->getStackFrame();
+  const auto *CallStackFrameContext = CallLocationContext->getStackFrame();
   if (!CallStackFrameContext) {
     return nullptr;
   }
@@ -64,7 +64,7 @@ bool isObjectOf(QualType t, QualType to) {
 
 const CXXConstructorDecl *
 getConstructorDeclarationForCall(const CallEvent &Call) {
-  auto ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+  const auto *ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall) {
     return nullptr;
   }
@@ -85,7 +85,7 @@ bool isCopyAssignmentCall(const CallEvent &Call) {
   if (!CopyAssignmentDecl) {
     return false;
   }
-  auto AsMethodDecl = dyn_cast<CXXMethodDecl>(CopyAssignmentDecl);
+  const auto *AsMethodDecl = dyn_cast<CXXMethodDecl>(CopyAssignmentDecl);
   if (!AsMethodDecl) {
     return false;
   }
@@ -106,7 +106,7 @@ bool isMoveAssignmentCall(const CallEvent &Call) {
   if (!CopyAssignmentDecl) {
     return false;
   }
-  auto AsMethodDecl = dyn_cast<CXXMethodDecl>(CopyAssignmentDecl);
+  const auto *AsMethodDecl = dyn_cast<CXXMethodDecl>(CopyAssignmentDecl);
   if (!AsMethodDecl) {
     return false;
   }
@@ -122,7 +122,7 @@ const TemplateArgument &getFirstTemplateArgument(const CallEvent &Call) {
 }
 
 bool isStdType(const Type *Type, const std::string &TypeName) {
-  auto Decl = Type->getAsRecordDecl();
+  auto *Decl = Type->getAsRecordDecl();
   if (!Decl) {
     return false;
   }
@@ -155,7 +155,7 @@ bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C) {
 
 static ArrayRef<TemplateArgument>
 getTemplateArgsFromVariant(const Type *VariantType) {
-  auto TempSpecType = VariantType->getAs<TemplateSpecializationType>();
+  const auto *TempSpecType = VariantType->getAs<TemplateSpecializationType>();
   assert(TempSpecType &&
          "We are in a variant instance. It must be a template specialization!");
   return TempSpecType->template_arguments();
@@ -222,15 +222,16 @@ public:
       }
       SVal thisSVal = [&]() {
         if (IsVariantConstructor) {
-          auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+          const auto *AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
-        } else if (IsVariantAssignmentOperatorCall) {
-          auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-          return AsMemberOpCall->getCXXThisVal();
-        } else {
-          llvm_unreachable(
-              "We must have an assignment operator or constructor");
         }
+        if (IsVariantAssignmentOperatorCall) {
+          const auto *AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+          return AsMemberOpCall->getCXXThisVal();
+        }
+        llvm_unreachable(
+              "We must have an assignment operator or constructor");
+       
       }();
       handleConstructorAndAssignment<VariantHeldTypeMap, VariantHeldMap>(
           Call, C, thisSVal);
@@ -245,13 +246,13 @@ private:
   void handleDefaultConstructor(const CallEvent &Call,
                                 CheckerContext &C) const {
 
-    auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+    const auto *AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
     assert(AsConstructorCall && "A constructor call must be passed!");
 
     // Get the memory region of the constructed std::variant
     SVal ThisSVal = AsConstructorCall->getCXXThisVal();
 
-    const auto ThisMemRegion = ThisSVal.getAsRegion();
+    const auto *const ThisMemRegion = ThisSVal.getAsRegion();
     if (!ThisMemRegion) {
       return;
     }
@@ -284,8 +285,8 @@ private:
       return;
     }
 
-    auto ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-    auto TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
+    const auto *ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+    const auto *TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
     if (!TypeStored) {
       return;
     }

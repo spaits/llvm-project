@@ -80,10 +80,10 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
   }
   // If the right hand site expression is a cast then we want go get the casted
   // expression.
-  auto RHSCall = dyn_cast<CallExpr>(RHSExpr);
-  auto RHSCast = dyn_cast<CastExpr>(RHSExpr);
+  const auto *RHSCall = dyn_cast<CallExpr>(RHSExpr);
+  const auto *RHSCast = dyn_cast<CastExpr>(RHSExpr);
   while (!RHSCall && RHSCast) {
-    auto SubExpr = RHSCast->getSubExpr();
+    const auto *SubExpr = RHSCast->getSubExpr();
     if (!SubExpr) {
       return;
     }
@@ -114,21 +114,21 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
   // program state can be accessed.
 
   // Get the first argument of the function
-  auto Arg = RHSCall->getArg(0);
+  const auto *Arg = RHSCall->getArg(0);
   if (!Arg) {
     return;
   }
 
   // Get the declaration of the instance
-  auto ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
+  const auto *ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
   if (!ArgDeclRef) {
     return;
   }
-  auto ActualArgDecl = ArgDeclRef->getDecl();
+  const auto *ActualArgDecl = ArgDeclRef->getDecl();
   if (!ActualArgDecl) {
     return;
   }
-  auto VDecl = dyn_cast<VarDecl>(ActualArgDecl);
+  const auto *VDecl = dyn_cast<VarDecl>(ActualArgDecl);
 
   // Get the argument SVal from store manager with the declaration.
   auto ArgSVal =
@@ -137,7 +137,7 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
   // In ArgMemRegion we have the memory region of the calls argument.
   // The call in our case is an std::get with an std::variant argument
   // or an std::any_case with an std::any argument.
-  auto ArgMemRegion = ArgSVal.getAsRegion();
+  const auto *ArgMemRegion = ArgSVal.getAsRegion();
   if (!ArgMemRegion) {
     return;
   }
@@ -172,7 +172,7 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C,
 
   // Now we get the memory region for the LValue we assign the result of
   // std::get or std::any_cast call to.
-  auto LeftHandExpr = BinOp->getLHS();
+  auto *LeftHandExpr = BinOp->getLHS();
   auto LHSVal = C.getSVal(LeftHandExpr);
 
   const Expr *RHSExpr = BinOp->getRHS();
@@ -189,7 +189,7 @@ void bindFromVariant(const DeclStmt *DeclS, CheckerContext &C,
   if (!Declaration) {
     return;
   }
-  const auto VariableDeclaration = dyn_cast<VarDecl>(Declaration);
+  const auto *const VariableDeclaration = dyn_cast<VarDecl>(Declaration);
 
   if (!VariableDeclaration) {
     return;
@@ -224,8 +224,8 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
   ProgramStateRef State = Call.getState();
 
   auto ArgSVal = Call.getArgSVal(0);
-  auto ThisRegion = ThisSVal.getAsRegion();
-  auto ArgMemRegion = ArgSVal.getAsRegion();
+  const auto *ThisRegion = ThisSVal.getAsRegion();
+  const auto *ArgMemRegion = ArgSVal.getAsRegion();
 
   // Make changes to the state according to type of constructor/assignment
   State = [&]() {

@@ -66,11 +66,11 @@ public:
     }
 
     if (AnyReset.matches(Call)) {
-      auto AsMemberCall = dyn_cast<CXXMemberCall>(&Call);
+      const auto *AsMemberCall = dyn_cast<CXXMemberCall>(&Call);
       if (!AsMemberCall) {
         return;
       }
-      auto ThisMemRegion = AsMemberCall->getCXXThisVal().getAsRegion();
+      const auto *ThisMemRegion = AsMemberCall->getCXXThisVal().getAsRegion();
       if (!ThisMemRegion) {
         return;
       }
@@ -87,21 +87,21 @@ public:
       auto State = C.getState();
       SVal ThisSVal = [&]() {
         if (IsAnyConstructor) {
-          auto AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
+          const auto *AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
           return AsConstructorCall->getCXXThisVal();
-        } else if (IsAnyAssignmentOperatorCall) {
-          auto AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
-          return AsMemberOpCall->getCXXThisVal();
-        } else {
-          llvm_unreachable(
-              "We must have an assignment operator or constructor");
         }
+        if (IsAnyAssignmentOperatorCall) {
+          const auto *AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
+          return AsMemberOpCall->getCXXThisVal();
+        }
+        llvm_unreachable("We must have an assignment operator or constructor");
+       
       }();
 
       // default constructor call
       // in this case the any holds a null type
       if (Call.getNumArgs() == 0) {
-        auto ThisMemRegion = ThisSVal.getAsRegion();
+        const auto *ThisMemRegion = ThisSVal.getAsRegion();
         setNullTypeAny(ThisMemRegion, C);
         return;
       }
@@ -137,7 +137,7 @@ private:
 
     // The argument is aether a const reference or a right value reference
     //  We need the type referred
-    auto ArgType = ArgSVal.getType(C.getASTContext())
+    const auto *ArgType = ArgSVal.getType(C.getASTContext())
                        .getTypePtr()
                        ->getPointeeType()
                        .getTypePtr();
@@ -145,7 +145,7 @@ private:
       return;
     }
 
-    auto AnyMemRegion = ArgSVal.getAsRegion();
+    const auto *AnyMemRegion = ArgSVal.getAsRegion();
 
     if (!State->contains<AnyHeldTypeMap>(AnyMemRegion)) {
       return;
@@ -157,7 +157,7 @@ private:
     }
 
     auto TypeOut = FirstTemplateArgument.getAsType();
-    auto TypeStored = State->get<AnyHeldTypeMap>(AnyMemRegion);
+    const auto *TypeStored = State->get<AnyHeldTypeMap>(AnyMemRegion);
 
     // Report when we try to use std::any_cast on an std::any that held a null
     // type
