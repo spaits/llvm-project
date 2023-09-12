@@ -33,7 +33,6 @@
 // CHECK-NEXT: core.StackAddrEscapeBase
 // CHECK-NEXT: core.StackAddressEscape
 // CHECK-NEXT: core.StdAny
-// CHECK-NEXT: core.StdVariant
 // CHECK-NEXT: core.UndefinedBinaryOperatorResult
 // CHECK-NEXT: core.VLASize
 // CHECK-NEXT: core.builtin.BuiltinFunctions

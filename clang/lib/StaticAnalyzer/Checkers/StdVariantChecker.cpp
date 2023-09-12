@@ -166,7 +166,7 @@ static QualType getNthTemplateTypeArgFromVariant(const Type *varType,
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
 
-class StdVariantChecker : public Checker<check::PreCall, check::RegionChanges,
+class StdVariantChecker : public Checker<eval::Call, check::RegionChanges,
                                          check::PostStmt<BinaryOperator>,
                                          check::PostStmt<DeclStmt>> {
   // Call descriptors to find relevant calls
@@ -195,16 +195,15 @@ public:
                                                                    Regions);
   }
 
-  void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+  bool evalCall(const CallEvent &Call, CheckerContext &C) const {
     // Check if the call was not made from a system header. If it was then
     // we do an early return because it is part of the implementation
     if (calledFromSystemHeader(Call, C)) {
-      return;
+      return false;
     }
 
     if (StdGet.matches(Call)) {
-      handleStdGetCall(Call, C);
-      return;
+      return handleStdGetCall(Call, C);
     }
 
     bool IsVariantConstructor =
@@ -215,10 +214,10 @@ public:
     if (IsVariantConstructor || IsVariantAssignmentOperatorCall) {
       if (IsVariantConstructor && Call.getNumArgs() == 0) {
         handleDefaultConstructor(Call, C);
-        return;
+        return true;
       }
       if (Call.getNumArgs() != 1) {
-        return;
+        return true;
       }
       SVal thisSVal = [&]() {
         if (IsVariantConstructor) {
@@ -235,8 +234,9 @@ public:
       }();
       handleConstructorAndAssignment<VariantHeldTypeMap, VariantHeldMap>(
           Call, C, thisSVal);
-      return;
+      return true;
     }
+    return false;
   }
 
 private:
@@ -271,7 +271,7 @@ private:
     C.addTransition(State);
   }
 
-  void handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
+  bool handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
     ProgramStateRef State = Call.getState();
 
     const auto &ArgType = Call.getArgSVal(0)
@@ -282,13 +282,13 @@ private:
     // We have to make sure that the argument is an std::variant.
     // There is another std::get with std::pair argument
     if (!isStdVariant(ArgType)) {
-      return;
+      return false;
     }
 
     const auto *ArgMemRegion = Call.getArgSVal(0).getAsRegion();
     const auto *TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
     if (!TypeStored) {
-      return;
+      return false;
     }
 
     const auto &TypeOut = getFirstTemplateArgument(Call);
@@ -313,14 +313,14 @@ private:
     // Here we must treat object types specially. It is described why by
     // the definition of isObjectOf
     if (GetType == *TypeStored || isObjectOf(GetType, *TypeStored)) {
-      return;
+      return true;
     }
 
     // If the types do not match we create a sink node. The analysis will
     // not continue on this path. [REALLY??????]
     ExplodedNode *ErrNode = C.generateNonFatalErrorNode();
     if (!ErrNode)
-      return;
+      return false;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << "std::variant " << ArgMemRegion->getDescriptiveName() << " held a(n) "
@@ -328,6 +328,7 @@ private:
     auto R = std::make_unique<PathSensitiveBugReport>(BadVariantType, OS.str(),
                                                       ErrNode);
     C.emitReport(std::move(R));
+    return true;
   }
 };
 
