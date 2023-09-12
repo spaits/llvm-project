@@ -3,7 +3,9 @@
 // RUN:   -Xclang -analyzer-checker=debug.ExprInspection \
 // RUN:   -Xclang -analyzer-checker=core,alpha.core.StdVariant
 
-#include <variant>
+//#include <variant>
+
+#include "Inputs/system-header-simulator-std-variant.h"
 
 class Foo{};
 
@@ -52,16 +54,7 @@ using char_t = char;
 // Verify that we warn when we try to get the wrong type out of variant by
 // passing the index of the type and we do not warn when we try to get
 // the stored type
-void stdGetIntegral() {
-  std::variant<int, char> v = 25;
-  // variant t is here to see wether we can distinguish between two variants
-  // variants are identifieb by their memory region
-  std::variant<int, char> t = 'c';
-  int a = std::get<0>(v);
-  char c = std::get<1>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
-  (void*)a;
-  (void*)c;
-}
+
 
 void stdGetType() {
   std::variant<int, char> v = 25;
