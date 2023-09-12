@@ -1,9 +1,64 @@
 // RUN: %clang %s -Xclang -verify --analyze \
 // RUN:   -Xclang -analyzer-checker=core \
 // RUN:   -Xclang -analyzer-checker=debug.ExprInspection \
-// RUN:   -Xclang -analyzer-checker=core,core.StdAny
+// RUN:   -Xclang -analyzer-checker=core,alpha.core.StdAny
 
-#include <any>
+#include <initializer_list>
+#include <type_traits>
+#include <typeinfo>
+namespace std {
+  // class bad_any_cast
+  class bad_any_cast;
+  // class any
+  class any;
+  // non-member functions
+  void swap(any& x, any& y) noexcept;
+  template <class T, class... Args>
+  any make_any(Args&& ...args);
+  template <class T, class U, class... Args>
+  any make_any(initializer_list<U> il, Args&& ...args);
+  template<class ValueType>
+  ValueType any_cast(const any& operand);
+  template<class ValueType>
+  ValueType any_cast(any& operand);
+  template<class ValueType>
+  ValueType any_cast(any&& operand);
+  template<class ValueType>
+  const ValueType* any_cast(const any* operand) noexcept;
+  template<class ValueType>
+  ValueType* any_cast(any* operand) noexcept;
+  class bad_any_cast;
+
+  class any {
+public:
+  // construction and destruction
+  constexpr any() noexcept;
+  any(const any& other);
+  any(any&& other) noexcept;
+  template <class ValueType,
+            typename = std::enable_if_t<!std::is_same_v<std::any, ValueType>>> any(ValueType&& value);
+  // template <class ValueType, class... Args>
+  // explicit any(in_place_type_t<ValueType>, Args&&...);
+  // template <class ValueType, class U, class... Args>
+  // explicit any(in_place_type_t<ValueType>, initializer_list<U>, Args&&...);
+  ~any();
+  // assignments
+  any& operator=(const any& rhs);
+  any& operator=(any&& rhs) noexcept;
+  template <class ValueType,
+  typename = std::enable_if_t<!std::is_same_v<std::any, std::decay_t<ValueType>>>> any& operator=(ValueType&& rhs);
+  // modifiers
+  template <class ValueType, class... Args>
+  void emplace(Args&& ...);
+  template <class ValueType, class U, class... Args>
+  void emplace(initializer_list<U>, Args&&...);
+  void reset() noexcept;
+  void swap(any& rhs) noexcept;
+  // observers
+  bool has_value() const noexcept;
+  const type_info& type() const noexcept;
+};
+}
 
 void clang_analyzer_warnIfReached();
 void clang_analyzer_eval(int);
@@ -175,7 +230,7 @@ void valueHeld() {
   std::any a = 0;
   int i = std::any_cast<int>(a);
   clang_analyzer_eval(0 == i); // expected-warning{{TRUE}}
-  int res = 5/i; // Should report division by zero here
+  int res = 5/i; // expected-warning {{Division by zero}}
   clang_analyzer_warnIfReached(); // no-warning
   (void*)res;
 }

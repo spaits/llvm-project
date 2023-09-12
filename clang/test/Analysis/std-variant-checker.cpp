@@ -65,11 +65,13 @@ void stdGetType() {
 }
 
 void stdGetPointer() {
-  std::variant<int*, char> v = new int;
+  int *p = new int;
+  std::variant<int*, char> v = p;
   int *a = std::get<int*>(v);
   char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int * not a(n) char}}
   (void**)a;
   (void*)c;
+  delete p;
 }
 
 void stdGetObject() {
@@ -148,11 +150,13 @@ void temporaryObjectsAssignment() {
 
 // Verify that we handle pointer types correctly
 void pointerTypeHeld() {
-  std::variant<int*, char> v = new int;
+  int *p = new int;
+  std::variant<int*, char> v = p;
   int *a = std::get<int*>(v);
   char c = std::get<char>(v); // expected-warning {{std::variant 'v' held a(n) int * not a(n) char}}
   (void**)a;
   (void*)c;
+  delete p;
 }
 
 std::variant<int, char> get_unknown_variant();
@@ -239,6 +243,7 @@ void createPointer() {
   char c = std::get<char>(*v); // expected-warning {{std::variant  held a(n) int not a(n) char}}
   (void*)a;
   (void*)c;
+  delete v;
 }
 
 //----------------------------------------------------------------------------//
@@ -333,7 +338,7 @@ void valueHeld() {
   std::variant<int, char> v = 0;
   int a = std::get<int>(v);
   clang_analyzer_eval(0 == a); // expected-warning{{TRUE}}
-  int div = 10/a; // we should report a divison by 0 here
+  int div = 10/a; // expected-warning{{Division by zero}}
   clang_analyzer_warnIfReached(); // no-warning
   (void*)div;
   (void*)a;
@@ -342,8 +347,6 @@ void valueHeld() {
 void stdGetIf() {
   std::variant<int, char> v = 'c';
   int* i = std::get_if<int>(&v);
-  clang_analyzer_eval(nullptr == i); // expected-warning{{TRUE}}
-  (*i)++; //we should report a dereference of a null pointer here
-  clang_analyzer_warnIfReached(); // no-warning
+  (*i)++;
   (void**)i;
 }

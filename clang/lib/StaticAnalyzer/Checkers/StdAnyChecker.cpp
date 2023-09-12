@@ -25,7 +25,7 @@ using namespace variant_modeling;
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldTypeMap, const MemRegion *, QualType)
 REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldMap, const MemRegion *, SVal)
 
-class StdAnyChecker : public Checker<check::PreCall, check::RegionChanges,
+class StdAnyChecker : public Checker<eval::Call, check::RegionChanges,
                                      check::PostStmt<BinaryOperator>,
                                      check::PostStmt<DeclStmt>> {
   CallDescription AnyConstructor{{"std", "any", "any"}};
@@ -54,28 +54,28 @@ public:
         Call, State, Regions);
   }
 
-  void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+  bool evalCall(const CallEvent &Call, CheckerContext &C) const {
     // Do not take implementation details into consideration
     if (calledFromSystemHeader(Call, C)) {
-      return;
+      return false;
     }
 
     if (AnyCast.matches(Call)) {
       handleAnyCastCall(Call, C);
-      return;
+      return true;
     }
 
     if (AnyReset.matches(Call)) {
       const auto *AsMemberCall = dyn_cast<CXXMemberCall>(&Call);
       if (!AsMemberCall) {
-        return;
+        return false;
       }
       const auto *ThisMemRegion = AsMemberCall->getCXXThisVal().getAsRegion();
       if (!ThisMemRegion) {
-        return;
+        return false;
       }
       setNullTypeAny(ThisMemRegion, C);
-      return;
+      return true;
     }
 
     bool IsAnyConstructor =
@@ -103,17 +103,18 @@ public:
       if (Call.getNumArgs() == 0) {
         const auto *ThisMemRegion = ThisSVal.getAsRegion();
         setNullTypeAny(ThisMemRegion, C);
-        return;
+        return true;
       }
 
       if (Call.getNumArgs() != 1) {
-        return;
+        return false;
       }
 
       handleConstructorAndAssignment<AnyHeldTypeMap, AnyHeldMap>(Call, C,
                                                                  ThisSVal);
-      return;
+      return true;
     }
+    return false;
   }
 
 private:
