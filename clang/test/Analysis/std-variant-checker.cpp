@@ -5,7 +5,7 @@
 
 //#include <variant>
 
-#include "Inputs/system-header-simulator-std-variant.h"
+#include "Inputs/system-header-simulator-cxx.h"
 
 class Foo{};
 
