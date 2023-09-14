@@ -16,7 +16,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/FoldingSet.h"
 
-#include "VariantLikeTypeModeling.h"
+#include "TaggedUnionModeling.h"
 #include <string>
 
 using namespace clang;
