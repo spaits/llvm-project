@@ -331,22 +331,3 @@ void nonInleneFunctionCallPtr() {
   (void*)a;
   (void*)c;
 }
-
-
-//What we do not report on, but we should
-void valueHeld() {
-  std::variant<int, char> v = 0;
-  int a = std::get<int>(v);
-  clang_analyzer_eval(0 == a); // expected-warning{{TRUE}}
-  int div = 10/a; // expected-warning{{Division by zero}}
-  clang_analyzer_warnIfReached(); // no-warning
-  (void*)div;
-  (void*)a;
-}
-
-void stdGetIf() {
-  std::variant<int, char> v = 'c';
-  int* i = std::get_if<int>(&v);
-  (*i)++;
-  (void**)i;
-}

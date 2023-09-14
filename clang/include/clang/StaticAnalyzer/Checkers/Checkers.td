@@ -309,10 +309,6 @@ def StdVariantChecker : Checker<"StdVariant">,
   HelpText<"Check wether we access the right type stored in std::variant">,
   Documentation<NotDocumented>;
 
-def StdAnyChecker : Checker<"StdAny">,
-  HelpText<"Check wether we access the right type stored in std::any">,
-  Documentation<NotDocumented>;
-
 } // end "alpha.core"
 
 //===----------------------------------------------------------------------===//

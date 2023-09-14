@@ -23,7 +23,6 @@ using namespace ento;
 using namespace variant_modeling;
 
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion *, QualType)
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion *, SVal)
 
 namespace clang {
 namespace ento {
@@ -134,8 +133,6 @@ bool isStdVariant(const Type *Type) {
   return isStdType(Type, std::string("variant"));
 }
 
-bool isStdAny(const Type *Type) { return isStdType(Type, std::string("any")); }
-
 bool calledFromSystemHeader(const CallEvent &Call,
                             const ProgramStateRef &State) {
   auto Caller = getCaller(Call, State);
@@ -166,9 +163,7 @@ static QualType getNthTemplateTypeArgFromVariant(const Type *varType,
   return getTemplateArgsFromVariant(varType)[i].getAsType();
 }
 
-class StdVariantChecker : public Checker<eval::Call, check::RegionChanges,
-                                         check::PostStmt<BinaryOperator>,
-                                         check::PostStmt<DeclStmt>> {
+class StdVariantChecker : public Checker<eval::Call, check::RegionChanges> {
   // Call descriptors to find relevant calls
   CallDescription VariantConstructor{{"std", "variant", "variant"}};
   CallDescription VariantAsOp{{"std", "variant", "operator="}};
@@ -177,14 +172,6 @@ class StdVariantChecker : public Checker<eval::Call, check::RegionChanges,
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
 public:
-  // Update the [Environment], when assigning the value held in std::variant
-  // to a variable
-  void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
-    bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
-  }
-  void checkPostStmt(const DeclStmt *DeclS, CheckerContext &C) const {
-    bindFromVariant<VariantHeldMap>(DeclS, C, StdGet);
-  }
 
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
                                      const InvalidatedSymbols *,
@@ -192,8 +179,7 @@ public:
                                      ArrayRef<const MemRegion *> Regions,
                                      const LocationContext *,
                                      const CallEvent *Call) const {
-    return removeInformationStoredForDeadInstances<VariantHeldTypeMap,
-                                                   VariantHeldMap>(Call, State,
+    return removeInformationStoredForDeadInstances<VariantHeldTypeMap>(Call, State,
                                                                    Regions);
   }
 
@@ -234,8 +220,7 @@ public:
               "We must have an assignment operator or constructor");
        
       }();
-      handleConstructorAndAssignment<VariantHeldTypeMap, VariantHeldMap>(
-          Call, C, thisSVal);
+      handleConstructorAndAssignment<VariantHeldTypeMap>(Call, C, thisSVal);
       return true;
     }
     return false;

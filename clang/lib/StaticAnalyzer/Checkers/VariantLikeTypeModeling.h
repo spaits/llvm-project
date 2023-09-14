@@ -34,12 +34,11 @@ bool isMoveAssignmentCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
 bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
-bool isStdAny(const Type *Type);
 bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
 
 // When invalidating regions we also have to follow that with our data
 // storages in the program state.
-template <class TypeMap, class SymbolMap>
+template <class TypeMap>
 ProgramStateRef
 removeInformationStoredForDeadInstances(const CallEvent *Call,
                                         ProgramStateRef State,
@@ -63,162 +62,12 @@ removeInformationStoredForDeadInstances(const CallEvent *Call,
         if (State->contains<TypeMap>(CurrentMemRegion)) {
           State = State->remove<TypeMap>(CurrentMemRegion);
         }
-        if (State->contains<SymbolMap>(CurrentMemRegion)) {
-          State = State->remove<SymbolMap>(CurrentMemRegion);
-        }
         return State;
       });
   return State;
 }
 
-template <class SymbolMap>
-void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
-                             const CallDescription &StdGet, CheckerContext &C) {
-  auto LHSLoc = dyn_cast<Loc>(LHSVal);
-  if (!LHSLoc) {
-    return;
-  }
-  // If the right hand site expression is a cast then we want go get the casted
-  // expression.
-  const auto *RHSCall = dyn_cast<CallExpr>(RHSExpr);
-  const auto *RHSCast = dyn_cast<CastExpr>(RHSExpr);
-  while (!RHSCall && RHSCast) {
-    const auto *SubExpr = RHSCast->getSubExpr();
-    if (!SubExpr) {
-      return;
-    }
-    RHSCall = dyn_cast<CallExpr>(SubExpr);
-    RHSCast = dyn_cast<CastExpr>(SubExpr);
-  }
-
-  // Check if there is really a function call on the right.
-  if (!RHSCall) {
-    return;
-  }
-
-  // Check wether the interesting function is called
-  if (!StdGet.matchesAsWritten(*RHSCall)) {
-    return;
-  }
-
-  // Both std::get and std::any_cast have one argument
-  if (RHSCall->getNumArgs() != 1) {
-    return;
-  }
-
-  // We know that at this point we assign value to the LValue on the left from
-  // and a call we want.
-
-  // Now our goal is to get the SVal symbolizing the argument.
-  // With the help of that the information stored in the
-  // program state can be accessed.
-
-  // Get the first argument of the function
-  const auto *Arg = RHSCall->getArg(0);
-  if (!Arg) {
-    return;
-  }
-
-  // Get the declaration of the instance
-  const auto *ArgDeclRef = dyn_cast<DeclRefExpr>(Arg);
-  if (!ArgDeclRef) {
-    return;
-  }
-  const auto *ActualArgDecl = ArgDeclRef->getDecl();
-  if (!ActualArgDecl) {
-    return;
-  }
-  const auto *VDecl = dyn_cast<VarDecl>(ActualArgDecl);
-
-  // Get the argument SVal from store manager with the declaration.
-  auto ArgSVal =
-      C.getStoreManager().getLValueVar(VDecl, C.getLocationContext());
-
-  // In ArgMemRegion we have the memory region of the calls argument.
-  // The call in our case is an std::get with an std::variant argument
-  // or an std::any_case with an std::any argument.
-  const auto *ArgMemRegion = ArgSVal.getAsRegion();
-  if (!ArgMemRegion) {
-    return;
-  }
-
-  auto State = C.getState();
-
-  // We get the value held in std::variant or std::any.
-  auto SValGet = State->get<SymbolMap>(ArgMemRegion);
-  if (!SValGet) {
-    return;
-  }
-
-  // Remove the original binding which was made by inlining the implementation
-  // of the class
-  State = State->killBinding(*LHSLoc);
-
-  // Replace it with our non implementation dependent information
-  State = State->bindLoc(*LHSLoc, *SValGet, C.getLocationContext());
-
-  C.addTransition(State);
-}
-
-template <class SymbolMap>
-// We handle the retrieving of objects from an std::variant or std::any
-void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C,
-                     const CallDescription &StdGet) {
-  // First we check if the right hand site of the call is matches the
-  // CallDescription we gave as argument.
-  if (!BinOp->isAssignmentOp()) {
-    return;
-  }
-
-  // Now we get the memory region for the LValue we assign the result of
-  // std::get or std::any_cast call to.
-  auto *LeftHandExpr = BinOp->getLHS();
-  auto LHSVal = C.getSVal(LeftHandExpr);
-
-  const Expr *RHSExpr = BinOp->getRHS();
-  if (!RHSExpr) {
-    return;
-  }
-  bindVariableFromVariant<SymbolMap>(RHSExpr, LHSVal, StdGet, C);
-}
-
-template <class T>
-void bindFromVariant(const DeclStmt *DeclS, CheckerContext &C,
-                     const CallDescription &StdGet) {
-  const Decl *Declaration = DeclS->getSingleDecl();
-  if (!Declaration) {
-    return;
-  }
-  const auto *const VariableDeclaration = dyn_cast<VarDecl>(Declaration);
-
-  if (!VariableDeclaration) {
-    return;
-  }
-
-  // Get the SVal of the declared variable
-  auto State = C.getState();
-  const LocationContext *CurrentLocation = C.getLocationContext();
-  if (!CurrentLocation) {
-    return;
-  }
-
-  SVal DeclaredVariable =
-      State->getLValue(VariableDeclaration, CurrentLocation);
-  auto DecVarLocation = dyn_cast<Loc>(DeclaredVariable);
-  if (!DecVarLocation) {
-    return;
-  }
-
-  // get the SVal returned by the initial expression
-  const Expr *RHSExpr = VariableDeclaration->getInit();
-  if (!RHSExpr) {
-    return;
-  }
-
-  bindVariableFromVariant<T>(RHSExpr, DeclaredVariable, StdGet, C);
-}
-
-template <class TypeMap, class SymbolMap>
+template <class TypeMap>
 void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
                                     const SVal &ThisSVal) {
   ProgramStateRef State = Call.getState();
@@ -237,21 +86,12 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
       // If the argument of a copy constructor or assignment is unknown then
       // we will not know the argument of the copied to object.
       bool OtherQTypeKnown = State->contains<TypeMap>(ArgMemRegion);
-      bool OtherSValKnown = State->contains<SymbolMap>(ArgMemRegion);
 
       const QualType *OtherQType;
       if (OtherQTypeKnown) {
         OtherQType = State->get<TypeMap>(ArgMemRegion);
       } else {
         return State->contains<TypeMap>(ThisRegion) ? State->remove<TypeMap>(ThisRegion)
-                                              : State;
-      }
-
-      const SVal *OtherSVal;
-      if (OtherSValKnown) {
-        OtherSVal = State->get<SymbolMap>(ArgMemRegion);
-      } else {
-        return State->contains<SymbolMap>(ThisRegion) ? State->remove<SymbolMap>(ThisRegion)
                                               : State;
       }
 
@@ -262,22 +102,13 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
         State = State->contains<TypeMap>(ArgMemRegion)
                     ? State->remove<TypeMap>(ArgMemRegion)
                     : State;
-        State = State->contains<SymbolMap>(ArgMemRegion)
-                    ? State->remove<SymbolMap>(ArgMemRegion)
-                    : State;
       }
-      State = State->set<SymbolMap>(ThisRegion, *OtherSVal);
       return State->set<TypeMap>(ThisRegion, *OtherQType);
     }
     // Then the other constructor/assignment where the argument is the new
     // object held by the std::variant or std::any
     auto ArgQType = ArgSVal.getType(C.getASTContext());
     const Type *ArgTypePtr = ArgQType.getTypePtr();
-    auto AsMemRegLoc = dyn_cast<Loc>(ArgSVal);
-
-    SVal ToStore =
-        C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
-    State = State->set<SymbolMap>(ThisRegion, ToStore);
 
     QualType WoPointer = ArgTypePtr->getPointeeType();
     return State->set<TypeMap>(ThisRegion, WoPointer);
