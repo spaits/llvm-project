@@ -39,7 +39,7 @@ bool calledFromSystemHeader(const CallEvent &Call, CheckerContext &C);
 
 // When invalidating regions we also have to follow that with our data
 // storages in the program state.
-template <class T, class S>
+template <class TypeMap, class SymbolMap>
 ProgramStateRef
 removeInformationStoredForDeadInstances(const CallEvent *Call,
                                         ProgramStateRef State,
@@ -60,18 +60,18 @@ removeInformationStoredForDeadInstances(const CallEvent *Call,
   State = std::accumulate(
       Regions.begin(), Regions.end(), State,
       [](ProgramStateRef State, const MemRegion *CurrentMemRegion) {
-        if (State->contains<T>(CurrentMemRegion)) {
-          State = State->remove<T>(CurrentMemRegion);
+        if (State->contains<TypeMap>(CurrentMemRegion)) {
+          State = State->remove<TypeMap>(CurrentMemRegion);
         }
-        if (State->contains<S>(CurrentMemRegion)) {
-          State = State->remove<S>(CurrentMemRegion);
+        if (State->contains<SymbolMap>(CurrentMemRegion)) {
+          State = State->remove<SymbolMap>(CurrentMemRegion);
         }
         return State;
       });
   return State;
 }
 
-template <class T>
+template <class SymbolMap>
 void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
                              const CallDescription &StdGet, CheckerContext &C) {
   auto LHSLoc = dyn_cast<Loc>(LHSVal);
@@ -145,7 +145,7 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
   auto State = C.getState();
 
   // We get the value held in std::variant or std::any.
-  auto SValGet = State->get<T>(ArgMemRegion);
+  auto SValGet = State->get<SymbolMap>(ArgMemRegion);
   if (!SValGet) {
     return;
   }
@@ -160,7 +160,7 @@ void bindVariableFromVariant(const Expr *RHSExpr, const SVal &LHSVal,
   C.addTransition(State);
 }
 
-template <class T>
+template <class SymbolMap>
 // We handle the retrieving of objects from an std::variant or std::any
 void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C,
                      const CallDescription &StdGet) {
@@ -179,7 +179,7 @@ void bindFromVariant(const BinaryOperator *BinOp, CheckerContext &C,
   if (!RHSExpr) {
     return;
   }
-  bindVariableFromVariant<T>(RHSExpr, LHSVal, StdGet, C);
+  bindVariableFromVariant<SymbolMap>(RHSExpr, LHSVal, StdGet, C);
 }
 
 template <class T>
@@ -218,7 +218,7 @@ void bindFromVariant(const DeclStmt *DeclS, CheckerContext &C,
   bindVariableFromVariant<T>(RHSExpr, DeclaredVariable, StdGet, C);
 }
 
-template <class T, class U>
+template <class TypeMap, class SymbolMap>
 void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
                                     const SVal &ThisSVal) {
   ProgramStateRef State = Call.getState();
@@ -236,22 +236,22 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
     if (IsCopy || IsMove) {
       // If the argument of a copy constructor or assignment is unknown then
       // we will not know the argument of the copied to object.
-      bool OtherQTypeKnown = State->contains<T>(ArgMemRegion);
-      bool OtherSValKnown = State->contains<U>(ArgMemRegion);
+      bool OtherQTypeKnown = State->contains<TypeMap>(ArgMemRegion);
+      bool OtherSValKnown = State->contains<SymbolMap>(ArgMemRegion);
 
       const QualType *OtherQType;
       if (OtherQTypeKnown) {
-        OtherQType = State->get<T>(ArgMemRegion);
+        OtherQType = State->get<TypeMap>(ArgMemRegion);
       } else {
-        return State->contains<T>(ThisRegion) ? State->remove<T>(ThisRegion)
+        return State->contains<TypeMap>(ThisRegion) ? State->remove<TypeMap>(ThisRegion)
                                               : State;
       }
 
       const SVal *OtherSVal;
       if (OtherSValKnown) {
-        OtherSVal = State->get<U>(ArgMemRegion);
+        OtherSVal = State->get<SymbolMap>(ArgMemRegion);
       } else {
-        return State->contains<U>(ThisRegion) ? State->remove<U>(ThisRegion)
+        return State->contains<SymbolMap>(ThisRegion) ? State->remove<SymbolMap>(ThisRegion)
                                               : State;
       }
 
@@ -259,15 +259,15 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
       // object must be in a destructible state. Other usage of the object
       // than destruction is undefined.
       if (IsMove) {
-        State = State->contains<T>(ArgMemRegion)
-                    ? State->remove<T>(ArgMemRegion)
+        State = State->contains<TypeMap>(ArgMemRegion)
+                    ? State->remove<TypeMap>(ArgMemRegion)
                     : State;
-        State = State->contains<U>(ArgMemRegion)
-                    ? State->remove<U>(ArgMemRegion)
+        State = State->contains<SymbolMap>(ArgMemRegion)
+                    ? State->remove<SymbolMap>(ArgMemRegion)
                     : State;
       }
-      State = State->set<U>(ThisRegion, *OtherSVal);
-      return State->set<T>(ThisRegion, *OtherQType);
+      State = State->set<SymbolMap>(ThisRegion, *OtherSVal);
+      return State->set<TypeMap>(ThisRegion, *OtherQType);
     }
     // Then the other constructor/assignment where the argument is the new
     // object held by the std::variant or std::any
@@ -277,16 +277,16 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
 
     SVal ToStore =
         C.getStoreManager().getBinding(C.getState()->getStore(), *AsMemRegLoc);
-    State = State->set<U>(ThisRegion, ToStore);
+    State = State->set<SymbolMap>(ThisRegion, ToStore);
 
     QualType WoPointer = ArgTypePtr->getPointeeType();
-    return State->set<T>(ThisRegion, WoPointer);
+    return State->set<TypeMap>(ThisRegion, WoPointer);
   }();
 
   if (State) {
     C.addTransition(State);
   } else {
-    C.addTransition(Call.getState()->remove<T>(ThisRegion));
+    C.addTransition(Call.getState()->remove<TypeMap>(ThisRegion));
   }
 }
 

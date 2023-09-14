@@ -177,6 +177,8 @@ class StdVariantChecker : public Checker<eval::Call, check::RegionChanges,
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
 public:
+  // Update the [Environment], when assigning the value held in std::variant
+  // to a variable
   void checkPostStmt(const BinaryOperator *BinOp, CheckerContext &C) const {
     bindFromVariant<VariantHeldMap>(BinOp, C, StdGet);
   }
