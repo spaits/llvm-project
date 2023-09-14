@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/Type.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -172,15 +173,14 @@ class StdVariantChecker : public Checker<eval::Call, check::RegionChanges> {
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
 public:
-
   ProgramStateRef checkRegionChanges(ProgramStateRef State,
                                      const InvalidatedSymbols *,
                                      ArrayRef<const MemRegion *>,
                                      ArrayRef<const MemRegion *> Regions,
                                      const LocationContext *,
                                      const CallEvent *Call) const {
-    return removeInformationStoredForDeadInstances<VariantHeldTypeMap>(Call, State,
-                                                                   Regions);
+    return removeInformationStoredForDeadInstances<VariantHeldTypeMap>(
+        Call, State, Regions);
   }
 
   bool evalCall(const CallEvent &Call, CheckerContext &C) const {
@@ -216,9 +216,7 @@ public:
           const auto *AsMemberOpCall = dyn_cast<CXXMemberOperatorCall>(&Call);
           return AsMemberOpCall->getCXXThisVal();
         }
-        llvm_unreachable(
-              "We must have an assignment operator or constructor");
-       
+        llvm_unreachable("We must have an assignment operator or constructor");
       }();
       handleConstructorAndAssignment<VariantHeldTypeMap>(Call, C, thisSVal);
       return true;
@@ -236,7 +234,6 @@ private:
     const auto *AsConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
     assert(AsConstructorCall && "A constructor call must be passed!");
 
-    // Get the memory region of the constructed std::variant
     SVal ThisSVal = AsConstructorCall->getCXXThisVal();
 
     const auto *const ThisMemRegion = ThisSVal.getAsRegion();
@@ -244,7 +241,6 @@ private:
       return;
     }
 
-    // Getting the first type from the possible types list
     QualType DefaultType =
         getNthTemplateTypeArgFromVariant(ThisSVal.getType(C.getASTContext())
                                              .getTypePtr()
@@ -252,7 +248,6 @@ private:
                                              .getTypePtr(),
                                          0);
 
-    // Update the state for the default constructed std::variant
     ProgramStateRef State = Call.getState();
     State = State->set<VariantHeldTypeMap>(ThisMemRegion, DefaultType);
     C.addTransition(State);
@@ -272,14 +267,16 @@ private:
       return false;
     }
 
-    const auto *ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-    const auto *TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
+    // Get the mem region of the argument std::variant and get what type
+    // information is known about it.
+    const MemRegion *ArgMemRegion = Call.getArgSVal(0).getAsRegion();
+    const QualType *TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
     if (!TypeStored) {
       return false;
     }
 
     const auto &TypeOut = getFirstTemplateArgument(Call);
-    // std::gets first template parameter can be the type we want to get
+    // std::get's first template parameter can be the type we want to get
     // out of the std::variant or a natural number which is the position of
     // the wished type in the argument std::variants type list.
     auto GetType = [&]() {
@@ -303,8 +300,6 @@ private:
       return true;
     }
 
-    // If the types do not match we create a sink node. The analysis will
-    // not continue on this path. [REALLY??????]
     ExplodedNode *ErrNode = C.generateNonFatalErrorNode();
     if (!ErrNode)
       return false;

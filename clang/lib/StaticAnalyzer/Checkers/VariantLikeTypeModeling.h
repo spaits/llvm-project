@@ -91,8 +91,9 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
       if (OtherQTypeKnown) {
         OtherQType = State->get<TypeMap>(ArgMemRegion);
       } else {
-        return State->contains<TypeMap>(ThisRegion) ? State->remove<TypeMap>(ThisRegion)
-                                              : State;
+        return State->contains<TypeMap>(ThisRegion)
+                   ? State->remove<TypeMap>(ThisRegion)
+                   : State;
       }
 
       // When move semantics is used we can only know that the moved from
