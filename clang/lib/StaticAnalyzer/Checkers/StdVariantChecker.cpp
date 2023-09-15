@@ -17,7 +17,6 @@
 #include "llvm/ADT/FoldingSet.h"
 
 #include "TaggedUnionModeling.h"
-#include <string>
 
 using namespace clang;
 using namespace ento;
@@ -50,12 +49,6 @@ CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
   return CEMgr.getCaller(CallStackFrameContext, State);
 }
 
-// When we try to get out an object type of an (lets call the class Foo from
-// which the object was made from) std::variant we find that
-// the std::get<Foo>s template parameters QualType is 'class Foo', while
-// when we get the QualType of the right hand site of
-// std::variant<Foo, int> = Foo{} it is just 'Foo' the reason for that is
-// TODO
 bool isObjectOf(QualType t, QualType to) {
   QualType canonicalTypeT = t.getCanonicalType();
   QualType canonicalTypeTo = to.getCanonicalType();
@@ -294,8 +287,7 @@ private:
       }
     }();
 
-    // Here we must treat object types specially. It is described why by
-    // the definition of isObjectOf
+    // Here we must treat object types different.
     if (GetType == *TypeStored || isObjectOf(GetType, *TypeStored)) {
       return true;
     }
