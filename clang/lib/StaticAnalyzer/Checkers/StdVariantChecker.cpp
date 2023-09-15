@@ -288,7 +288,7 @@ private:
     }();
 
     // Here we must treat object types different.
-    if (GetType == *TypeStored || isObjectOf(GetType, *TypeStored)) {
+    if (GetType == *TypeStored) {
       return true;
     }
 
