@@ -305,6 +305,10 @@ def C11LockChecker : Checker<"C11Lock">,
   Dependencies<[PthreadLockBase]>,
   Documentation<HasDocumentation>;
 
+def StdVariantChecker : Checker<"StdVariant">,
+  HelpText<"Check wether we access the right type stored in std::variant">,
+  Documentation<NotDocumented>;
+
 } // end "alpha.core"
 
 //===----------------------------------------------------------------------===//
