@@ -3,8 +3,6 @@
 // RUN:   -Xclang -analyzer-checker=debug.ExprInspection \
 // RUN:   -Xclang -analyzer-checker=core,alpha.core.StdVariant
 
-//#include <variant>
-
 #include "Inputs/system-header-simulator-cxx.h"
 
 class Foo{};
@@ -51,11 +49,6 @@ using char_t = char;
 //----------------------------------------------------------------------------//
 // std::get
 //----------------------------------------------------------------------------//
-// Verify that we warn when we try to get the wrong type out of variant by
-// passing the index of the type and we do not warn when we try to get
-// the stored type
-
-
 void stdGetType() {
   std::variant<int, char> v = 25;
   int a = std::get<int>(v);
@@ -102,7 +95,7 @@ void copyConstructor() {
   (void*)c;
 }
 
-void copyAssignemntOperator() {
+void copyAssignmentOperator() {
   std::variant<int, char> v = 25;
   std::variant<int, char> t = 'c';
   t = v;
@@ -112,7 +105,7 @@ void copyAssignemntOperator() {
   (void*)c;
 }
 
-void assignemntOperator() {
+void assignmentOperator() {
   std::variant<int, char> v = 25;
   int a = std::get<int> (v);
   (void*)a;
@@ -203,7 +196,7 @@ void typedefedTypedfefedVariant() {
   (void*)c;
 }
 
-void typdefedGet() {
+void typedefedGet() {
   std::variant<char, int> v = 25;
   int a = std::get<int_t>(v);
   char c = std::get<char_t>(v); // expected-warning {{std::variant 'v' held a(n) int not a(n) char}}
@@ -251,7 +244,7 @@ void createPointer() {
 //----------------------------------------------------------------------------//
 
 // Verifying that we are not invalidating the memory region of a variant if
-// a non inlined or inlined funtion takes it as a constant reference or pointer
+// a non inlined or inlined function takes it as a constant reference or pointer
 void constNonInlineRef() {
   std::variant<int, char> v = 'c';
   cannotChangePtr(v);
@@ -281,7 +274,7 @@ void copyInAFunction() {
 }
 
 // Verifying that we can keep track of the type stored in std::variant when
-// it is passed to an inlined funtion as a reference or pointer
+// it is passed to an inlined function as a reference or pointer
 void changeThruPointers() {
   std::variant<int, char> v = 15;
   changeVariantPtr(&v);
@@ -313,8 +306,8 @@ void inlineFunctionCall() {
 }
 
 // Verifying that we invalidate the mem region of std::variant when it is
-// passed as a referenece or a pointer to a non inlined function
-void nonInleneFunctionCall() {
+// passed as a non const reference or a pointer to a non inlined function.
+void nonInlineFunctionCall() {
   std::variant<int, char> v = 'c';
   changesToInt(v);
   int a = std::get<int> (v); // no-waring
@@ -323,7 +316,7 @@ void nonInleneFunctionCall() {
   (void*)c;
 }
 
-void nonInleneFunctionCallPtr() {
+void nonInlineFunctionCallPtr() {
   std::variant<int, char> v = 'c';
   changesToInt(&v);
   int a = std::get<int> (v); // no-warning

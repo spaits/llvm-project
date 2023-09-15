@@ -27,7 +27,6 @@ namespace variant_modeling {
 // StdVariantChecker.cpp file under the same directory as this file.
 CallEventRef<> getCaller(const CallEvent &Call, CheckerContext &C);
 const TemplateArgument &getFirstTemplateArgument(const CallEvent &Call);
-bool isObjectOf(QualType t, QualType to);
 bool isCopyConstructorCall(const CallEvent &Call);
 bool isCopyAssignmentCall(const CallEvent &Call);
 bool isMoveAssignmentCall(const CallEvent &Call);

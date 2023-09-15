@@ -29,8 +29,8 @@ namespace ento {
 namespace variant_modeling {
 
 // Returns the CallEvent representing the caller of the function
-// It is needed because the CallEvent class does not cantain enough information
-// to tell who called it. Checker context is needed
+// It is needed because the CallEvent class does not contain enough information
+// to tell who called it. Checker context is needed.
 CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
   const auto *CallLocationContext = Call.getLocationContext();
   if (!CallLocationContext) {
@@ -47,12 +47,6 @@ CallEventRef<> getCaller(const CallEvent &Call, const ProgramStateRef &State) {
 
   CallEventManager &CEMgr = State->getStateManager().getCallEventManager();
   return CEMgr.getCaller(CallStackFrameContext, State);
-}
-
-bool isObjectOf(QualType t, QualType to) {
-  QualType canonicalTypeT = t.getCanonicalType();
-  QualType canonicalTypeTo = to.getCanonicalType();
-  return canonicalTypeTo == canonicalTypeT && canonicalTypeTo->isObjectType();
 }
 
 const CXXConstructorDecl *
@@ -263,16 +257,16 @@ private:
     // Get the mem region of the argument std::variant and get what type
     // information is known about it.
     const MemRegion *ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-    const QualType *TypeStored = State->get<VariantHeldTypeMap>(ArgMemRegion);
-    if (!TypeStored) {
+    const QualType *StoredType = State->get<VariantHeldTypeMap>(ArgMemRegion);
+    if (!StoredType) {
       return false;
     }
 
     const auto &TypeOut = getFirstTemplateArgument(Call);
     // std::get's first template parameter can be the type we want to get
     // out of the std::variant or a natural number which is the position of
-    // the wished type in the argument std::variants type list.
-    auto GetType = [&]() {
+    // the wished type in the argument std::variant's type list.
+    auto RetrievedType = [&]() {
       switch (TypeOut.getKind()) {
       case TemplateArgument::ArgKind::Type:
         return TypeOut.getAsType();
@@ -287,8 +281,9 @@ private:
       }
     }();
 
-    // Here we must treat object types different.
-    if (GetType == *TypeStored) {
+    QualType RetrievedCanonicalType = RetrievedType.getCanonicalType();
+    QualType StoredCanonicalType = StoredType->getCanonicalType();
+    if (RetrievedCanonicalType == StoredCanonicalType) {
       return true;
     }
 
@@ -298,7 +293,7 @@ private:
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << "std::variant " << ArgMemRegion->getDescriptiveName() << " held a(n) "
-       << TypeStored->getAsString() << " not a(n) " << GetType.getAsString();
+       << StoredType->getAsString() << " not a(n) " << RetrievedType.getAsString();
     auto R = std::make_unique<PathSensitiveBugReport>(BadVariantType, OS.str(),
                                                       ErrNode);
     C.emitReport(std::move(R));
