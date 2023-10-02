@@ -2545,10 +2545,6 @@ public:
     if (!E->isPRValue())
       return {};
 
-    const ExplodedNode *RVNode = findNodeForExpression(ExprNode, E);
-    if (!RVNode)
-      return {};
-
     Tracker::Result CombinedResult;
     Tracker &Parent = getParentTracker();
 
@@ -2572,15 +2568,15 @@ public:
       return {};
     }
 
-    ProgramStateRef RVState = RVNode->getState();
-    SVal V = RVState->getSValAsScalarOrLoc(E, RVNode->getLocationContext());
+    ProgramStateRef RVState = ExprNode->getState();
+    SVal V = RVState->getSValAsScalarOrLoc(E, ExprNode->getLocationContext());
     const auto *BO = dyn_cast<BinaryOperator>(E);
 
     if (!BO || !BO->isMultiplicativeOp() || !V.isZeroConstant())
       return {};
 
-    SVal RHSV = RVState->getSVal(BO->getRHS(), RVNode->getLocationContext());
-    SVal LHSV = RVState->getSVal(BO->getLHS(), RVNode->getLocationContext());
+    SVal RHSV = RVState->getSVal(BO->getRHS(), ExprNode->getLocationContext());
+    SVal LHSV = RVState->getSVal(BO->getLHS(), ExprNode->getLocationContext());
 
     // Track both LHS and RHS of a multiplication.
     if (BO->getOpcode() == BO_Mul) {
