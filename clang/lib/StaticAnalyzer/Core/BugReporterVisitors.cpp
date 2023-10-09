@@ -104,10 +104,7 @@ const Expr *bugreporter::getDerefExpr(const Stmt *S) {
   if (!E)
     return nullptr;
   
-  unsigned i = 0;
   while (true) {
-    llvm::errs() << "[GetDerefExpr, " << i << "] loop\n";
-    E->dump();
     if (const auto *CE = dyn_cast<CastExpr>(E)) {
       if (CE->getCastKind() == CK_LValueToRValue) {
         // This cast represents the load we're looking for.
@@ -137,8 +134,6 @@ const Expr *bugreporter::getDerefExpr(const Stmt *S) {
     }
     // Pattern match for a few useful cases: a[0], p->f, *p etc.
     else if (const auto *ME = dyn_cast<MemberExpr>(E)) {
-      llvm::errs() << "[GetDerefExpr " << i << "] MemberExpr\n";
-      ME->getMemberDecl()->getType()->dump();
       if (ME->getMemberDecl()->getType()->isReferenceType())
         break;
       E = ME->getBase();
@@ -154,7 +149,6 @@ const Expr *bugreporter::getDerefExpr(const Stmt *S) {
       // Other arbitrary stuff.
       break;
     }
-    ++i;
   }
   
   // Special case: remove the final lvalue-to-rvalue cast, but do not recurse
@@ -163,44 +157,31 @@ const Expr *bugreporter::getDerefExpr(const Stmt *S) {
   if (const auto *CE = dyn_cast<ImplicitCastExpr>(E))
     if (CE->getCastKind() == CK_LValueToRValue)
       E = CE->getSubExpr();
-  llvm::errs() << "Finnaly returning:\n";
-  E->dump();
   return E;
 }
 
 static const MemRegion *
 getLocationRegionIfReference(const Expr *E, const ExplodedNode *N,
                              bool LookingForReference = true) {
-  llvm::errs() << "Node:\n";
-  N->getLocation().dump();
-  llvm::errs() << "\n Expression:\n";
-  E->dump();
-  llvm::errs() << "\n";
   if(const auto *ME = dyn_cast<MemberExpr>(E)) {
     E = ME->getBase();
     if (const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
-      llvm::errs() << "OK FieldDecl\n";
       if (const auto *DR = dyn_cast<DeclRefExpr>(E)) {
         if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
           if (FD->getType()->isReferenceType()) {
-            llvm::errs() << "Even ref\n";
             SVal StructSVal = N->getState()->getLValue(VD, N->getLocationContext());
-            llvm::errs() << "OKOKOK\n";
             return N->getState()->getLValue(FD,StructSVal).getAsRegion();
           }
         }
       }
-      return nullptr;//N->getState()->getLValue(FD,N->getState()->getLValue(dyn_cast<VarDecl>(dyn_cast<DeclRefExpr>(E)),N->getLocationContext())).getAsRegion();
+      return nullptr;
     }
   }
 
   if (const auto *DR = dyn_cast<DeclRefExpr>(E)) {
-    llvm::errs() << "Got DeclRefExpr\n";
     if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
       if (LookingForReference && !VD->getType()->isReferenceType()) {
-        llvm::errs() << "Returned null\n";
         return nullptr;}
-      llvm::errs() << "NEVER HERE\n";
       return N->getState()
           ->getLValue(VD, N->getLocationContext())
           .getAsRegion();
@@ -212,7 +193,6 @@ getLocationRegionIfReference(const Expr *E, const ExplodedNode *N,
   //   struct Wrapper { int &ref; };
   //   Wrapper w = { *(int *)0 };
   //   w.ref = 1;
-  llvm::errs() << "Maybe here!\n";
   return nullptr;
 }
 
@@ -2353,21 +2333,11 @@ public:
     PathSensitiveBugReport &Report = getParentTracker().getReport();
     Tracker::Result Result;
 
-    std::cout << "Hello from InterestingLvalueHandler\n";
     // See if the expression we're interested refers to a variable.
     // If so, we can track both it's contents and constraints on its value.
-    llvm::errs() << "Inner expression:\n";
-    Inner->dump();
-    llvm::errs() <<"\n";
     if (ExplodedGraph::isInterestingLValueExpr(Inner)) {
-      llvm::errs() << "Calling for get location\n";
       SVal LVal = LVNode->getSVal(Inner);
       const MemRegion *RR = getLocationRegionIfReference(Inner, LVNode);
-      if (RR) {
-        llvm::errs() << "We got RR\n";
-      } else {
-        llvm::errs() << "No RR\n";
-      }
       bool LVIsNull = LVState->isNull(LVal).isConstrainedTrue();
 
       // If this is a C++ reference to a null pointer, we are tracking the
@@ -2384,7 +2354,6 @@ public:
           (RR && LVIsNull) ? RR : LVNode->getSVal(Inner).getAsRegion();
 
       if (R) {
-        llvm::errs() << "Got err\n";
         // Mark both the variable region and its contents as interesting.
         SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
         Report.addVisitor<NoStoreFuncVisitor>(cast<SubRegion>(R), Opts.Kind);
