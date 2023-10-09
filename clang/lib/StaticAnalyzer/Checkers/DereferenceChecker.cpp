@@ -225,7 +225,12 @@ void DereferenceChecker::reportBug(DerefKind K, ProgramStateRef State,
 
   auto report = std::make_unique<PathSensitiveBugReport>(
       *BT, buf.empty() ? BT->getDescription() : buf.str(), N);
-
+  llvm::errs() << "[DerefChecker] Before sending it through the getDerefExpr:\n";
+  S->dump();
+  llvm::errs() << "\n";
+  llvm::errs() << "[DerefChecker] The derefered expression:\n";
+  bugreporter::getDerefExpr(S)->dump();
+  llvm::errs() << "\n";
   bugreporter::trackExpressionValue(N, bugreporter::getDerefExpr(S), *report);
 
   for (SmallVectorImpl<SourceRange>::iterator

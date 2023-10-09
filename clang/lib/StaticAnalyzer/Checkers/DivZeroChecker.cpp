@@ -52,6 +52,9 @@ void DivZeroChecker::reportBug(StringRef Msg, ProgramStateRef StateZero,
       BT.reset(new BugType(this, "Division by zero", categories::LogicError));
 
     auto R = std::make_unique<PathSensitiveBugReport>(*BT, Msg, N);
+    llvm::errs() << "Denominator:\n";
+    getDenomExpr(N)->dump();
+    llvm::errs() << "\n";
     bugreporter::trackExpressionValue(N, getDenomExpr(N), *R);
     C.emitReport(std::move(R));
   }
