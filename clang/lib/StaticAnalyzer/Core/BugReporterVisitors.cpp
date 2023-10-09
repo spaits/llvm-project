@@ -176,6 +176,24 @@ getLocationRegionIfReference(const Expr *E, const ExplodedNode *N,
   llvm::errs() << "\n Expression:\n";
   E->dump();
   llvm::errs() << "\n";
+  if(const auto *ME = dyn_cast<MemberExpr>(E)) {
+    E = ME->getBase();
+    if (const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
+      llvm::errs() << "OK FieldDecl\n";
+      if (const auto *DR = dyn_cast<DeclRefExpr>(E)) {
+        if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
+          if (FD->getType()->isReferenceType()) {
+            llvm::errs() << "Even ref\n";
+            SVal StructSVal = N->getState()->getLValue(VD, N->getLocationContext());
+            llvm::errs() << "OKOKOK\n";
+            return N->getState()->getLValue(FD,StructSVal).getAsRegion();
+          }
+        }
+      }
+      return nullptr;//N->getState()->getLValue(FD,N->getState()->getLValue(dyn_cast<VarDecl>(dyn_cast<DeclRefExpr>(E)),N->getLocationContext())).getAsRegion();
+    }
+  }
+
   if (const auto *DR = dyn_cast<DeclRefExpr>(E)) {
     llvm::errs() << "Got DeclRefExpr\n";
     if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
