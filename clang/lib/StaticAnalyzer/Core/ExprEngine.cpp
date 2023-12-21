@@ -68,6 +68,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/DOTGraphTraits.h"
@@ -968,7 +969,9 @@ void ExprEngine::processCFGElement(const CFGElement E, ExplodedNode *Pred,
   PrettyStackTraceLocationContext CrashInfo(Pred->getLocationContext());
   currStmtIdx = StmtIdx;
   currBldrCtx = Ctx;
-
+  llvm::errs() << "PROCESS NEXT " << E.getKind() << " " << Pred->getState()->getID() <<"\n";
+  Pred->getState()->dump();
+  llvm::errs() << "\n";
   switch (E.getKind()) {
     case CFGElement::Statement:
     case CFGElement::Constructor:
@@ -1156,8 +1159,11 @@ void ExprEngine::ProcessLoopExit(const Stmt* S, ExplodedNode *Pred) {
 
 void ExprEngine::ProcessInitializer(const CFGInitializer CFGInit,
                                     ExplodedNode *Pred) {
+  llvm::errs() << "ProcessInitializer\n";
   const CXXCtorInitializer *BMI = CFGInit.getInitializer();
   const Expr *Init = BMI->getInit()->IgnoreImplicit();
+  llvm::errs() << "Dump init\n";
+  Init->dump();
   const LocationContext *LC = Pred->getLocationContext();
 
   PrettyStackTraceLoc CrashInfo(getContext().getSourceManager(),
@@ -1176,11 +1182,13 @@ void ExprEngine::ProcessInitializer(const CFGInitializer CFGInit,
 
   // Evaluate the initializer, if necessary
   if (BMI->isAnyMemberInitializer()) {
+    llvm::errs() << "AnyMemberInit\n";
     // Constructors build the object directly in the field,
     // but non-objects must be copied in from the initializer.
     if (getObjectUnderConstruction(State, BMI, LC)) {
       // The field was directly constructed, so there is no need to bind.
       // But we still need to stop tracking the object under construction.
+      llvm::errs() << "M1\n";
       State = finishObjectConstruction(State, BMI, LC);
       NodeBuilder Bldr(Pred, Tmp, *currBldrCtx);
       PostStore PS(Init, LC, /*Loc*/ nullptr, /*tag*/ nullptr);
@@ -1191,12 +1199,14 @@ void ExprEngine::ProcessInitializer(const CFGInitializer CFGInit,
         Field = BMI->getIndirectMember();
         FieldLoc = State->getLValue(BMI->getIndirectMember(), thisVal);
       } else {
+        llvm::errs() << "Else else\n";
         Field = BMI->getMember();
         FieldLoc = State->getLValue(BMI->getMember(), thisVal);
       }
 
       SVal InitVal;
       if (Init->getType()->isArrayType()) {
+        llvm::errs() << "Array Type\n";
         // Handle arrays of trivial type. We can represent this with a
         // primitive load/copy from the base array region.
         const ArraySubscriptExpr *ASE;
@@ -1223,6 +1233,7 @@ void ExprEngine::ProcessInitializer(const CFGInitializer CFGInit,
       evalBind(Tmp, Init, Pred, FieldLoc, InitVal, /*isInit=*/true, &PP);
     }
   } else if (BMI->isBaseInitializer() && isa<InitListExpr>(Init)) {
+    llvm::errs() << "Base init\n";
     // When the base class is initialized with an initialization list and the
     // base class does not have a ctor, there will not be a CXXConstructExpr to
     // initialize the base region. Hence, we need to make the bind for it.
@@ -1316,6 +1327,7 @@ void ExprEngine::ProcessImplicitDtor(const CFGImplicitDtor D,
 
 void ExprEngine::ProcessNewAllocator(const CXXNewExpr *NE,
                                      ExplodedNode *Pred) {
+  llvm::errs() << "ALLOC PROC\n";
   ExplodedNodeSet Dst;
   AnalysisManager &AMgr = getAnalysisManager();
   AnalyzerOptions &Opts = AMgr.options;
@@ -1717,6 +1729,14 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
   StmtNodeBuilder Bldr(Pred, DstTop, *currBldrCtx);
 
   assert(!isa<Expr>(S) || S == cast<Expr>(S)->IgnoreParens());
+
+  llvm::errs() << "MERGE before"<<S->getStmtClass()<<"\n";
+
+  llvm::errs() << Pred->getState()->getID() << "\n";
+  Pred->getLocation().dump();
+  llvm::errs() << "\n";
+  Pred->getState()->dump();
+  llvm::errs() << "MERGE end before\n";
 
   switch (S->getStmtClass()) {
     // C++, OpenMP and ARC stuff we don't support yet.
@@ -2158,6 +2178,11 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       Bldr.takeNodes(Pred);
       VisitCXXConstructExpr(cast<CXXConstructExpr>(S), Pred, Dst);
       Bldr.addNodes(Dst);
+      llvm::errs() << "After CXX Constructor List Expr\n";
+      for (auto *a : llvm::iterator_range(Dst)) {
+        a->getState()->dump();
+      }
+      llvm::errs() << "\n---\n";
       break;
 
     case Stmt::CXXInheritedCtorInitExprClass:
@@ -2235,6 +2260,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       break;
 
     case Stmt::DeclRefExprClass: {
+      llvm::errs() << "DECLREFEXPR\n";
       Bldr.takeNodes(Pred);
       const auto *DE = cast<DeclRefExpr>(S);
       VisitCommonDeclRefExpr(DE, DE->getDecl(), Pred, Dst);
@@ -2286,10 +2312,16 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       Bldr.takeNodes(Pred);
       VisitInitListExpr(cast<InitListExpr>(S), Pred, Dst);
       Bldr.addNodes(Dst);
+      llvm::errs() << "After Init List Expr\n";
+      for (auto *a : llvm::iterator_range(Dst)) {
+        a->getState()->dump();
+      }
+      llvm::errs() << "\n---\n";
       break;
 
     case Stmt::MemberExprClass:
       Bldr.takeNodes(Pred);
+      llvm::errs() << "VisitMember\n";
       VisitMemberExpr(cast<MemberExpr>(S), Pred, Dst);
       Bldr.addNodes(Dst);
       break;
@@ -2420,6 +2452,14 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       break;
     }
   }
+  for (auto *dst : llvm::iterator_range(Dst)) {
+        llvm::errs() << "MERGE after\n";
+        dst->getLocation().dump();
+        llvm::errs() << "\n";
+        llvm::errs() << dst->getState()->getID() << "\n";
+        dst->getState()->dump();
+        llvm::errs() << "MERGE end after\n";
+      }
 }
 
 bool ExprEngine::replayWithoutInlining(ExplodedNode *N,
@@ -3351,6 +3391,7 @@ void ExprEngine::VisitMemberExpr(const MemberExpr *M, ExplodedNode *Pred,
 
   // Handle static member variables and enum constants accessed via
   // member syntax.
+  llvm::errs() << "MEMBER\n";
   if (isa<VarDecl, EnumConstantDecl>(Member)) {
     for (const auto I : CheckedSet)
       VisitCommonDeclRefExpr(M, Member, I, EvalSet);

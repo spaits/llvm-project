@@ -303,7 +303,7 @@ void NonLoc::dumpToStream(raw_ostream &os) const {
     break;
   }
     case nonloc::SymbolValKind:
-      os << castAs<nonloc::SymbolVal>().getSymbol();
+      os << "SymbolVal " << castAs<nonloc::SymbolVal>().getSymbol();
       break;
 
     case nonloc::LocAsIntegerKind: {

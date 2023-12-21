@@ -12,8 +12,17 @@
 
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/Stmt.h"
+#include "clang/AST/Type.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/iterator_range.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/raw_ostream.h"
 #include <optional>
 
 using namespace clang;
@@ -730,9 +739,29 @@ void ExprEngine::VisitLogicalExpr(const BinaryOperator* B, ExplodedNode *Pred,
   Bldr.generateNode(B, Pred, state->BindExpr(B, Pred->getLocationContext(), X));
 }
 
+static bool isBaseClassOf(const QualType &Base, const QualType &Derived) {
+  auto *BaseDecl = Base->getAsCXXRecordDecl();
+  auto *DerivedDecl = Derived->getAsCXXRecordDecl();
+  if (BaseDecl && DerivedDecl) {
+    return DerivedDecl->isDerivedFrom(BaseDecl);
+  }
+  return false;
+}
+
+static const ExplodedNode* findNodeForExpression(const ExplodedNode *N,
+                                                 const Expr *Inner) {
+  while (N) {
+    if (N->getStmtForDiagnostics() == Inner)
+      return N;
+    N = N->getFirstPred();
+  }
+  return N;
+}
+
 void ExprEngine::VisitInitListExpr(const InitListExpr *IE,
                                    ExplodedNode *Pred,
                                    ExplodedNodeSet &Dst) {
+  llvm::errs() << "BEGIN init list expr\n";
   StmtNodeBuilder B(Pred, Dst, *currBldrCtx);
 
   ProgramStateRef state = Pred->getState();
@@ -752,12 +781,49 @@ void ExprEngine::VisitInitListExpr(const InitListExpr *IE,
       B.generateNode(IE, Pred, state->BindExpr(IE, LCtx, V));
       return;
     }
-
+    bool baseClasses = true;
     for (const Stmt *S : llvm::reverse(*IE)) {
-      SVal V = state->getSVal(cast<Expr>(S), LCtx);
+      const auto *Ex = llvm::dyn_cast_or_null<Expr>(S);
+      if (Ex && baseClasses && isBaseClassOf(Ex->getType(), IE->getType())) {
+        llvm::errs() << "E:\n";
+        Ex->dump();
+        const ExplodedNode *E = findNodeForExpression(Pred, Ex);
+        E->getLocationContext()->dump();
+        // llvm::errs() << "State for Expr\n";
+        // E->getState()->dump();
+        // llvm::errs() << "State for initl\n";
+        // Pred->getState()->dump();
+        
+        llvm::errs() << "Base class found\n";
+      } else
+        baseClasses = false;
+      
+      SVal V = state->getSVal(Ex, LCtx);
+      
+      llvm::errs() << "Init expr loop:\n";
+      V.dump();
+      llvm::errs() << " - ";
+      if (auto *MrgForElement = V.getAsRegion()) {
+        MrgForElement->dump();
+      } else {
+        llvm::errs() << "No reg for element\n";
+      }
+      llvm::errs() << "--\n";
       vals = getBasicVals().prependSVal(V, vals);
     }
 
+
+
+    nonloc::CompoundVal CompundSValForInitList = *llvm::dyn_cast_or_null<nonloc::CompoundVal>(svalBuilder.makeCompoundVal(T, vals));
+    llvm::errs() << "Dumping Compound SVal:\n";
+    CompundSValForInitList.dump();
+    llvm::errs() << "\nDump mem region:\n";
+    if (auto mrg = CompundSValForInitList.getAsRegion()) {
+      mrg->dump();
+    } else {
+      llvm::errs() << "No mrg\n";
+    }
+    llvm::errs() << "\n";
     B.generateNode(IE, Pred,
                    state->BindExpr(IE, LCtx,
                                    svalBuilder.makeCompoundVal(T, vals)));

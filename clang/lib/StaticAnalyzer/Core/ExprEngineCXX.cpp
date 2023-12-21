@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/StmtCXX.h"
@@ -19,9 +20,13 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include <optional>
 
 using namespace clang;
@@ -129,6 +134,7 @@ SVal ExprEngine::computeObjectUnderConstruction(
 
   // Compute the target region by exploring the construction context.
   if (CC) {
+    llvm::errs() <<"CK in computeObjectUnderConstruction: " << CC->getKind() << "\n";
     switch (CC->getKind()) {
     case ConstructionContext::CXX17ElidedCopyVariableKind:
     case ConstructionContext::SimpleVariableKind: {
@@ -588,6 +594,8 @@ void ExprEngine::handleConstructor(const Expr *E,
 
   const LocationContext *LCtx = Pred->getLocationContext();
   ProgramStateRef State = Pred->getState();
+  // Replace it w getContext()
+  ASTContext &ASTCtx = State->getStateManager().getContext();
 
   SVal Target = UnknownVal();
 
@@ -597,6 +605,7 @@ void ExprEngine::handleConstructor(const Expr *E,
         // We've previously modeled an elidable constructor by pretending that
         // it in fact constructs into the correct target. This constructor can
         // therefore be skipped.
+        llvm::errs() << "There is even obj under construction\n";
         Target = *ElidedTarget;
         StmtNodeBuilder Bldr(Pred, destNodes, *currBldrCtx);
         State = finishObjectConstruction(State, CE, LCtx);
@@ -614,6 +623,11 @@ void ExprEngine::handleConstructor(const Expr *E,
 
   const CXXConstructionKind CK =
       CE ? CE->getConstructionKind() : CIE->getConstructionKind();
+
+  llvm::errs() << "BEGIN handleConstructor:\n";
+  E->dump();
+  llvm::errs() << "Kind: " << (unsigned)CK << "\n";
+
   switch (CK) {
   case CXXConstructionKind::Complete: {
     // Inherited constructors are always base class constructors.
@@ -664,6 +678,11 @@ void ExprEngine::handleConstructor(const Expr *E,
     // The target region is found from construction context.
     std::tie(State, Target) = handleConstructionContext(
         CE, State, currBldrCtx, LCtx, CC, CallOpts, Idx);
+    llvm::errs() << "Target in base case\n";
+    Target.dump();
+    llvm::errs() << "\n";
+    Target.getAsRegion()->dump();
+    llvm::errs() << "\n";
     break;
   }
   case CXXConstructionKind::VirtualBase: {
@@ -692,10 +711,26 @@ void ExprEngine::handleConstructor(const Expr *E,
     // FIXME: Instead of relying on the ParentMap, we should have the
     // trigger-statement (InitListExpr in this case) passed down from CFG or
     // otherwise always available during construction.
-    if (isa_and_nonnull<InitListExpr>(LCtx->getParentMap().getParent(E))) {
-      MemRegionManager &MRMgr = getSValBuilder().getRegionManager();
+    if (const auto * DerivedExpr = dyn_cast_or_null<InitListExpr>(LCtx->getParentMap().getParent(E))) {
+      llvm::errs() << "!!!\n";
+      LCtx->dump();
+      llvm::errs() << "--\n";
+      //LCtx->getDecl()->dump();
+      llvm::errs() << "--\n";
+      //LCtx->getStackFrame()->dump();
+      SVal ThisMemRegion = loc::MemRegionVal(MRMgr.getCXXThisRegion(ASTCtx.getPointerType(DerivedExpr->getType()), LCtx));
+      Target = loc::MemRegionVal(MRMgr.getCXXThisRegion(ASTCtx.getPointerType(E->getType()), LCtx));
+      Target = ThisMemRegion;
+      ThisMemRegion.dump();
+      if (auto *ThisMR = ThisMemRegion.getAsRegion()) {
+        llvm::errs() << "\nTHERE IS: ";
+        ThisMR->dump();
+      }
+      llvm::errs() << "\n";
+      ASTCtx.getPointerType(DerivedExpr->getType())->dump();
+      llvm::errs() << "\n";
       Target = loc::MemRegionVal(MRMgr.getCXXTempObjectRegion(E, LCtx));
-      CallOpts.IsCtorOrDtorWithImproperlyModeledTargetRegion = true;
+      CallOpts.IsCtorOrDtorWithImproperlyModeledTargetRegion = false;
       break;
     }
     [[fallthrough]];
@@ -703,6 +738,12 @@ void ExprEngine::handleConstructor(const Expr *E,
     const CXXMethodDecl *CurCtor = cast<CXXMethodDecl>(LCtx->getDecl());
     Loc ThisPtr = getSValBuilder().getCXXThis(CurCtor,
                                               LCtx->getStackFrame());
+    llvm::errs() << "LCtx for getCXXThis\n";
+    LCtx->dump();
+    LCtx->getDecl()->dump();
+    LCtx->getStackFrame()->dump();
+
+
     SVal ThisVal = State->getSVal(ThisPtr);
 
     if (CK == CXXConstructionKind::Delegating) {
@@ -713,6 +754,17 @@ void ExprEngine::handleConstructor(const Expr *E,
       SVal BaseVal =
           getStoreManager().evalDerivedToBase(ThisVal, E->getType(), IsVirtual);
       Target = BaseVal;
+      llvm::errs() << "This SVal:\n";
+      ThisVal.dump();
+      llvm::errs() << "\n";
+      ThisVal.getAsRegion()->dump();
+      
+      llvm::errs() << "\nBase SVal\n";
+      BaseVal.dump();
+      llvm::errs() << "\n";
+      BaseVal.getAsRegion()->dump();
+      llvm::errs() << "\n";
+
     }
     break;
   }
@@ -731,13 +783,15 @@ void ExprEngine::handleConstructor(const Expr *E,
   }
 
   const MemRegion *TargetRegion = Target.getAsRegion();
+  if (!TargetRegion)
+    llvm_unreachable("Must have mem");
   CallEventManager &CEMgr = getStateManager().getCallEventManager();
   CallEventRef<> Call =
       CIE ? (CallEventRef<>)CEMgr.getCXXInheritedConstructorCall(
                 CIE, TargetRegion, State, LCtx, getCFGElementRef())
           : (CallEventRef<>)CEMgr.getCXXConstructorCall(
                 CE, TargetRegion, State, LCtx, getCFGElementRef());
-
+  
   ExplodedNodeSet DstPreVisit;
   getCheckerManager().runCheckersForPreStmt(DstPreVisit, Pred, E, *this);
 
@@ -839,6 +893,10 @@ void ExprEngine::handleConstructor(const Expr *E,
                                              DstPostArgumentCleanup,
                                              *Call, *this);
   getCheckerManager().runCheckersForPostStmt(destNodes, DstPostCall, E, *this);
+  llvm::errs() << "State in ctor\n";
+  State->dump();
+  llvm::errs() << "END handleConstructor:\n";
+
 }
 
 void ExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *CE,
