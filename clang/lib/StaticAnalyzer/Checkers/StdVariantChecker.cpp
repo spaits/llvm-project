@@ -6,7 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/Type.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -14,9 +16,12 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 #include <optional>
 
 #include "TaggedUnionModeling.h"
@@ -25,7 +30,7 @@ using namespace clang;
 using namespace ento;
 using namespace tagged_union_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion *, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion *, SVal)
 
 namespace clang::ento::tagged_union_modeling {
 
@@ -208,11 +213,76 @@ private:
 
     std::optional<QualType> DefaultType = getNthTemplateTypeArgFromVariant(
         ThisSVal.getType(C.getASTContext())->getPointeeType().getTypePtr(), 0);
+
     if (!DefaultType)
       return;
 
+    ConstructorCall->getSourceRange().getBegin();
+    llvm::errs() << "Dump def:\n";
+    // C.getASTContext().getAst
+    // llvm::errs() << "\n";
+
+    ASTContext &astContext = C.getASTContext();
+
+    // Check if the QualType is a RecordType (class/struct)
+    if (const RecordType *RT = (*DefaultType)->getAs<RecordType>()) {
+      // Get the CXXRecordDecl from the RecordType
+      CXXRecordDecl *recordDecl = cast<CXXRecordDecl>(RT->getDecl());
+
+      // Find the default constructor
+      for (auto *it : recordDecl->ctors()) {
+        if (it->isDefaultConstructor()) {
+          llvm::errs() << "AAa\n";
+          // Create a constructor expression
+          // CXXConstructExpr constructorExpr =
+          // CXXConstructExpr::Create(astContext, q, Loc , CXXConstructorDecl
+          // *Ctor, bool Elidable, ArrayRef<Expr *> Args, bool
+          // HadMultipleCandidates, bool ListInitialization, bool
+          // StdInitListInitialization, bool ZeroInitialization,
+          // CXXConstructionKind ConstructKind, SourceRange ParenOrBraceRange)
+          ConstructorCall->getSourceRange().dump(C.getSourceManager());
+          CXXConstructExpr *ConstructExpr = CXXConstructExpr::Create(
+              astContext, *DefaultType,
+              ConstructorCall->getSourceRange().getBegin(), it, false, {},
+              false, false, false, false, CXXConstructionKind::Complete,
+              ConstructorCall->getSourceRange());
+          // Create an SVal for the constructor expression
+          SVal a =
+              loc::MemRegionVal(C.getState()
+                                    ->getStateManager()
+                                    .getRegionManager()
+                                    .getCXXTempObjectRegion(
+                                        ConstructExpr, C.getLocationContext()));
+          llvm::errs() << "This is a:\n";
+          a.dump();
+          llvm::errs() << "\n";
+
+          ConstructExpr->dump();
+          ProgramStateRef state = C.getState();
+
+          ProgramStateRef State = ConstructorCall->getState();
+          State = State->set<VariantHeldTypeMap>(ThisMemRegion, a);
+          C.addTransition(State);
+
+          //ExplodedNodeSet exns{};
+          // C.getEngine().ProcessStmt(ConstructExpr, C.getPredecessor());
+
+          // SVal val = state->getSVal(ConstructExpr, C.getLocationContext());
+          // llvm::errs() << "Val:\n";
+          // val.dump();
+          // llvm::errs() << "\n";
+
+          // return val;
+        }
+      }
+    } else if (const BuiltinType *RT = (*DefaultType)->getAs<BuiltinType>()) {
+      ProgramStateRef State = ConstructorCall->getState();
+      State = State->set<VariantHeldTypeMap>(ThisMemRegion, C.getSValBuilder().makeZeroVal(*DefaultType));
+
+      C.addTransition(State);
+    }
+
     ProgramStateRef State = ConstructorCall->getState();
-    State = State->set<VariantHeldTypeMap>(ThisMemRegion, *DefaultType);
     C.addTransition(State);
   }
 
@@ -231,8 +301,21 @@ private:
     // Get the mem region of the argument std::variant and look up the type
     // information that we know about it.
     const MemRegion *ArgMemRegion = Call.getArgSVal(0).getAsRegion();
-    const QualType *StoredType = State->get<VariantHeldTypeMap>(ArgMemRegion);
-    if (!StoredType)
+    const SVal *StoredSVal = State->get<VariantHeldTypeMap>(ArgMemRegion);
+    if (!StoredSVal)
+      return false;
+
+    QualType StoredType = StoredSVal->getType(C.getASTContext());
+    if (StoredType.isNull())
+      return false;
+    // An expression can have reference type, but the first thing
+    // that happens with it is the removal of the reference.
+    // See n4713 [expr.type] p1
+    // All std::variant constructor's parameter type, that provides
+    // the held value have a reference type.
+    // See n4713 [variant.ctor]
+    StoredType = StoredType->getPointeeType();
+    if (StoredType.isNull())
       return false;
 
     const CallExpr *CE = cast<CallExpr>(Call.getOriginExpr());
@@ -265,7 +348,7 @@ private:
     }
 
     QualType RetrievedCanonicalType = RetrievedType.getCanonicalType();
-    QualType StoredCanonicalType = StoredType->getCanonicalType();
+    QualType StoredCanonicalType = StoredType->getCanonicalTypeInternal();
     if (RetrievedCanonicalType == StoredCanonicalType)
       return true;
 
@@ -274,7 +357,7 @@ private:
       return false;
     llvm::SmallString<128> Str;
     llvm::raw_svector_ostream OS(Str);
-    std::string StoredTypeName = StoredType->getAsString();
+    std::string StoredTypeName = StoredType.getAsString();
     std::string RetrievedTypeName = RetrievedType.getAsString();
     OS << "std::variant " << ArgMemRegion->getDescriptiveName() << " held "
        << indefiniteArticleBasedOnVowel(StoredTypeName[0]) << " '"

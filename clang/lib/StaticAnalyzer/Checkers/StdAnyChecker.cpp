@@ -14,7 +14,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
-#include "llvm/Support/ErrorHandling.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 
 #include "TaggedUnionModeling.h"
 
@@ -22,7 +22,7 @@ using namespace clang;
 using namespace ento;
 using namespace tagged_union_modeling;
 
-REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldTypeMap, const MemRegion *, QualType)
+REGISTER_MAP_WITH_PROGRAMSTATE(AnyHeldTypeMap, const MemRegion *, SVal)
 
 class StdAnyChecker : public Checker<eval::Call, check::RegionChanges> {
   CallDescription AnyConstructor{{"std", "any", "any"}};
@@ -92,7 +92,8 @@ private:
   ProgramStateRef setNullTypeAny(const MemRegion *Mem,
                                  CheckerContext &C) const {
     auto State = C.getState();
-    return State->set<AnyHeldTypeMap>(Mem, QualType{});
+    // Empty any does not work
+    return State->set<AnyHeldTypeMap>(Mem, C.getSValBuilder().makeZeroArrayIndex());
   }
 
   bool handleAnyCastCall(const CallEvent &Call, CheckerContext &C) const {
@@ -112,14 +113,21 @@ private:
 
     const auto *AnyMemRegion = ArgSVal.getAsRegion();
 
-    const auto *TypeStored = State->get<AnyHeldTypeMap>(AnyMemRegion);
-    if (!TypeStored)
+    auto *SValStored = State->get<AnyHeldTypeMap>(AnyMemRegion);
+    if (!SValStored)
+      return false;
+    auto StoredType = SValStored->getType(C.getASTContext());
+
+    StoredType = StoredType->getPointeeType();
+    if (StoredType.isNull())
       return false;
 
     // Get the type we are trying to retrieve from any.
-    const CallExpr *CE = cast<CallExpr>(Call.getOriginExpr());
+    const CallExpr *CE = dyn_cast_or_null<CallExpr>(Call.getOriginExpr());
+    if (!CE)
+      return false;
     const FunctionDecl *FD = CE->getDirectCallee();
-    if (FD->getTemplateSpecializationArgs()->size() != 1)
+    if (!FD || FD->getTemplateSpecializationArgs()->size() != 1)
       return false;
 
     const auto &FirstTemplateArgument =
@@ -131,7 +139,7 @@ private:
 
     // Report when we try to use std::any_cast on a std::any that held a null
     // type.
-    if (TypeStored->isNull()) {
+    if (StoredType.isNull()) {
       ExplodedNode *ErrNode = C.generateErrorNode();
       if (!ErrNode)
         return false;
@@ -146,7 +154,7 @@ private:
 
     // Check if the right type is being accessed.
     QualType RetrievedCanonicalType = TypeOut.getCanonicalType();
-    QualType StoredCanonicalType = TypeStored->getCanonicalType();
+    QualType StoredCanonicalType = StoredType.getCanonicalType();
     if (RetrievedCanonicalType == StoredCanonicalType)
       return true;
 

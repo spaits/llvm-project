@@ -156,6 +156,16 @@ void defaultConstructor() {
   (void)c;
 }
 
+class Abbb{};
+
+void defaultConstructor2() {
+  std::variant<Abbb, char> v;
+  Abbb idk = std::get<Abbb>(v);
+  char c = std::get<char>(v); // expected-warning {{std::variant 'v' held an 'int', not a 'char'}}
+  (void)idk;
+  (void)c;
+}
+
 // Verify that we handle temporary objects correctly
 void temporaryObjectsConstructor() {
   std::variant<int, char> v(std::variant<int, char>('c'));

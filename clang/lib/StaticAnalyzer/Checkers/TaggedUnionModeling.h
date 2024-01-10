@@ -12,6 +12,7 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 
 namespace clang::ento::tagged_union_modeling {
 
@@ -64,20 +65,20 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
   bool IsMove = isMoveConstructorCall(Call) || isMoveAssignmentCall(Call);
   // First we handle copy and move operations
   if (IsCopy || IsMove) {
-    const QualType *OtherQType = State->get<TypeMap>(ArgMemRegion);
-
+    const SVal *OtherSVal = State->get<TypeMap>(ArgMemRegion);
+    if (!OtherSVal)
+      State = State->remove<TypeMap>(ThisRegion);
     // If the argument of a copy constructor or assignment is unknown then
     // we will not know the argument of the copied to object.
-    if (!OtherQType) {
-      State = State->remove<TypeMap>(ThisRegion);
-    } else {
+     else {
+      //const QualType OtherQType = OtherSVal->getType(C.getASTContext());
       // When move semantics is used we can only know that the moved from
       // object must be in a destructible state. Other usage of the object
       // than destruction is undefined.
       if (IsMove)
         State = State->remove<TypeMap>(ArgMemRegion);
 
-      State = State->set<TypeMap>(ThisRegion, *OtherQType);
+      State = State->set<TypeMap>(ThisRegion, *OtherSVal);
     }
   } else {
     // Value constructor
@@ -85,7 +86,7 @@ void handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
     const Type *ArgTypePtr = ArgQType.getTypePtr();
 
     QualType WoPointer = ArgTypePtr->getPointeeType();
-    State = State->set<TypeMap>(ThisRegion, WoPointer);
+    State = State->set<TypeMap>(ThisRegion, ArgSVal);
   }
 
   C.addTransition(State);
