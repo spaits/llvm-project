@@ -356,3 +356,28 @@ void nonInlineFunctionCallPtr() {
   (void)a;
   (void)c;
 }
+
+//----------------------------------------------------------------------------//
+// std::swap for std::variant
+//----------------------------------------------------------------------------//
+
+void swapForVariants() {
+  std::variant<int, char> a = 5;
+  std::variant<int, char> b = 'C';
+  std::swap(a, b);
+  int a1 = std::get<int>(b);
+  char c = std::get<int>(a); // expected-warning {{std::variant 'a' held a 'char', not an 'int'}}
+  (void)a1;
+  (void)c;
+}
+
+//----------------------------------------------------------------------------//
+// Value held
+//----------------------------------------------------------------------------//
+
+void valueHeld() {
+  std::variant<int, char> v = 0;
+  int a = std::get<int>(v);
+  int res = 5/a;
+  (void)res;
+}
