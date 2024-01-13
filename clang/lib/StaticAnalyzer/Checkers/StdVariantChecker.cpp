@@ -304,7 +304,7 @@ private:
     // reason that the SVal is a NonLoc SVal.
     SVal DefaultConstructedHeldValue = C.getSValBuilder().conjureSymbolVal(
         ConstructorCall->getOriginExpr(), C.getLocationContext(),
-        *DefaultType, C.blockCount());
+        C.getASTContext().getPointerType(*DefaultType), C.blockCount());
 
     ProgramStateRef State = ConstructorCall->getState();
     State =
