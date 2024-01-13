@@ -6,6 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/CXXInheritance.h"
+#include "clang/AST/Expr.h"
+#include "clang/AST/OperationKinds.h"
 #include "clang/AST/Type.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
@@ -18,6 +21,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/ImmutableList.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -33,6 +37,16 @@ using namespace tagged_union_modeling;
 REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldMap, const MemRegion *, SVal)
 
 namespace clang::ento::tagged_union_modeling {
+
+void printSVals(std::vector<SVal> v) {
+  llvm::errs() << "BEG SVal dump\n";
+  for (auto S : v) {
+    S.dump();
+    llvm::errs() << "\n";
+  }
+  llvm::errs() << "END SVal dump\n";
+
+}
 
 const CXXConstructorDecl *
 getConstructorDeclarationForCall(const CallEvent &Call) {
@@ -92,6 +106,50 @@ bool isStdVariant(const Type *Type) {
 
 } // end of namespace clang::ento::tagged_union_modeling
 
+static SVal adjustReturnValue(SVal V, QualType ExpectedTy, QualType ActualTy,
+                              StoreManager &StoreMgr) {
+  // For now, the only adjustments we handle apply only to locations.
+  if (!isa<Loc>(V)) {
+    llvm::errs() << "Not loc\n";
+    return V;
+  }
+
+  // If the types already match, don't do any unnecessary work.
+  ExpectedTy = ExpectedTy.getCanonicalType();
+  ActualTy = ActualTy.getCanonicalType();
+  llvm::errs() << "Type dumps. Expected:\n";
+  ExpectedTy->dump();
+  llvm::errs() << "\nActual:\n";
+  ActualTy->dump();
+  llvm::errs() << "End Type dumps\n";
+  if (ExpectedTy == ActualTy) {
+    llvm::errs() << "Same\n";
+    return V;
+  }
+
+  // No adjustment is needed between Objective-C pointer types.
+  if (ExpectedTy->isObjCObjectPointerType() &&
+      ActualTy->isObjCObjectPointerType())
+    return V;
+
+  // C++ object pointers may need "derived-to-base" casts.
+  const CXXRecordDecl *ExpectedClass = ExpectedTy->getPointeeCXXRecordDecl();
+  const CXXRecordDecl *ActualClass = ActualTy->getPointeeCXXRecordDecl();
+  if (ExpectedClass && ActualClass) {
+    CXXBasePaths Paths(/*FindAmbiguities=*/true, /*RecordPaths=*/true,
+                       /*DetectVirtual=*/false);
+    if (ActualClass->isDerivedFrom(ExpectedClass, Paths) &&
+        !Paths.isAmbiguous(ActualTy->getCanonicalTypeUnqualified())) {
+      return StoreMgr.evalDerivedToBase(V, Paths.front());
+    }
+  }
+
+  // Unfortunately, Objective-C does not enforce that overridden methods have
+  // covariant return types, so we can't assert that that never happens.
+  // Be safe and return UnknownVal().
+  return UnknownVal();
+}
+
 static std::optional<ArrayRef<TemplateArgument>>
 getTemplateArgsFromVariant(const Type *VariantType) {
   const auto *TempSpecType = VariantType->getAs<TemplateSpecializationType>();
@@ -128,6 +186,15 @@ static llvm::StringRef indefiniteArticleBasedOnVowel(char a) {
   if (isVowel(a))
     return "an";
   return "a";
+}
+
+static bool isCharType(QualType T) {
+    // Check if the type is a BuiltinType
+    if (const BuiltinType *BT = T->getAs<BuiltinType>()) {
+        // Check if it is specifically a char type
+        return BT->getKind() == BuiltinType::Char_S || BT->getKind() == BuiltinType::Char_U;
+    }
+    return false;
 }
 
 class StdVariantChecker : public Checker<eval::Call, check::RegionChanges> {
@@ -237,7 +304,7 @@ private:
     // reason that the SVal is a NonLoc SVal.
     SVal DefaultConstructedHeldValue = C.getSValBuilder().conjureSymbolVal(
         ConstructorCall->getOriginExpr(), C.getLocationContext(),
-        C.getASTContext().getPointerType(*DefaultType), C.blockCount());
+        *DefaultType, C.blockCount());
 
     ProgramStateRef State = ConstructorCall->getState();
     State =
@@ -262,9 +329,12 @@ private:
       return false;
 
     QualType RefStoredType = StoredSVal->getType(C.getASTContext());
-    if (RefStoredType->getPointeeType().isNull())
-      return false;
-    QualType StoredType = RefStoredType->getPointeeType();
+    // StoredSVal->getAsRegion()->dump();
+    // llvm::errs() << " MemReg\n";
+    
+    // if (RefStoredType->getPointeeType().isNull())
+    //  return false;
+    QualType StoredType = RefStoredType;//RefStoredType->getPointeeType();
 
     const CallExpr *CE = cast<CallExpr>(Call.getOriginExpr());
     const FunctionDecl *FD = CE->getDirectCallee();
@@ -296,18 +366,40 @@ private:
     }
 
     QualType RetrievedCanonicalType = RetrievedType.getCanonicalType();
+    if (StoredType.isNull())
+      return false;
     QualType StoredCanonicalType = StoredType.getCanonicalType();
+    
+    // In C++ the standard does not specify whether 'char' is
+    // signed or unsigned by default.
+    if (RetrievedCanonicalType->isAnyCharacterType()) {
+      if (C.getASTContext().getLangOpts().CharIsSigned)
+        RetrievedCanonicalType = C.getASTContext().SignedCharTy;
+      else
+        RetrievedCanonicalType = C.getASTContext().UnsignedCharTy;
+    }
+
     if (RetrievedCanonicalType == StoredCanonicalType) {
       // Conjure an SVal for the return value of the std::get call.
       SVal ReturnSVal = C.getSValBuilder().conjureSymbolVal(
           CE, C.getLocationContext(), RefStoredType, C.blockCount());
+      // SVal V = adjustReturnValue(*StoredSVal, CE->getCallReturnType(C.getASTContext()), RefStoredType, C.getStoreManager());
+      const auto *reg = StoredSVal->getAsRegion();
+      if (!reg)
+        return false;
+      SVal NewLocSVal = C.getSValBuilder().makeLoc(StoredSVal->getAsRegion());
+      State = State->BindExpr(CE, C.getLocationContext(),NewLocSVal);
+      llvm::errs() << "\nBEGIN handleStdGet\n";
+      printSVals({*StoredSVal,NewLocSVal});
+      NewLocSVal.getType(C.getASTContext())->dump();
+      llvm::errs() << "END handleStdGet\n";
 
-      State = State->BindExpr(CE, C.getLocationContext(), ReturnSVal);
       C.addTransition(State);
+      //State->dump();
       return true;
     }
 
-    ExplodedNode *ErrNode = C.generateNonFatalErrorNode();
+    ExplodedNode *ErrNode = C.generateErrorNode();
     if (!ErrNode)
       return false;
     llvm::SmallString<128> Str;

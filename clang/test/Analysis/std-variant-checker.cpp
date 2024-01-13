@@ -81,6 +81,7 @@ void stdGetObject() {
   Foo f = std::get<Foo>(v);
   int i = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'Foo', not an 'int'}}
   (void)i;
+  (void)f;
 }
 
 void stdGetPointerAndPointee() {
@@ -126,7 +127,7 @@ void assignmentOperator() {
   (void)a;
   v = 'c';
   char c = std::get<char>(v);
-  a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -160,7 +161,7 @@ void defaultConstructor() {
 void temporaryObjectsConstructor() {
   std::variant<int, char> v(std::variant<int, char>('c'));
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -168,7 +169,7 @@ void temporaryObjectsConstructor() {
 void temporaryObjectsAssignment() {
   std::variant<int, char> v = std::variant<int, char>('c');
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -248,7 +249,7 @@ void fromVariable() {
   char o = 'c';
   std::variant<int, char> v(o);
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -281,7 +282,7 @@ void constNonInlineRef() {
   std::variant<int, char> v = 'c';
   cannotChangePtr(v);
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -290,7 +291,7 @@ void contNonInlinePtr() {
   std::variant<int, char> v = 'c';
   cannotChangePtr(&v);
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -299,7 +300,7 @@ void copyInAFunction() {
   std::variant<int, char> v = 'c';
   cantDo(v);
   char c = std::get<char>(v);
-  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int>(v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 
@@ -311,7 +312,7 @@ void changeThruPointers() {
   std::variant<int, char> v = 15;
   changeVariantPtr(&v);
   char c = std::get<char> (v);
-  int a = std::get<int> (v); // expected-warning {{std::variant 'v' held a 'char', not an 'int'}}
+  int a = std::get<int> (v); // expected-warning {{std::variant 'v' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -323,7 +324,7 @@ void functionCallWithCopyAssignment() {
   int a = std::get<int> (v2);
   (void)a;
   char c = std::get<char> (v1);
-  a = std::get<int> (v1); // expected-warning {{std::variant 'v1' held a 'char', not an 'int'}}
+  a = std::get<int> (v1); // expected-warning {{std::variant 'v1' held a 'signed char', not an 'int'}}
   (void)a;
   (void)c;
 }
@@ -366,7 +367,7 @@ void swapForVariants() {
   std::variant<int, char> b = 'C';
   std::swap(a, b);
   int a1 = std::get<int>(b);
-  char c = std::get<int>(a); // expected-warning {{std::variant 'a' held a 'char', not an 'int'}}
+  char c = std::get<int>(a); // expected-warning {{std::variant 'a' held a 'signed char', not an 'int'}}
   (void)a1;
   (void)c;
 }

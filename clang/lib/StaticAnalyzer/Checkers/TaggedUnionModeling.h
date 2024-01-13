@@ -12,7 +12,9 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/Support/raw_ostream.h"
+#include <vector>
 
 namespace clang::ento::tagged_union_modeling {
 
@@ -25,6 +27,7 @@ bool isMoveAssignmentCall(const CallEvent &Call);
 bool isMoveConstructorCall(const CallEvent &Call);
 bool isStdType(const Type *Type, const std::string &TypeName);
 bool isStdVariant(const Type *Type);
+void printSVals(std::vector<SVal> v);
 
 // When invalidating regions, we also have to follow that by invalidating the
 // corresponding custom data in the program state.
@@ -81,7 +84,18 @@ bool handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
     }
   } else {
     // Value constructor
-    State = State->set<TypeMap>(ThisRegion, ArgSVal);
+    const auto *Mreg = ArgSVal.getAsRegion();
+    SVal PointedToSVal = C.getState()->getSVal(Mreg);
+    SVal SomeLoc = C.getSValBuilder().makeLoc(Mreg);
+
+    llvm::errs() << "BEGIN Assignment operator handling\n";
+    printSVals({ArgSVal, PointedToSVal, SomeLoc});
+    ArgSVal.getType(C.getASTContext())->dump();
+    //PointedToSVal.getType(C.getASTContext())->dump();
+    SomeLoc.getType(C.getASTContext())->dump();
+    llvm::errs() << "END Assignment operator handling\n\n";
+    State = State->set<TypeMap>(ThisRegion, PointedToSVal);
+
   }
 
   C.addTransition(State);
