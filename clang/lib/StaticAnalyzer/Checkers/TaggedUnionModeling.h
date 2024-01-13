@@ -83,28 +83,60 @@ bool handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
       State = State->set<TypeMap>(ThisRegion, *OtherSVal);
     }
   } else {
-    // Value constructor
+    // Value constructor.
+    // Here we create a MemRegion and an SVal for the value held by std::variant,
+    // since std::variant owns the held value.
+    //
+    // If we don't do this here later on UndefinedAssignmentChecker will warn for
+    // garbage value assignment.
     const auto *Mreg = ArgSVal.getAsRegion();
     SVal PointedToSVal = C.getState()->getSVal(Mreg);
-    SVal SomeLoc = C.getSValBuilder().makeLoc(Mreg);
 
-    llvm::errs() << "BEGIN Assignment operator handling\n";
-    //auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),C.blockCount());
-    auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),C.blockCount());
-    auto *SymRegion = C.getSValBuilder().getRegionManager().getSymbolicRegion(ConjSym.getAsSymbol());
-    SymRegion->dump();
-    SVal NewLocSVal = C.getSValBuilder().makeLoc(SymRegion);
-    State = State->bindLoc(C.getSValBuilder().makeLoc(SymRegion),PointedToSVal,C.getLocationContext());
-    State->dump();
-    printSVals({ArgSVal, PointedToSVal, SomeLoc});
-    ArgSVal.getType(C.getASTContext())->dump();
-    //PointedToSVal.getType(C.getASTContext())->dump();
-    SomeLoc.getType(C.getASTContext())->dump();
-    llvm::errs() << "END Assignment operator handling\n\n";
-    State = State->set<TypeMap>(ThisRegion, NewLocSVal);
-
+    auto SymForStdVariantHeldValue = C.getSValBuilder().conjureSymbolVal(
+        "std::variant held value", Call.getArgExpr(0), C.getLocationContext(),
+        C.blockCount());
+    auto *SymRegForStdVariantHeldValue =
+        C.getSValBuilder().getRegionManager().getSymbolicRegion(
+            SymForStdVariantHeldValue.getAsSymbol());
+    auto LocForVariantHeldValue =
+        C.getSValBuilder().makeLoc(SymRegForStdVariantHeldValue);
+    State = State->bindLoc(LocForVariantHeldValue, PointedToSVal,
+                           C.getLocationContext());
+    State = State->set<TypeMap>(ThisRegion, LocForVariantHeldValue);
   }
 
+  C.addTransition(State);
+  return true;
+}
+
+template <class HeldValueMap>
+bool handleStdSwapCall(const CallEvent &Call, CheckerContext &C) {
+  assert(Call.getNumArgs() == 2 &&
+         "This function only handles std::swap with two arguments.");
+
+  for (unsigned i = 0; i < Call.getNumArgs(); i++) {
+    if (!isStdVariant(Call.getArgExpr(i)->getType().getTypePtr()))
+      return false;
+  }
+
+  ProgramStateRef State = C.getState();
+
+  const MemRegion *LeftRegion = Call.getArgSVal(0).getAsRegion();
+  const MemRegion *RightRegion = Call.getArgSVal(1).getAsRegion();
+  if (!LeftRegion || !RightRegion)
+    return false;
+
+  const SVal *LeftSVal = State->get<HeldValueMap>(LeftRegion);
+  const SVal *RightSVal = State->get<HeldValueMap>(RightRegion);
+  if (!LeftSVal || !RightSVal) {
+    State = State->remove<HeldValueMap>(LeftRegion);
+    State = State->remove<HeldValueMap>(RightRegion);
+    C.addTransition(State);
+    return false;
+  }
+
+  State = State->set<HeldValueMap>(LeftRegion, *RightSVal);
+  State = State->set<HeldValueMap>(RightRegion, *LeftSVal);
   C.addTransition(State);
   return true;
 }
