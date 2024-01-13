@@ -90,7 +90,7 @@ bool handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
 
     llvm::errs() << "BEGIN Assignment operator handling\n";
     //auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),C.blockCount());
-    auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),PointedToSVal.getType(C.getASTContext()),C.blockCount());
+    auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),C.blockCount());
     auto *SymRegion = C.getSValBuilder().getRegionManager().getSymbolicRegion(ConjSym.getAsSymbol());
     SymRegion->dump();
     SVal NewLocSVal = C.getSValBuilder().makeLoc(SymRegion);

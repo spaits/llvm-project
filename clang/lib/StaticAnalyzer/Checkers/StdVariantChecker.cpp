@@ -332,9 +332,9 @@ private:
     // StoredSVal->getAsRegion()->dump();
     // llvm::errs() << " MemReg\n";
     
-    // if (RefStoredType->getPointeeType().isNull())
-    //  return false;
-    QualType StoredType = RefStoredType;//RefStoredType->getPointeeType();
+    if (RefStoredType->getPointeeType().isNull())
+      return false;
+    QualType StoredType = RefStoredType->getPointeeType();
 
     const CallExpr *CE = cast<CallExpr>(Call.getOriginExpr());
     const FunctionDecl *FD = CE->getDirectCallee();
@@ -372,12 +372,12 @@ private:
     
     // In C++ the standard does not specify whether 'char' is
     // signed or unsigned by default.
-    if (RetrievedCanonicalType->isAnyCharacterType()) {
-      if (C.getASTContext().getLangOpts().CharIsSigned)
-        RetrievedCanonicalType = C.getASTContext().SignedCharTy;
-      else
-        RetrievedCanonicalType = C.getASTContext().UnsignedCharTy;
-    }
+    // if (RetrievedCanonicalType->isAnyCharacterType()) {
+    //   if (C.getASTContext().getLangOpts().CharIsSigned)
+    //     RetrievedCanonicalType = C.getASTContext().SignedCharTy;
+    //   else
+    //     RetrievedCanonicalType = C.getASTContext().UnsignedCharTy;
+    // }
 
     if (RetrievedCanonicalType == StoredCanonicalType) {
       // Conjure an SVal for the return value of the std::get call.
