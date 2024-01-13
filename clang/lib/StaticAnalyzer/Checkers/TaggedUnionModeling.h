@@ -89,12 +89,19 @@ bool handleConstructorAndAssignment(const CallEvent &Call, CheckerContext &C,
     SVal SomeLoc = C.getSValBuilder().makeLoc(Mreg);
 
     llvm::errs() << "BEGIN Assignment operator handling\n";
+    //auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),C.blockCount());
+    auto ConjSym = C.getSValBuilder().conjureSymbolVal("std::variant held value",Call.getArgExpr(0),C.getLocationContext(),PointedToSVal.getType(C.getASTContext()),C.blockCount());
+    auto *SymRegion = C.getSValBuilder().getRegionManager().getSymbolicRegion(ConjSym.getAsSymbol());
+    SymRegion->dump();
+    SVal NewLocSVal = C.getSValBuilder().makeLoc(SymRegion);
+    State = State->bindLoc(C.getSValBuilder().makeLoc(SymRegion),PointedToSVal,C.getLocationContext());
+    State->dump();
     printSVals({ArgSVal, PointedToSVal, SomeLoc});
     ArgSVal.getType(C.getASTContext())->dump();
     //PointedToSVal.getType(C.getASTContext())->dump();
     SomeLoc.getType(C.getASTContext())->dump();
     llvm::errs() << "END Assignment operator handling\n\n";
-    State = State->set<TypeMap>(ThisRegion, PointedToSVal);
+    State = State->set<TypeMap>(ThisRegion, NewLocSVal);
 
   }
 
