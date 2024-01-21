@@ -373,25 +373,10 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
            getAsIntegral() == Other.getAsIntegral();
 
   case Pack:
-    llvm::errs() << Args.NumArgs << " " << Other.Args.NumArgs << "\n";
-    llvm::errs() << pack_elements().size() << " " << Other.pack_elements().size() << "\n";
-    for (auto e : pack_elements()) {
-      e.dump();
-      llvm::errs() << "\n";
-
-    }
-      llvm::errs() << "\n";
-    for (auto e : Other.pack_elements()) {
-      e.dump();
-      llvm::errs() << "\n";
-    }
-    
     if (pack_elements().size() != Other.pack_elements().size())
       return false;
     if (Args.NumArgs != Other.Args.NumArgs) return false;
     for (unsigned I = 0, E = Args.NumArgs; I != E; ++I) {
-      Args.Args[I].dump();
-      Other.Args.Args[I].dump();
       if (!Args.Args[I].structurallyEquals(Other.Args.Args[I]))
         return false;
     }
