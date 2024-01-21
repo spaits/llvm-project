@@ -716,6 +716,57 @@ public:
     finishConstruction(1);
   }
 
+  bool couldMatchTypeWithPrevious() const {
+    for (auto Pack : Packs) {
+      // Build or find a new value for this pack.
+      DeducedTemplateArgument NewPack;
+      if (Pack.New.empty()) {
+        // If we deduced an empty argument pack, create it now.
+        NewPack = DeducedTemplateArgument(TemplateArgument::getEmptyPack());
+      } else {
+        TemplateArgument *ArgumentPack =
+            new (S.Context) TemplateArgument[Pack.New.size()];
+        std::copy(Pack.New.begin(), Pack.New.end(), ArgumentPack);
+        NewPack = DeducedTemplateArgument(
+            TemplateArgument(llvm::ArrayRef(ArgumentPack, Pack.New.size())),
+            // FIXME: This is wrong, it's possible that some pack elements are
+            // deduced from an array bound and others are not:
+            //   template<typename ...T, T ...V> void g(const T (&...p)[V]);
+            //   g({1, 2, 3}, {{}, {}});
+            // ... should deduce T = {int, size_t (from array bound)}.
+            Pack.New[0].wasDeducedFromArrayBound());
+      }
+      NewPack.dump();
+
+      DeducedTemplateArgument *Loc;
+      if (Pack.Outer) {
+        if (Pack.Outer->DeferredDeduction.isNull()) {
+          // Defer checking this pack until we have a complete pack to compare
+          // it against.
+          Pack.Outer->DeferredDeduction = NewPack;
+          continue;
+        }
+        Loc = &Pack.Outer->DeferredDeduction;
+      } else {
+        Loc = &Deduced[Pack.Index];
+      }
+
+      // Check the new pack matches any previous value.
+      DeducedTemplateArgument OldPack = *Loc;
+      DeducedTemplateArgument Result = checkDeducedTemplateArguments(
+          S.Context, OldPack, NewPack, DeducePackIfNotAlreadyDeduced);
+
+
+      Result.dump();
+      llvm::errs() << "Kind: " << Result.getKind() << " " << NewPack.getKind() << "\n";
+
+      if (!NewPack.structurallyEquals(Pack.Saved)) {
+        llvm::errs() << "Not struct eq\n";
+        return false;
+      }
+    }
+    return true;
+  }
 private:
   void addPack(unsigned Index) {
     // Save the deduced template argument for the parameter pack expanded
@@ -869,7 +920,11 @@ public:
     // Capture the deduced template arguments for each parameter pack expanded
     // by this pack expansion, add them to the list of arguments we've deduced
     // for that pack, then clear out the deduced argument.
+    llvm::errs() << "Num of packs: " << Packs.size() << "\n";
     for (auto &Pack : Packs) {
+      llvm::errs() << "Current pack:\n";
+      Pack.Saved.dump();
+      llvm::errs() << "\n";
       DeducedTemplateArgument &DeducedArg = Deduced[Pack.Index];
       if (!Pack.New.empty() || !DeducedArg.isNull()) {
         while (Pack.New.size() < PackElements)
@@ -4122,7 +4177,7 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsFromCallArgument(
     SmallVectorImpl<Sema::OriginalCallArg> &OriginalCallArgs,
     bool DecomposedParam, unsigned ArgIdx, unsigned TDF,
     TemplateSpecCandidateSet *FailedTSC) {
-
+      llvm::errs() << "\n-------\n";
   QualType OrigParamType = ParamType;
 
   //   If P is a reference type [...]
@@ -4142,6 +4197,7 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsFromCallArgument(
   //
   // Keep track of the argument type and corresponding parameter index,
   // so we can check for compatibility between the deduced A and A.
+  llvm::errs() << "Call match type\n";
   if (Arg)
     OriginalCallArgs.push_back(
         Sema::OriginalCallArg(OrigParamType, DecomposedParam, ArgIdx, ArgType));
@@ -4245,8 +4301,13 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     //   Template argument deduction is done by comparing each function template
     //   parameter that contains template-parameters that participate in
     //   template argument deduction ...
-    if (!hasDeducibleTemplateParameters(*this, FunctionTemplate, ParamType))
+    llvm::errs() << "Bef deeming it deduced:\n";
+    ParamType->dump();
+    llvm::errs() << "\n";
+    if (!hasDeducibleTemplateParameters(*this, FunctionTemplate, ParamType)) {
+      llvm::errs() << "There is nothing to deduce\n";
       return Sema::TDK_Success;
+    }
 
     if (ExplicitObjetArgument) {
       //   ... with the type of the corresponding argument
@@ -4258,6 +4319,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     }
 
     //   ... with the type of the corresponding argument
+    llvm::errs() << "Calling the last one\n";
     return DeduceTemplateArgumentsFromCallArgument(
         *this, TemplateParams, FirstInnerIndex, ParamType,
         Args[ArgIdx]->getType(), Args[ArgIdx]->Classify(getASTContext()),
@@ -4270,7 +4332,10 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
   SmallVector<QualType, 8> ParamTypesForArgChecking;
   for (unsigned ParamIdx = 0, NumParamTypes = ParamTypes.size(), ArgIdx = 0;
        ParamIdx != NumParamTypes; ++ParamIdx) {
+    llvm::errs() << "-- Iteration: " << ParamIdx << "  Arg idx:" << ArgIdx << "\n"; 
     QualType ParamType = ParamTypes[ParamIdx];
+    llvm::errs() << "Param processed:\n";
+    ParamType->dump();
 
     const PackExpansionType *ParamExpansion =
         dyn_cast<PackExpansionType>(ParamType);
@@ -4296,7 +4361,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     }
 
     bool IsTrailingPack = ParamIdx + 1 == NumParamTypes;
-
+    llvm::errs() << "Is trailing: " << IsTrailingPack << "\n";
     QualType ParamPattern = ParamExpansion->getPattern();
     PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,
                                  ParamPattern,
@@ -4335,18 +4400,52 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
       if (NumExpansions && !PackScope.isPartiallyExpanded()) {
         for (unsigned I = 0; I != *NumExpansions && ArgIdx < Args.size();
              ++I, ++ArgIdx) {
+              llvm::errs() << "Skipping params\n";
           ParamTypesForArgChecking.push_back(ParamPattern);
           // FIXME: Should we add OriginalCallArgs for these? What if the
           // corresponding argument is a list?
           PackScope.nextPackElement();
+        }
+      } else {
+        
+        auto NextParamType = ParamTypes[ParamIdx+1];
+        if (dyn_cast<PackExpansionType>(NextParamType)) {
+          llvm::errs() << "Good the next is non param\n";
+          continue;
+        }
+        for (unsigned i = ArgIdx; i < Args.size(); i++) {
+          llvm::errs() << "LOOP start "<<ArgIdx<<"\n";
+          ParamTypesForArgChecking.push_back(ParamPattern);
+          if (auto Result = DeduceCallArgument(ParamPattern, i,
+                                             /*ExplicitObjetArgument=*/false)) {
+                                              llvm::errs() << "Error when deducing\n";
+            return Result;
+
+          }
+          PackScope.nextPackElement();
+          if (PackScope.couldMatchTypeWithPrevious()) {
+            llvm::errs() << "Good but think of it when longer\n";
+            ArgIdx++;
+
+            break;
+          } else {
+            llvm::errs() << "Not good\n";
+          }
+          ArgIdx++;
         }
       }
     }
 
     // Build argument packs for each of the parameter packs expanded by this
     // pack expansion.
-    if (auto Result = PackScope.finish())
+    if (auto Result = PackScope.finish()) {
+      //llvm_unreachable("please");
       return Result;
+    }
+  }
+  llvm::errs() << "After everything deduced\n";
+  for (auto a : Deduced) {
+    a.dump();
   }
 
   // Capture the context in which the function call is made. This is the context
@@ -4362,6 +4461,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
           return CheckNonDependent(ParamTypesForArgChecking);
         });
   });
+  llvm::errs() << "The result: " << Result << "\n";
   return Result;
 }
 
