@@ -476,7 +476,7 @@ void TemplateArgument::print(const PrintingPolicy &Policy, raw_ostream &Out,
 
       P.print(Policy, Out, IncludeType);
     }
-    Out << ">a";
+    Out << ">";
     break;
   }
 }
