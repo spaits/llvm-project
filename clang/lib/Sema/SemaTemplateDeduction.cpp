@@ -52,6 +52,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
 #include <optional>
@@ -840,7 +841,7 @@ private:
       if (auto *Partial = Scope->getPartiallySubstitutedPack(
               &PartialPackArgs, &NumPartialPackArgs))
         PartialPackDepthIndex = getDepthAndIndex(Partial);
-
+    llvm::errs() << "1: " << PartialPackDepthIndex.first <<" "<< PartialPackDepthIndex.second << "\n";
     // This pack expansion will have been partially or fully expanded if
     // it only names explicitly-specified parameter packs (including the
     // partially-substituted one, if any).
@@ -856,13 +857,19 @@ private:
         IsPartiallyExpanded = true;
       }
     }
+    llvm::errs() << "2: " << PartialPackDepthIndex.first <<" "<< PartialPackDepthIndex.second << "\n";
+
 
     // Skip over the pack elements that were expanded into separate arguments.
     // If we partially expanded, this is the number of partial arguments.
-    if (IsPartiallyExpanded)
+    if (IsPartiallyExpanded) {
+      llvm::errs() << "PartEx\n";
       PackElements += NumPartialPackArgs;
-    else if (IsExpanded)
+    }
+    else if (IsExpanded) {
+      llvm::errs() << "Ex\n";
       PackElements += *FixedNumExpansions;
+    }
 
     for (auto &Pack : Packs) {
       if (Info.PendingDeducedPacks.size() > Pack.Index)
@@ -870,9 +877,12 @@ private:
       else
         Info.PendingDeducedPacks.resize(Pack.Index + 1);
       Info.PendingDeducedPacks[Pack.Index] = &Pack;
+      llvm::errs() << "What we need: " << Info.getDeducedDepth() << " " <<  Pack.Index << "\n";
+      llvm::errs() << "What we have: " << PartialPackDepthIndex.first<<" " << PartialPackDepthIndex.second << "\n";
 
       if (PartialPackDepthIndex ==
             std::make_pair(Info.getDeducedDepth(), Pack.Index)) {
+        llvm::errs() << "APPEND PACK NEW\n";
         Pack.New.append(PartialPackArgs, PartialPackArgs + NumPartialPackArgs);
         // We pre-populate the deduced value of the partially-substituted
         // pack with the specified value. This is not entirely correct: the
@@ -941,7 +951,9 @@ public:
     for (auto &Pack : Packs) {
       // Put back the old value for this pack.
       Deduced[Pack.Index] = Pack.Saved;
-
+      llvm::errs() << "About the saved packs:";
+      Pack.Saved.dump();
+      llvm::errs() << "\n";
       // Always make sure the size of this pack is correct, even if we didn't
       // deduce any values for it.
       //
@@ -4266,13 +4278,23 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
   SmallVector<QualType, 8> ParamTypes;
   unsigned NumExplicitlySpecified = 0;
   if (ExplicitTemplateArgs) {
+    llvm::errs() << "We had some explicit temp args\n";
     TemplateDeductionResult Result;
     runWithSufficientStackSpace(Info.getLocation(), [&] {
       Result = SubstituteExplicitTemplateArguments(
           FunctionTemplate, *ExplicitTemplateArgs, Deduced, ParamTypes, nullptr,
           Info);
     });
-    if (Result)
+    for (auto d : Deduced) {
+      d.dump();
+      llvm::errs() << "\n";
+    }
+    for (auto param : ParamTypes) {
+      param->dump();
+      llvm::errs() << "\n";
+    }
+    
+    if (Result) 
       return Result;
 
     NumExplicitlySpecified = Deduced.size();
@@ -4322,8 +4344,26 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
   SmallVector<QualType, 8> ParamTypesForArgChecking;
   for (unsigned ParamIdx = 0, NumParamTypes = ParamTypes.size(), ArgIdx = 0;
        ParamIdx != NumParamTypes; ++ParamIdx) {
+
+    llvm::errs() << "---------------------------------------------------------------\n";
+    llvm::errs() << "Main deduce loop: param" << ParamIdx << " Arg: " << ArgIdx << "\n";
+    llvm::errs() << "---------------------------------------------------------------\n";
+
     QualType ParamType = ParamTypes[ParamIdx];
-    
+
+    llvm::errs() << "Trying to deduce:\n";
+    ParamType->dump();
+    llvm::errs() << "With arg:\n";
+    if (ArgIdx < Args.size())
+      Args[ArgIdx]->dump();
+    else
+      llvm::errs() << "No more args";
+    llvm::errs() << "\n";
+    llvm::errs() << "The deduced is:\n";
+    for (auto d : Deduced) {
+      d.dump();
+      llvm::errs() << "\n";
+    }
 
     const PackExpansionType *ParamExpansion =
         dyn_cast<PackExpansionType>(ParamType);
@@ -4333,7 +4373,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
         break;
 
       ParamTypesForArgChecking.push_back(ParamType);
-
+      
       if (ParamIdx == 0 && HasExplicitObject) {
         if (auto Result = DeduceCallArgument(ParamType, 0,
                                              /*ExplicitObjetArgument=*/true))
@@ -4347,14 +4387,39 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
 
       continue;
     }
+    
 
     bool IsTrailingPack = ParamIdx + 1 == NumParamTypes;
     llvm::errs() << "Is trailing: " << IsTrailingPack << "\n";
     QualType ParamPattern = ParamExpansion->getPattern();
+    if (!IsTrailingPack) {
+      TemplateArgument AsTemplateArg(ParamPattern);
+      SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+      collectUnexpandedParameterPacks(AsTemplateArg, Unexpanded);
+      unsigned int NumPartialPackArgs = 0;
+      const TemplateArgument *PartialPackArgs = nullptr;
+      for (auto a : Unexpanded) {
+        if (auto *Scope = CurrentInstantiationScope)
+          if (auto *Partial = Scope->getPartiallySubstitutedPack(
+              &PartialPackArgs, &NumPartialPackArgs)) {
+                llvm::errs() << "WE HAVE THE PARTIAL THING\n";
+              }
+        if (const auto *TTP = a.first.dyn_cast<const TemplateTypeParmType *>()) {
+          unsigned index =  TTP->getIndex();
+        llvm::errs() << "INDEX:" << TTP->getIndex() << "\n";
+        if (Deduced[index].getKind() != Deduced[index].Null) {
+          llvm::errs() << "What we have after deduction\n";
+        }
+        }
+
+      }
+    }
     PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,
                                  ParamPattern,
                                  AggregateDeductionCandidate && IsTrailingPack);
-
+    // if (PackScope.isPartiallyExpanded()) {
+    //   llvm_unreachable("msg");
+    // }
     // C++0x [temp.deduct.call]p1:
     //   For a function parameter pack that occurs at the end of the
     //   parameter-declaration-list, the type A of each remaining argument of
@@ -4394,8 +4459,10 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
           // corresponding argument is a list?
           PackScope.nextPackElement();
         }
-      } else {
-        llvm::errs() << "Is part exp? " << PackScope.isPartiallyExpanded() << "\n";
+      } else if (!PackScope.isPartiallyExpanded()) {
+        //
+        
+        
         auto NextParamType = ParamTypes[ParamIdx+1];
         if (dyn_cast<PackExpansionType>(NextParamType)) {
           llvm::errs() << "Good the next is non param\n";
@@ -4416,9 +4483,13 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
             ArgIdx++;
 
             break;
+          } else {
+            llvm::errs() << "Not good\n";
           }
           ArgIdx++;
         }
+        //
+        
       }
     }
 
