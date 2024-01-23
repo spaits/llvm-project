@@ -897,6 +897,7 @@ public:
       Info.PendingDeducedPacks[Pack.Index] = Pack.Outer;
   }
 
+  unsigned getSavedPackSize() const { return Packs[0].Saved.pack_size(); }
   /// Determine whether this pack has already been partially expanded into a
   /// sequence of (prior) function parameters / template arguments.
   bool isPartiallyExpanded() { return IsPartiallyExpanded; }
@@ -921,6 +922,7 @@ public:
     for (auto &Pack : Packs) {
       DeducedTemplateArgument &DeducedArg = Deduced[Pack.Index];
       if (!Pack.New.empty() || !DeducedArg.isNull()) {
+        llvm::errs() << "Inside the if\n";
         while (Pack.New.size() < PackElements)
           Pack.New.push_back(DeducedTemplateArgument());
         if (Pack.New.size() == PackElements)
@@ -930,8 +932,15 @@ public:
         DeducedArg = Pack.New.size() > PackElements + 1
                          ? Pack.New[PackElements + 1]
                          : DeducedTemplateArgument();
+                         DeducedArg.dump();
+      }
+      llvm::errs() << "What are in pack:\n";
+      for (auto a: Pack.New) {
+        a.dump();
+        llvm::errs() << "\n";
       }
     }
+    
     ++PackElements;
   }
 
@@ -1003,14 +1012,19 @@ public:
           OldPack.pack_size() != NewPack.pack_size() && !Result.isNull();
 
       // If we deferred a deduction of this pack, check that one now too.
+      llvm::errs() << "Finish\n";
+      
       if (!Result.isNull() && !Pack.DeferredDeduction.isNull()) {
         OldPack = Result;
         NewPack = Pack.DeferredDeduction;
         Result = checkDeducedTemplateArguments(S.Context, OldPack, NewPack);
       }
-
+      Result.dump();
+      Pack.DeferredDeduction.dump();
+      llvm::errs() << "Is result null? " << Result.isNull() << "\n";
       NamedDecl *Param = TemplateParams->getParam(Pack.Index);
       if (Result.isNull()) {
+        llvm::errs() << "So we will end up here\n";
         Info.Param = makeTemplateParameter(Param);
         Info.FirstArg = OldPack;
         Info.SecondArg = NewPack;
@@ -4294,8 +4308,10 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     //   Template argument deduction is done by comparing each function template
     //   parameter that contains template-parameters that participate in
     //   template argument deduction ...
-
+    llvm::errs() << "Param type for deduction:\n";
+    ParamType->dump();
     if (!hasDeducibleTemplateParameters(*this, FunctionTemplate, ParamType)) {
+      llvm::errs() << "Not Deduced\n";
       return Sema::TDK_Success;
     }
 
@@ -4308,6 +4324,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
           /*Decomposed*/ false, ArgIdx, /*TDF*/ 0);
     }
 
+    llvm::errs() << ".....\n";
     //   ... with the type of the corresponding argument
     return DeduceTemplateArgumentsFromCallArgument(
         *this, TemplateParams, FirstInnerIndex, ParamType,
@@ -4373,6 +4390,9 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,
                                  ParamPattern,
                                  AggregateDeductionCandidate && IsTrailingPack);
+    if (!PackScope.isPartiallyExpanded() && !IsTrailingPack) {
+
+    }
     // if (PackScope.isPartiallyExpanded()) {
     //   llvm_unreachable("msg");
     // }
@@ -4395,12 +4415,14 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     if (IsTrailingPack || PackScope.hasFixedArity()) {
       for (; ArgIdx < Args.size() && PackScope.hasNextElement();
            PackScope.nextPackElement(), ++ArgIdx) {
+            llvm::errs() << "Just push back\n";
         ParamTypesForArgChecking.push_back(ParamPattern);
         if (auto Result = DeduceCallArgument(ParamPattern, ArgIdx,
                                              /*ExplicitObjetArgument=*/false))
           return Result;
       }
     } else {
+      //MY CODE
       // If the parameter type contains an explicitly-specified pack that we
       // could not expand, skip the number of parameters notionally created
       // by the expansion.
@@ -4415,14 +4437,14 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
           PackScope.nextPackElement();
         }
       } else if (!PackScope.isPartiallyExpanded()) {
-        //
-        
-        
         auto NextParamType = ParamTypes[ParamIdx+1];
-        if (dyn_cast<PackExpansionType>(NextParamType)) {
+        if (isa<PackExpansionType>(NextParamType)) {
           continue;
         }
-        for (unsigned i = ArgIdx; i < Args.size(); i++) {
+        llvm::errs() << "Saved size: " << PackScope.getSavedPackSize() << "\n";
+        int j = 0;
+        for (unsigned i = ArgIdx; i < Args.size() && j < PackScope.getSavedPackSize(); i++) {
+          j++;
           ParamTypesForArgChecking.push_back(ParamPattern);
           if (auto Result = DeduceCallArgument(ParamPattern, i,
                                              /*ExplicitObjetArgument=*/false)) {
@@ -4450,7 +4472,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     }
   }
 
-  // Capture the context in which the function call is made. This is the context
+  // Capture the co ntext in which the function call is made. This is the context
   // that is needed when the accessibility of template arguments is checked.
   DeclContext *CallingCtx = CurContext;
 
@@ -6246,6 +6268,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     return;
 
   T = Ctx.getCanonicalType(T);
+  llvm::errs()<< "Type class: " << T->getTypeClass() << " - " << OnlyDeduced <<"\n";
   switch (T->getTypeClass()) {
   case Type::Pointer:
     MarkUsedTemplateParameters(Ctx,
@@ -6431,6 +6454,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     break;
 
   case Type::DependentName:
+    llvm::errs() << "Doing something with dependent types\n";
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(Ctx,
                                  cast<DependentNameType>(T)->getQualifier(),
