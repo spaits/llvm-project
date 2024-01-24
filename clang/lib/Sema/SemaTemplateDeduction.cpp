@@ -852,11 +852,20 @@ public:
       Info.PendingDeducedPacks[Pack.Index] = Pack.Outer;
   }
 
-  std::optional<unsigned> getSavedPackSize(unsigned Index) const {
-    if (Packs.size() <= Index)
+  std::optional<unsigned> getSavedPackSize(unsigned Index, TemplateArgument Pattern) const {
+
+      SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+        S.collectUnexpandedParameterPacks(Pattern, Unexpanded);
+        if (Unexpanded.size() == 0)
+          return {};
+        unsigned ArgPosAfterSubstitution = Packs[0].Saved.pack_size();
+
+        if (std::all_of(Packs.begin() + 1, Packs.end(),
+                         [&ArgPosAfterSubstitution](auto P) {
+                           return P.Saved.pack_size() == ArgPosAfterSubstitution;
+                         }))
+          return ArgPosAfterSubstitution;
       return {};
-    llvm::errs () << "getSavedPackSize: " << Packs[Index].Saved.pack_size() << "\n";
-    return Packs[Index].Saved.pack_size();
   }
 
   /// Determine whether this pack has already been partially expanded into a
@@ -4387,20 +4396,13 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
         collectUnexpandedParameterPacks(ParamPattern, Unexpanded);
         if (Unexpanded.size() == 0)
           continue;
-        llvm::errs() << "Dump unexpanded:\n";
-        for (auto a: Unexpanded) {}
+        
         std::optional<unsigned> ArgPosAfterSubstitution =
-            PackScope.getSavedPackSize(getDepthAndIndex(Unexpanded[0]).second);
+            PackScope.getSavedPackSize(getDepthAndIndex(Unexpanded[0]).second, ParamPattern);
         if (!ArgPosAfterSubstitution)
           continue;
 
-        if (!std::all_of(Unexpanded.begin() + 1, Unexpanded.end(),
-                         [&ArgPosAfterSubstitution, &PackScope](auto u) {
-                           return PackScope.getSavedPackSize(getDepthAndIndex(u).second) ==
-                                  *ArgPosAfterSubstitution;
-                         }))
-          continue;
-        llvm::errs() << "Info: " << ArgIdx + *ArgPosAfterSubstitution << " " << ArgIdx << "\n";
+        
         unsigned PackArgEnd = ArgIdx + *ArgPosAfterSubstitution;
         for (; ArgIdx < PackArgEnd && ArgIdx < Args.size();
              ArgIdx++) {
