@@ -7231,8 +7231,16 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       InitializationKind Kind = InitializationKind::CreateForInit(
           DeductionArg->getBeginLoc(), /*DirectInit*/false, DeductionArg);
       Expr *Inits[1] = {DeductionArg};
+      llvm::errs() << "SemaTemplate.cpp\n";
       ParamType =
           DeduceTemplateSpecializationFromInitializer(TSI, Entity, Kind, Inits);
+      if (ParamType.isNull()) {
+        llvm::errs() << "The param type is null\n";
+      }
+      else {
+        llvm::errs() << "Ok it must be here\n";
+        ParamType->dump();
+      }
       if (ParamType.isNull())
         return ExprError();
     } else {

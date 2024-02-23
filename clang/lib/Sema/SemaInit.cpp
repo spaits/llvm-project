@@ -10586,6 +10586,18 @@ static bool isOrIsDerivedFromSpecializationOf(CXXRecordDecl *RD,
 QualType Sema::DeduceTemplateSpecializationFromInitializer(
     TypeSourceInfo *TSInfo, const InitializedEntity &Entity,
     const InitializationKind &Kind, MultiExprArg Inits) {
+      llvm::errs() << "DeduceTemplateSpecializationFromInitializer BEGIN\n";
+      TSInfo->getType()->dump();
+      llvm::errs() << "\n";
+      Entity.dump();
+      llvm::errs() << "\n" << Kind.getKind() << " " <<Inits.size() << "\nInits:\n";
+      // It is a copy
+      for (auto i : Inits) {
+        i->dump();
+        llvm::errs() << "-\n";
+      }
+      llvm::errs() << "DeduceTemplateSpecializationFromInitializer END\n";
+
   auto *DeducedTST = dyn_cast<DeducedTemplateSpecializationType>(
       TSInfo->getType()->getContainedDeducedType());
   assert(DeducedTST && "not a deduced template specialization type");
@@ -10631,7 +10643,13 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       TSInfo->getTypeLoc().getEndLoc());
   LookupResult Guides(*this, NameInfo, LookupOrdinaryName);
   LookupQualifiedName(Guides, Template->getDeclContext());
-
+  llvm::errs() << "Even more info:\n";
+  unsigned GuidesNum = 0;
+  for (auto *a : Guides) {
+    a->dump();
+    GuidesNum++;
+  }
+  llvm::errs() << GuidesNum << " Done dumping the guides\n";
   // FIXME: Do not diagnose inaccessible deduction guides. The standard isn't
   // clear on this, but they're not found by name so access does not apply.
   Guides.suppressDiagnostics();
@@ -10641,7 +10659,12 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       (Inits.size() == 1 && Kind.getKind() != InitializationKind::IK_Direct)
           ? dyn_cast<InitListExpr>(Inits[0])
           : nullptr;
-
+  if (ListInit) {
+    llvm::errs() << "List init\n";
+    ListInit->dump();
+  } else {
+    llvm::errs() << "Not list init\n";
+  }
   // C++1z [over.match.class.deduct]p1:
   //   Initialization and overload resolution are performed as described in
   //   [dcl.init] and [over.match.ctor], [over.match.copy], or [over.match.list]
@@ -10655,7 +10678,9 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
                                   OverloadCandidateSet::CSK_Normal);
   OverloadCandidateSet::iterator Best;
 
+  
   bool AllowExplicit = !Kind.isCopyInit() || ListInit;
+  llvm::errs() << "Allow explicit? " << AllowExplicit << "\n";
 
   // Return true if the candidate is added successfully, false otherwise.
   auto addDeductionCandidate = [&](FunctionTemplateDecl *TD,
@@ -10676,8 +10701,11 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       // could never be called with one argument are not interesting to
       // check or note.
       if (GD->getMinRequiredArguments() > 1 ||
-          (GD->getNumParams() == 0 && !GD->isVariadic()))
+          (GD->getNumParams() == 0 && !GD->isVariadic())) {
+            llvm::errs() << "Early return converting CTOR\n";
         return;
+
+          }
     }
 
     // C++ [over.match.list]p1.1: (first phase list initialization)
@@ -10703,7 +10731,12 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     // theoretically happen here, but it's not clear whether we can
     // ever have a parameter of the right type.
     bool SuppressUserConversions = Kind.isCopyInit();
-
+    //llvm::errs() << "Is copy? " << SuppressUserConversions << "\n";
+    llvm::errs() << "Template decl\n";
+    TD->dump();
+    llvm::errs() << "Deduction Guide:\n";
+    GD->dump();
+    llvm::errs() << "---\n";
     if (TD) {
       SmallVector<Expr *, 8> TmpInits;
       for (Expr *E : Inits)
@@ -10843,18 +10876,22 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   // C++11 [over.match.list]p1, per DR1467: for list-initialization, first
   // try initializer-list constructors.
   if (ListInit) {
+    llvm::errs() << "We have an init list: "<<ListInit->getNumInits()<<"\n";
     bool TryListConstructors = true;
 
     // Try list constructors unless the list is empty and the class has one or
     // more default constructors, in which case those constructors win.
     if (!ListInit->getNumInits()) {
+      llvm::errs() << "Dumping namedDecls\n";
       for (NamedDecl *D : Guides) {
+        D->dump();
         auto *FD = dyn_cast<FunctionDecl>(D->getUnderlyingDecl());
         if (FD && FD->getMinRequiredArguments() == 0) {
           TryListConstructors = false;
           break;
         }
       }
+      llvm::errs() << "End named decls dump\n";
     } else if (ListInit->getNumInits() == 1) {
       // C++ [over.match.class.deduct]:
       //   As an exception, the first phase in [over.match.list] (considering
@@ -10869,8 +10906,10 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
         TryListConstructors = false;
     }
 
-    if (TryListConstructors)
+    if (TryListConstructors) {
+      llvm::errs() << "Calling TryToResolveOverload.\n";
       Result = TryToResolveOverload(/*OnlyListConstructor*/true);
+    }
     // Then unwrap the initializer list and try again considering all
     // constructors.
     Inits = MultiExprArg(ListInit->getInits(), ListInit->getNumInits());
@@ -10880,6 +10919,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   // initialization, we (eventually) consider constructors.
   if (Result == OR_No_Viable_Function)
     Result = TryToResolveOverload(/*OnlyListConstructor*/false);
+  
+  llvm::errs() << "The result: " << Result << "\n";
 
   switch (Result) {
   case OR_Ambiguous:
@@ -10895,6 +10936,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     return QualType();
 
   case OR_No_Viable_Function: {
+    llvm::errs() << "We could not find vaible function\n";
     CXXRecordDecl *Primary =
         cast<ClassTemplateDecl>(Template)->getTemplatedDecl();
     bool Complete =
@@ -10906,6 +10948,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
                            : diag::err_deduced_class_template_incomplete)
                 << TemplateName << !Guides.empty()),
         *this, OCD_AllCandidates, Inits);
+    llvm::errs() << "Returning the empty QualType\n";
     return QualType();
   }
 

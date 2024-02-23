@@ -13021,8 +13021,17 @@ QualType Sema::deduceVarTypeFromInitializer(VarDecl *VDecl,
         VDecl->getLocation(), DirectInit, Init);
     // FIXME: Initialization should not be taking a mutable list of inits.
     SmallVector<Expr*, 8> InitsCopy(DeduceInits.begin(), DeduceInits.end());
-    return DeduceTemplateSpecializationFromInitializer(TSI, Entity, Kind,
+    llvm::errs() << "To return\n";
+    auto ToReturn = DeduceTemplateSpecializationFromInitializer(TSI, Entity, Kind,
                                                        InitsCopy);
+    llvm::errs() << "EOF To return\n";
+    if (ToReturn.isNull()) {
+      llvm::errs() << "It is null\n";
+    } else {
+      llvm::errs() << "To return\n";
+      ToReturn->dump();
+    }
+    return ToReturn;
   }
 
   if (DirectInit) {
