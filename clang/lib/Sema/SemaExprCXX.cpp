@@ -1520,10 +1520,16 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
   DeducedType *Deduced = Ty->getContainedDeducedType();
   if (Deduced && !Deduced->isDeduced() &&
       isa<DeducedTemplateSpecializationType>(Deduced)) {
+        llvm::errs() << "Ty\n";
     Ty = DeduceTemplateSpecializationFromInitializer(TInfo, Entity,
                                                      Kind, Exprs);
-    if (Ty.isNull())
+    llvm::errs() << "Ty in SemaExpr.cpp: \n";
+    Ty->dump();
+    if (Ty.isNull()) {
+      llvm::errs() << "Oooo\n";
       return ExprError();
+
+    }
     Entity = InitializedEntity::InitializeTemporary(TInfo, Ty);
   } else if (Deduced && !Deduced->isDeduced()) {
     MultiExprArg Inits = Exprs;
@@ -2065,10 +2071,17 @@ ExprResult Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
 
     InitializedEntity Entity
       = InitializedEntity::InitializeNew(StartLoc, AllocType);
+    llvm::errs() << "AllocType\n";
+
     AllocType = DeduceTemplateSpecializationFromInitializer(
         AllocTypeInfo, Entity, Kind, Exprs);
-    if (AllocType.isNull())
+
+    if (AllocType.isNull()) {
+      llvm::errs() << "Alloc Type is null\n";
       return ExprError();
+    } 
+      llvm::errs() << "Ty in SemaExpr.cpp: \n";
+      AllocType->dump();
   } else if (Deduced && !Deduced->isDeduced()) {
     MultiExprArg Inits = Exprs;
     bool Braced = (InitStyle == CXXNewInitializationStyle::Braces);
