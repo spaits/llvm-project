@@ -10749,6 +10749,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       llvm::errs() << "We have TD num inits: "<< Inits.size() << "\n";
       SmallVector<Expr *, 8> TmpInits;
       unsigned i = 0;
+      llvm::errs() << "-------------------\n";
       for (Expr *E : Inits) {
         //CALL: TryListInitialization
         // static void TryListInitialization(Sema &S,
@@ -10769,14 +10770,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   //                        bool TopLevelOfInitList = false,
   //                        bool TreatUnavailableAsInvalid = true);
 
-        // if (auto *AsInitListExpr = dyn_cast<InitListExpr>(E); AsInitListExpr && i > 0) {
-        //   InitializedEntity Entity = InitializedEntity::InitializeTemporary(Inits[0]->getType());
-        //   InitializationKind Kind = InitializationKind::CreateForInit(AsInitListExpr->getSourceRange().getBegin(), true, AsInitListExpr);
-        //   InitializationSequence Seq(*this, Entity, Kind, E, false, false);
-        //   TryListInitialization(*this, Entity, Kind, AsInitListExpr, Seq, false);
-        //   //TryListInitialization(*this, InitializedEntity{},, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
-        //   //TryListInitialization(*this, InitializedEntity{}, AsInitListExpr, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
-        // }
+        
 
         // TODO possible solution
         E->dump();
@@ -10785,8 +10779,21 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
           TmpInits.push_back(DI->getInit());
         else
           TmpInits.push_back(E);
+        
+        if (auto *AsInitListExpr = dyn_cast<InitListExpr>(E); AsInitListExpr && i > 0) {
+          llvm::errs() << "The type of 0th element of init.\n";
+          Inits[0]->dump();
+          InitializedEntity Entity = InitializedEntity::InitializeTemporary(Inits[0]->getType());
+          InitializationKind Kind = InitializationKind::CreateForInit(AsInitListExpr->getSourceRange().getBegin(), true, AsInitListExpr);
+          InitializationSequence Seq(*this, Entity, Kind, E, false, false);
+          TryListInitialization(*this, Entity, Kind, AsInitListExpr, Seq, false);
+          //TryListInitialization(*this, InitializedEntity{},, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
+          //TryListInitialization(*this, InitializedEntity{}, AsInitListExpr, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
+        }
+
         i++;
       }
+      llvm::errs() << "-------------------\n";
       AddTemplateOverloadCandidate(
           TD, FoundDecl, /*ExplicitArgs=*/nullptr, TmpInits, Candidates,
           SuppressUserConversions,
