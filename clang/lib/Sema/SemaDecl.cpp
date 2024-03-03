@@ -12989,7 +12989,7 @@ QualType Sema::deduceVarTypeFromInitializer(VarDecl *VDecl,
     if (ToReturn.isNull()) {
       llvm::errs() << "It is null\n";
     } else {
-      llvm::errs() << "To return\n";
+      llvm::errs() << "To return aaa\n";
       ToReturn->dump();
     }
     return ToReturn;

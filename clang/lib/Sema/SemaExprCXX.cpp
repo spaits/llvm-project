@@ -1528,7 +1528,6 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
     if (Ty.isNull()) {
       llvm::errs() << "Oooo\n";
       return ExprError();
-
     }
     Entity = InitializedEntity::InitializeTemporary(TInfo, Ty);
   } else if (Deduced && !Deduced->isDeduced()) {

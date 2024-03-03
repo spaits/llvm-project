@@ -4536,9 +4536,11 @@ static void TryListInitialization(Sema &S,
                                   InitListExpr *InitList,
                                   InitializationSequence &Sequence,
                                   bool TreatUnavailableAsInvalid) {
+  llvm::errs() << "//Try list initialization\n";
   QualType DestType = Entity.getType();
-  llvm::errs() << "Entity type:\n";
+  llvm::errs() << "Dest type:\n";
   DestType->dump();
+  llvm::errs() << "Entity:\n";
   Entity.dump();
 
   // C++ doesn't allow scalar initialization with more than one argument.
@@ -4559,7 +4561,7 @@ static void TryListInitialization(Sema &S,
     Sequence.setIncompleteTypeFailure(DestType);
     return;
   }
-
+  llvm::errs() << "a\n";
   // C++20 [dcl.init.list]p3:
   // - If the braced-init-list contains a designated-initializer-list, T shall
   //   be an aggregate class. [...] Aggregate initialization is performed.
@@ -4745,6 +4747,7 @@ static void TryListInitialization(Sema &S,
   }
 
   // Add the list initialization step with the built init list.
+  llvm::errs() << "Got to the end\n";
   Sequence.AddListInitializationStep(DestType);
 }
 
@@ -10652,12 +10655,12 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   LookupResult Guides(*this, NameInfo, LookupOrdinaryName);
   LookupQualifiedName(Guides, Template->getDeclContext());
   llvm::errs() << "Even more info:\n";
-  unsigned GuidesNum = 0;
-  for (auto *a : Guides) {
-    a->dump();
-    GuidesNum++;
-  }
-  llvm::errs() << GuidesNum << " Done dumping the guides\n";
+  //unsigned GuidesNum = 0;
+  //for (auto *a : Guides) {
+  //  a->dump();
+  //  GuidesNum++;
+  //}
+  //llvm::errs() << GuidesNum << " Done dumping the guides\n";
   // FIXME: Do not diagnose inaccessible deduction guides. The standard isn't
   // clear on this, but they're not found by name so access does not apply.
   Guides.suppressDiagnostics();
@@ -10751,28 +10754,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       unsigned i = 0;
       llvm::errs() << "-------------------\n";
       for (Expr *E : Inits) {
-        //CALL: TryListInitialization
-        // static void TryListInitialization(Sema &S,
-        //                           const InitializedEntity &Entity,
-        //                           const InitializationKind &Kind,
-        //                           InitListExpr *InitList,
-        //                           InitializationSequence &Sequence,
-        //                           bool TreatUnavailableAsInvalid);
-        //TryListInitialization(*this, InitializedEntity{}, , InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
-  //       InitializationKind Kind = InitializationKind::CreateCopy(
-  //     InitE->getBeginLoc(), EqualLoc, AllowExplicit);
-  // InitializationSequence Seq(*this, Entity, Kind, InitE, TopLevelOfInitList);
-
-  // InitializationSequence(Sema &S,
-  //                        const InitializedEntity &Entity,
-  //                        const InitializationKind &Kind,
-  //                        MultiExprArg Args,
-  //                        bool TopLevelOfInitList = false,
-  //                        bool TreatUnavailableAsInvalid = true);
-
-        
-
         // TODO possible solution
+        llvm::errs() << "The expressions\n";
         E->dump();
         llvm::errs() << "\n";
         if (auto *DI = dyn_cast<DesignatedInitExpr>(E))
@@ -10782,11 +10765,27 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
         
         if (auto *AsInitListExpr = dyn_cast<InitListExpr>(E); AsInitListExpr && i > 0) {
           llvm::errs() << "The type of 0th element of init.\n";
-          Inits[0]->dump();
+          TmpInits[0]->dump();
           InitializedEntity Entity = InitializedEntity::InitializeTemporary(Inits[0]->getType());
           InitializationKind Kind = InitializationKind::CreateForInit(AsInitListExpr->getSourceRange().getBegin(), true, AsInitListExpr);
           InitializationSequence Seq(*this, Entity, Kind, E, false, false);
-          TryListInitialization(*this, Entity, Kind, AsInitListExpr, Seq, false);
+          //TryListInitialization(*this, Entity, Kind, AsInitListExpr, Seq, false);
+          //TmpInits.pop_back();
+          //TmpInits.push_back(AsInitListExpr);
+          //TODO continue here
+          auto Result = Seq.Perform(*this, Entity, Kind,MultiExprArg(&E, 1));
+          if (Result.isInvalid()) {
+            llvm::errs() << "Invalid\n";
+          } else if (Result.isUnset()) {
+            llvm::errs() << "Unset\n";
+          } else {
+            llvm::errs() << " OK i guess\n";
+            auto *AsExpr = Result.get();
+            AsExpr->dump();
+            llvm::errs() << "End of OK i guess\n";
+            TmpInits.pop_back();
+            TmpInits.push_back(AsExpr);
+          }
           //TryListInitialization(*this, InitializedEntity{},, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
           //TryListInitialization(*this, InitializedEntity{}, AsInitListExpr, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
         }
@@ -10794,6 +10793,10 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
         i++;
       }
       llvm::errs() << "-------------------\n";
+      llvm::errs() << "The temp inits for Deduce\n";
+      for (auto a : TmpInits) {
+        a->dump();
+      }
       AddTemplateOverloadCandidate(
           TD, FoundDecl, /*ExplicitArgs=*/nullptr, TmpInits, Candidates,
           SuppressUserConversions,
