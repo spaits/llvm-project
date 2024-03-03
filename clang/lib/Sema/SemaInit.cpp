@@ -34,6 +34,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -4536,6 +4537,9 @@ static void TryListInitialization(Sema &S,
                                   InitializationSequence &Sequence,
                                   bool TreatUnavailableAsInvalid) {
   QualType DestType = Entity.getType();
+  llvm::errs() << "Entity type:\n";
+  DestType->dump();
+  Entity.dump();
 
   // C++ doesn't allow scalar initialization with more than one argument.
   // But C99 complex numbers are scalars and it makes sense there.
@@ -10742,12 +10746,47 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     GD->dump();
     llvm::errs() << "---\n";
     if (TD) {
+      llvm::errs() << "We have TD num inits: "<< Inits.size() << "\n";
       SmallVector<Expr *, 8> TmpInits;
-      for (Expr *E : Inits)
+      unsigned i = 0;
+      for (Expr *E : Inits) {
+        //CALL: TryListInitialization
+        // static void TryListInitialization(Sema &S,
+        //                           const InitializedEntity &Entity,
+        //                           const InitializationKind &Kind,
+        //                           InitListExpr *InitList,
+        //                           InitializationSequence &Sequence,
+        //                           bool TreatUnavailableAsInvalid);
+        //TryListInitialization(*this, InitializedEntity{}, , InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
+  //       InitializationKind Kind = InitializationKind::CreateCopy(
+  //     InitE->getBeginLoc(), EqualLoc, AllowExplicit);
+  // InitializationSequence Seq(*this, Entity, Kind, InitE, TopLevelOfInitList);
+
+  // InitializationSequence(Sema &S,
+  //                        const InitializedEntity &Entity,
+  //                        const InitializationKind &Kind,
+  //                        MultiExprArg Args,
+  //                        bool TopLevelOfInitList = false,
+  //                        bool TreatUnavailableAsInvalid = true);
+
+        // if (auto *AsInitListExpr = dyn_cast<InitListExpr>(E); AsInitListExpr && i > 0) {
+        //   InitializedEntity Entity = InitializedEntity::InitializeTemporary(Inits[0]->getType());
+        //   InitializationKind Kind = InitializationKind::CreateForInit(AsInitListExpr->getSourceRange().getBegin(), true, AsInitListExpr);
+        //   InitializationSequence Seq(*this, Entity, Kind, E, false, false);
+        //   TryListInitialization(*this, Entity, Kind, AsInitListExpr, Seq, false);
+        //   //TryListInitialization(*this, InitializedEntity{},, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
+        //   //TryListInitialization(*this, InitializedEntity{}, AsInitListExpr, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
+        // }
+
+        // TODO possible solution
+        E->dump();
+        llvm::errs() << "\n";
         if (auto *DI = dyn_cast<DesignatedInitExpr>(E))
           TmpInits.push_back(DI->getInit());
         else
           TmpInits.push_back(E);
+        i++;
+      }
       AddTemplateOverloadCandidate(
           TD, FoundDecl, /*ExplicitArgs=*/nullptr, TmpInits, Candidates,
           SuppressUserConversions,
@@ -10845,6 +10884,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       if (!GD->isImplicit())
         HasAnyDeductionGuide = true;
 
+      llvm::errs() << "Now calling addDeductionCandidate\n";
       addDeductionCandidate(TD, GD, I.getPair(), OnlyListConstructors,
                             /*AllowAggregateDeductionCandidate=*/false);
     }
@@ -10858,6 +10898,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     //   C, the set contains an additional function template, called the
     //   aggregate deduction candidate, defined as follows.
     if (getLangOpts().CPlusPlus20 && !HasAnyDeductionGuide) {
+      llvm::errs() << "C++20";
+      //llvm_unreachable("We should have deduction gide REMOVEIT");
       if (ListInit && ListInit->getNumInits()) {
         SynthesizeAggrGuide(ListInit);
       } else if (Inits.size()) { // parenthesized expression-list
@@ -10872,7 +10914,9 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
 
     FoundDeductionGuide = FoundDeductionGuide || HasAnyDeductionGuide;
 
-    return Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
+    auto res = Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
+    llvm::errs() << "The result of TryToResolveOverload: " << res << "\n";
+    return res;
   };
 
   OverloadingResult Result = OR_No_Viable_Function;
@@ -10988,6 +11032,10 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   // C++ [dcl.type.class.deduct]p1:
   //  The placeholder is replaced by the return type of the function selected
   //  by overload resolution for class template deduction.
+  llvm::errs() << "When working:\n";
+  TSInfo->getType()->dump();
+  llvm::errs() << "\n";
+  Best->Function->getReturnType().dump();
   QualType DeducedType =
       SubstAutoType(TSInfo->getType(), Best->Function->getReturnType());
   Diag(TSInfo->getTypeLoc().getBeginLoc(),

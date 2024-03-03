@@ -7599,6 +7599,7 @@ void Sema::AddTemplateOverloadCandidate(
     OverloadCandidateSet &CandidateSet, bool SuppressUserConversions,
     bool PartialOverloading, bool AllowExplicit, ADLCallKind IsADLCandidate,
     OverloadCandidateParamOrder PO, bool AggregateCandidateDeduction) {
+      llvm::errs () << "AddTemplateOverloadCandidate is called\n";
   if (!CandidateSet.isNewCandidate(FunctionTemplate, PO))
     return;
 
