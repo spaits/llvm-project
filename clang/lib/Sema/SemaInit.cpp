@@ -34,6 +34,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -4580,7 +4581,6 @@ static void TryListInitialization(Sema &S,
     Sequence.setIncompleteTypeFailure(DestType);
     return;
   }
-
   // C++20 [dcl.init.list]p3:
   // - If the braced-init-list contains a designated-initializer-list, T shall
   //   be an aggregate class. [...] Aggregate initialization is performed.
@@ -10757,7 +10757,12 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       TSInfo->getTypeLoc().getEndLoc());
   LookupResult Guides(*this, NameInfo, LookupOrdinaryName);
   LookupQualifiedName(Guides, Template->getDeclContext());
-
+  //unsigned GuidesNum = 0;
+  //for (auto *a : Guides) {
+  //  a->dump();
+  //  GuidesNum++;
+  //}
+  //llvm::errs() << GuidesNum << " Done dumping the guides\n";
   // FIXME: Do not diagnose inaccessible deduction guides. The standard isn't
   // clear on this, but they're not found by name so access does not apply.
   Guides.suppressDiagnostics();
@@ -10802,8 +10807,10 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       // could never be called with one argument are not interesting to
       // check or note.
       if (GD->getMinRequiredArguments() > 1 ||
-          (GD->getNumParams() == 0 && !GD->isVariadic()))
+          (GD->getNumParams() == 0 && !GD->isVariadic())) {
         return;
+
+          }
     }
 
     // C++ [over.match.list]p1.1: (first phase list initialization)
@@ -10829,14 +10836,55 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     // theoretically happen here, but it's not clear whether we can
     // ever have a parameter of the right type.
     bool SuppressUserConversions = Kind.isCopyInit();
-
+    
     if (TD) {
       SmallVector<Expr *, 8> TmpInits;
-      for (Expr *E : Inits)
-        if (auto *DI = dyn_cast<DesignatedInitExpr>(E))
-          TmpInits.push_back(DI->getInit());
-        else
-          TmpInits.push_back(E);
+      SmallVector<Expr *, 8> TmpForNestedInitLists;
+
+      unsigned i = 0;
+      for (Expr *E : Inits) {
+        
+
+        if (auto *AsInitListExpr = dyn_cast<InitListExpr>(E); AsInitListExpr && i > 0) {
+          if (TmpForNestedInitLists.size() == 0) {
+            TmpForNestedInitLists.push_back(TmpInits[i-1]);
+            TmpInits.pop_back();
+            i--;
+          }
+          InitializedEntity Entity = InitializedEntity::InitializeTemporary(Inits[0]->getType());
+          InitializationKind Kind = InitializationKind::CreateForInit(AsInitListExpr->getSourceRange().getBegin(), true, AsInitListExpr);
+          InitializationSequence Seq(*this, Entity, Kind, E, false, false);
+          auto Result = Seq.Perform(*this, Entity, Kind,MultiExprArg(&E, 1));
+          if (Result.isInvalid()) {
+          } else if (Result.isUnset()) {
+          } else {
+            auto *AsExpr = Result.get();
+            TmpForNestedInitLists.push_back(AsExpr);
+          }
+        } else {
+          if (TmpForNestedInitLists.size() != 0) {
+            auto ResInitLits = BuildInitList(Inits[0]->getSourceRange().getBegin(), TmpForNestedInitLists, TmpForNestedInitLists[TmpForNestedInitLists.size()-1]->getSourceRange().getEnd());
+            if (ResInitLits.isUsable()) {
+              TmpInits.push_back(ResInitLits.get());
+              TmpForNestedInitLists.clear();
+            }
+          }
+          if (auto *DI = dyn_cast<DesignatedInitExpr>(E))
+            TmpInits.push_back(DI->getInit());
+          else
+            TmpInits.push_back(E);
+        }
+        i++;
+      }
+
+      if (TmpForNestedInitLists.size() != 0) {
+            auto ResInitLits = BuildInitList(Inits[0]->getSourceRange().getBegin(), TmpForNestedInitLists, TmpForNestedInitLists[TmpForNestedInitLists.size()-1]->getSourceRange().getEnd());
+            if (ResInitLits.isUsable()) {
+              TmpInits.push_back(ResInitLits.get());
+              TmpForNestedInitLists.clear();
+            }
+      }
+      llvm::SmallVector<Expr *, 8> newVec;
       AddTemplateOverloadCandidate(
           TD, FoundDecl, /*ExplicitArgs=*/nullptr, TmpInits, Candidates,
           SuppressUserConversions,
@@ -10947,6 +10995,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     //   C, the set contains an additional function template, called the
     //   aggregate deduction candidate, defined as follows.
     if (getLangOpts().CPlusPlus20 && !HasAnyDeductionGuide) {
+      //llvm_unreachable("We should have deduction gide REMOVEIT");
       if (ListInit && ListInit->getNumInits()) {
         SynthesizeAggrGuide(ListInit);
       } else if (Inits.size()) { // parenthesized expression-list
@@ -10961,7 +11010,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
 
     FoundDeductionGuide = FoundDeductionGuide || HasAnyDeductionGuide;
 
-    return Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
+    auto res = Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
+    return res;
   };
 
   OverloadingResult Result = OR_No_Viable_Function;
@@ -10995,8 +11045,9 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
         TryListConstructors = false;
     }
 
-    if (TryListConstructors)
+    if (TryListConstructors) {
       Result = TryToResolveOverload(/*OnlyListConstructor*/true);
+    }
     // Then unwrap the initializer list and try again considering all
     // constructors.
     Inits = MultiExprArg(ListInit->getInits(), ListInit->getNumInits());
@@ -11006,6 +11057,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   // initialization, we (eventually) consider constructors.
   if (Result == OR_No_Viable_Function)
     Result = TryToResolveOverload(/*OnlyListConstructor*/false);
+  
 
   switch (Result) {
   case OR_Ambiguous:
