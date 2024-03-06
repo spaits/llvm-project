@@ -7638,6 +7638,7 @@ void Sema::AddTemplateOverloadCandidate(
                 FunctionTemplate, ParamTypes, Args, CandidateSet, Conversions,
                 SuppressUserConversions, nullptr, QualType(), {}, PO);
           })) {
+            llvm::errs() << "Adom" << Result << "\n";
     OverloadCandidate &Candidate =
         CandidateSet.addCandidate(Conversions.size(), Conversions);
     Candidate.FoundDecl = FoundDecl;
@@ -7666,6 +7667,7 @@ void Sema::AddTemplateOverloadCandidate(
   // Add the function template specialization produced by template argument
   // deduction as a candidate.
   assert(Specialization && "Missing function template specialization?");
+  llvm::errs() << "We got to add overload candidiate\n";
   AddOverloadCandidate(
       Specialization, FoundDecl, Args, CandidateSet, SuppressUserConversions,
       PartialOverloading, AllowExplicit,

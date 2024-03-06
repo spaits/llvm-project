@@ -10786,17 +10786,22 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
             TmpInits.pop_back();
             TmpInits.push_back(AsExpr);
           }
-          //TryListInitialization(*this, InitializedEntity{},, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
-          //TryListInitialization(*this, InitializedEntity{}, AsInitListExpr, InitListExpr *InitList, InitializationSequence &Sequence, bool TreatUnavailableAsInvalid)
         }
 
         i++;
       }
       llvm::errs() << "-------------------\n";
       llvm::errs() << "The temp inits for Deduce\n";
-      for (auto a : TmpInits) {
+      for (auto *a : TmpInits) {
         a->dump();
       }
+      auto ResInitLits = BuildInitList(TmpInits[0]->getSourceRange().getBegin(), TmpInits, TmpInits[TmpInits.size()-1]->getSourceRange().getEnd());
+      if (ResInitLits.isUsable()) {
+        llvm::errs() << "Wh have a usable init list\n";
+        ResInitLits.get()->dump();
+      }
+      llvm::SmallVector<Expr *, 8> newVec;
+      //newVec.push_back(ResInitLits.get());
       AddTemplateOverloadCandidate(
           TD, FoundDecl, /*ExplicitArgs=*/nullptr, TmpInits, Candidates,
           SuppressUserConversions,
