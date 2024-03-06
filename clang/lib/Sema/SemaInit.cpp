@@ -10751,6 +10751,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     if (TD) {
       llvm::errs() << "We have TD num inits: "<< Inits.size() << "\n";
       SmallVector<Expr *, 8> TmpInits;
+      SmallVector<Expr *, 8> TmpForNestedInitLists;
+
       unsigned i = 0;
       llvm::errs() << "-------------------\n";
       for (Expr *E : Inits) {
@@ -10758,21 +10760,17 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
         llvm::errs() << "The expressions\n";
         E->dump();
         llvm::errs() << "\n";
-        if (auto *DI = dyn_cast<DesignatedInitExpr>(E))
-          TmpInits.push_back(DI->getInit());
-        else
-          TmpInits.push_back(E);
-        
+
         if (auto *AsInitListExpr = dyn_cast<InitListExpr>(E); AsInitListExpr && i > 0) {
+          if (TmpForNestedInitLists.size() == 0) {
+            TmpForNestedInitLists.push_back(TmpInits[i-1]);
+            TmpInits.pop_back();
+            i--;
+          }
           llvm::errs() << "The type of 0th element of init.\n";
-          TmpInits[0]->dump();
           InitializedEntity Entity = InitializedEntity::InitializeTemporary(Inits[0]->getType());
           InitializationKind Kind = InitializationKind::CreateForInit(AsInitListExpr->getSourceRange().getBegin(), true, AsInitListExpr);
           InitializationSequence Seq(*this, Entity, Kind, E, false, false);
-          //TryListInitialization(*this, Entity, Kind, AsInitListExpr, Seq, false);
-          //TmpInits.pop_back();
-          //TmpInits.push_back(AsInitListExpr);
-          //TODO continue here
           auto Result = Seq.Perform(*this, Entity, Kind,MultiExprArg(&E, 1));
           if (Result.isInvalid()) {
             llvm::errs() << "Invalid\n";
@@ -10783,23 +10781,49 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
             auto *AsExpr = Result.get();
             AsExpr->dump();
             llvm::errs() << "End of OK i guess\n";
-            TmpInits.pop_back();
-            TmpInits.push_back(AsExpr);
+            TmpForNestedInitLists.push_back(AsExpr);
           }
+        } else {
+          if (TmpForNestedInitLists.size() != 0) {
+            // FIXME here
+            auto ResInitLits = BuildInitList(Inits[0]->getSourceRange().getBegin(), TmpForNestedInitLists, TmpForNestedInitLists[TmpForNestedInitLists.size()-1]->getSourceRange().getEnd());
+            if (ResInitLits.isUsable()) {
+              llvm::errs() << "Wh have a usable init list\n";
+              ResInitLits.get()->dump();
+              TmpInits.push_back(ResInitLits.get());
+              TmpForNestedInitLists.clear();
+            }
+          }
+          if (auto *DI = dyn_cast<DesignatedInitExpr>(E))
+            TmpInits.push_back(DI->getInit());
+          else
+            TmpInits.push_back(E);
         }
+        
 
         i++;
       }
+
+      if (TmpForNestedInitLists.size() != 0) {
+            auto ResInitLits = BuildInitList(Inits[0]->getSourceRange().getBegin(), TmpForNestedInitLists, TmpForNestedInitLists[TmpForNestedInitLists.size()-1]->getSourceRange().getEnd());
+            if (ResInitLits.isUsable()) {
+              llvm::errs() << "Wh have a usable init list\n";
+              ResInitLits.get()->dump();
+              TmpInits.push_back(ResInitLits.get());
+              TmpForNestedInitLists.clear();
+            }
+      }
+
       llvm::errs() << "-------------------\n";
       llvm::errs() << "The temp inits for Deduce\n";
       for (auto *a : TmpInits) {
         a->dump();
       }
-      auto ResInitLits = BuildInitList(TmpInits[0]->getSourceRange().getBegin(), TmpInits, TmpInits[TmpInits.size()-1]->getSourceRange().getEnd());
-      if (ResInitLits.isUsable()) {
-        llvm::errs() << "Wh have a usable init list\n";
-        ResInitLits.get()->dump();
-      }
+      // auto ResInitLits = BuildInitList(Inits[0]->getSourceRange().getBegin(), TmpInits, TmpInits[TmpInits.size()-1]->getSourceRange().getEnd());
+      // if (ResInitLits.isUsable()) {
+      //   llvm::errs() << "Wh have a usable init list\n";
+      //   ResInitLits.get()->dump();
+      // }
       llvm::SmallVector<Expr *, 8> newVec;
       //newVec.push_back(ResInitLits.get());
       AddTemplateOverloadCandidate(
