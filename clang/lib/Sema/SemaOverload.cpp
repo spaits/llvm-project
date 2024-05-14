@@ -10869,7 +10869,9 @@ OverloadCandidateSet::BestViableFunction(Sema &S, SourceLocation Loc,
 
   // If we didn't find any viable functions, abort.
   if (Best == end())
-    return OR_No_Viable_Function;
+  {
+      return OR_No_Viable_Function;
+  }
 
   llvm::SmallVector<const NamedDecl *, 4> EquivalentCands;
 
@@ -10907,7 +10909,6 @@ OverloadCandidateSet::BestViableFunction(Sema &S, SourceLocation Loc,
   if (!EquivalentCands.empty())
     S.diagnoseEquivalentInternalLinkageDeclarations(Loc, Best->Function,
                                                     EquivalentCands);
-
   return OR_Success;
 }
 

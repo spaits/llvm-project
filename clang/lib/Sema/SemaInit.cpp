@@ -34,6 +34,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -4580,7 +4581,6 @@ static void TryListInitialization(Sema &S,
     Sequence.setIncompleteTypeFailure(DestType);
     return;
   }
-
   // C++20 [dcl.init.list]p3:
   // - If the braced-init-list contains a designated-initializer-list, T shall
   //   be an aggregate class. [...] Aggregate initialization is performed.
@@ -10714,6 +10714,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     const InitializationKind &Kind, MultiExprArg Inits) {
   auto *DeducedTST = dyn_cast<DeducedTemplateSpecializationType>(
       TSInfo->getType()->getContainedDeducedType());
+      
   assert(DeducedTST && "not a deduced template specialization type");
 
   auto TemplateName = DeducedTST->getTemplateName();
@@ -10757,7 +10758,11 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       TSInfo->getTypeLoc().getEndLoc());
   LookupResult Guides(*this, NameInfo, LookupOrdinaryName);
   LookupQualifiedName(Guides, Template->getDeclContext());
-
+  //unsigned GuidesNum = 0;
+  //for (auto *a : Guides) {
+  //  a->dump();
+  //  GuidesNum++;
+  //}
   // FIXME: Do not diagnose inaccessible deduction guides. The standard isn't
   // clear on this, but they're not found by name so access does not apply.
   Guides.suppressDiagnostics();
@@ -10767,7 +10772,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       (Inits.size() == 1 && Kind.getKind() != InitializationKind::IK_Direct)
           ? dyn_cast<InitListExpr>(Inits[0])
           : nullptr;
-
+  //assert(Kind.getKind() != InitializationKind::IK_Copy && "Can not handle copy");
   // C++1z [over.match.class.deduct]p1:
   //   Initialization and overload resolution are performed as described in
   //   [dcl.init] and [over.match.ctor], [over.match.copy], or [over.match.list]
@@ -10828,7 +10833,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     // FIXME: The "second phase of [over.match.list] case can also
     // theoretically happen here, but it's not clear whether we can
     // ever have a parameter of the right type.
-    bool SuppressUserConversions = Kind.isCopyInit();
+    bool SuppressUserConversions = Kind.isCopyInit() && !(ListInit && ListInit->isTemporaryObject(getASTContext(),
+                                                                                    Entity.getType()->getAsCXXRecordDecl()));
 
     if (TD) {
       SmallVector<Expr *, 8> TmpInits;
@@ -10839,12 +10845,12 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
           TmpInits.push_back(E);
       AddTemplateOverloadCandidate(
           TD, FoundDecl, /*ExplicitArgs=*/nullptr, TmpInits, Candidates,
-          SuppressUserConversions,
-          /*PartialOverloading=*/false, AllowExplicit, ADLCallKind::NotADL,
-          /*PO=*/{}, AllowAggregateDeductionCandidate);
+          /*SuppressUserConversions*/ false, /*PartialOverloading=*/false,
+          AllowExplicit, ADLCallKind::NotADL, /*PO=*/{},
+          AllowAggregateDeductionCandidate);
     } else {
       AddOverloadCandidate(GD, FoundDecl, Inits, Candidates,
-                           SuppressUserConversions,
+                           /*SuppressUserConversions=*/false,
                            /*PartialOverloading=*/false, AllowExplicit);
     }
   };
@@ -10960,8 +10966,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     }
 
     FoundDeductionGuide = FoundDeductionGuide || HasAnyDeductionGuide;
-
-    return Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
+    auto res = Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
+    return res;
   };
 
   OverloadingResult Result = OR_No_Viable_Function;
