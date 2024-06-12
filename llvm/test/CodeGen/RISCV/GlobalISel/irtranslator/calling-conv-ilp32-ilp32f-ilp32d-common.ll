@@ -16,6 +16,97 @@
 ; Check that on RV32, i64 is passed in a pair of registers. Unlike
 ; the convention for varargs, this need not be an aligned pair.
 
+define i64 @fun(i128 %x, i128 %y ) {
+  ; RV32I-LABEL: name: fun
+  ; RV32I: bb.1 (%ir-block.0):
+  ; RV32I-NEXT:   liveins: $x10, $x11
+  ; RV32I-NEXT: {{  $}}
+  ; RV32I-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x10
+  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s128) = G_LOAD [[COPY]](p0) :: (load (s128), align 1)
+  ; RV32I-NEXT:   [[COPY1:%[0-9]+]]:_(p0) = COPY $x11
+  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s128) = G_LOAD [[COPY1]](p0) :: (load (s128), align 1)
+  ; RV32I-NEXT:   [[SHL:%[0-9]+]]:_(s128) = G_SHL [[LOAD]], [[LOAD1]](s128)
+  ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[SHL]](s128)
+  ; RV32I-NEXT:   [[LSHR:%[0-9]+]]:_(s128) = G_LSHR [[LOAD]], [[LOAD1]](s128)
+  ; RV32I-NEXT:   [[TRUNC1:%[0-9]+]]:_(s64) = G_TRUNC [[LSHR]](s128)
+  ; RV32I-NEXT:   [[ADD:%[0-9]+]]:_(s64) = G_ADD [[TRUNC]], [[TRUNC1]]
+  ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
+  ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)
+  ; RV32I-NEXT:   $x11 = COPY [[UV1]](s32)
+  ; RV32I-NEXT:   PseudoRET implicit $x10, implicit $x11
+  %a = shl i128 %x, %y
+  %2 = trunc i128 %a to i64
+  %b = lshr i128 %x, %y
+  %3 = trunc i128 %b to i64
+  %4 = add i64 %2, %3
+  ret i64 %2
+}
+
+define i32 @fun_caller( ) {
+  ; ILP32-LABEL: name: fun_caller
+  ; ILP32: bb.1 (%ir-block.0):
+  ; ILP32-NEXT:   [[C:%[0-9]+]]:_(s128) = G_CONSTANT i128 1
+  ; ILP32-NEXT:   [[C1:%[0-9]+]]:_(s128) = G_CONSTANT i128 2
+  ; ILP32-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; ILP32-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
+  ; ILP32-NEXT:   G_STORE [[C]](s128), [[FRAME_INDEX]](p0) :: (store (s128), align 1)
+  ; ILP32-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
+  ; ILP32-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
+  ; ILP32-NEXT:   G_STORE [[C1]](s128), [[FRAME_INDEX1]](p0) :: (store (s128), align 1)
+  ; ILP32-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
+  ; ILP32-NEXT:   PseudoCALL target-flags(riscv-call) @fun, csr_ilp32_lp64, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10, implicit-def $x11
+  ; ILP32-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; ILP32-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
+  ; ILP32-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x11
+  ; ILP32-NEXT:   [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY]](s32), [[COPY1]](s32)
+  ; ILP32-NEXT:   [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[MV]](s64)
+  ; ILP32-NEXT:   $x10 = COPY [[TRUNC]](s32)
+  ; ILP32-NEXT:   PseudoRET implicit $x10
+  ;
+  ; ILP32F-LABEL: name: fun_caller
+  ; ILP32F: bb.1 (%ir-block.0):
+  ; ILP32F-NEXT:   [[C:%[0-9]+]]:_(s128) = G_CONSTANT i128 1
+  ; ILP32F-NEXT:   [[C1:%[0-9]+]]:_(s128) = G_CONSTANT i128 2
+  ; ILP32F-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; ILP32F-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
+  ; ILP32F-NEXT:   G_STORE [[C]](s128), [[FRAME_INDEX]](p0) :: (store (s128), align 1)
+  ; ILP32F-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
+  ; ILP32F-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
+  ; ILP32F-NEXT:   G_STORE [[C1]](s128), [[FRAME_INDEX1]](p0) :: (store (s128), align 1)
+  ; ILP32F-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
+  ; ILP32F-NEXT:   PseudoCALL target-flags(riscv-call) @fun, csr_ilp32f_lp64f, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10, implicit-def $x11
+  ; ILP32F-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; ILP32F-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
+  ; ILP32F-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x11
+  ; ILP32F-NEXT:   [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY]](s32), [[COPY1]](s32)
+  ; ILP32F-NEXT:   [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[MV]](s64)
+  ; ILP32F-NEXT:   $x10 = COPY [[TRUNC]](s32)
+  ; ILP32F-NEXT:   PseudoRET implicit $x10
+  ;
+  ; ILP32D-LABEL: name: fun_caller
+  ; ILP32D: bb.1 (%ir-block.0):
+  ; ILP32D-NEXT:   [[C:%[0-9]+]]:_(s128) = G_CONSTANT i128 1
+  ; ILP32D-NEXT:   [[C1:%[0-9]+]]:_(s128) = G_CONSTANT i128 2
+  ; ILP32D-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; ILP32D-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
+  ; ILP32D-NEXT:   G_STORE [[C]](s128), [[FRAME_INDEX]](p0) :: (store (s128), align 1)
+  ; ILP32D-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
+  ; ILP32D-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
+  ; ILP32D-NEXT:   G_STORE [[C1]](s128), [[FRAME_INDEX1]](p0) :: (store (s128), align 1)
+  ; ILP32D-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
+  ; ILP32D-NEXT:   PseudoCALL target-flags(riscv-call) @fun, csr_ilp32d_lp64d, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10, implicit-def $x11
+  ; ILP32D-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; ILP32D-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
+  ; ILP32D-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x11
+  ; ILP32D-NEXT:   [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY]](s32), [[COPY1]](s32)
+  ; ILP32D-NEXT:   [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[MV]](s64)
+  ; ILP32D-NEXT:   $x10 = COPY [[TRUNC]](s32)
+  ; ILP32D-NEXT:   PseudoRET implicit $x10
+  %1 = call i64 @fun(i128 1, i128 2)
+  %2 = trunc i64 %1 to i32
+  ret i32 %2
+}
+
 define i32 @callee_i64_in_regs(i32 %a, i64 %b) nounwind {
   ; RV32I-LABEL: name: callee_i64_in_regs
   ; RV32I: bb.1 (%ir-block.0):
@@ -153,7 +244,7 @@ define i32 @caller_many_scalars() nounwind {
   ; ILP32-NEXT:   G_STORE [[UV3]](s32), [[PTR_ADD]](p0) :: (store (s32) into stack, align 16)
   ; ILP32-NEXT:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
   ; ILP32-NEXT:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
-  ; ILP32-NEXT:   G_STORE [[C7]](s32), [[PTR_ADD1]](p0) :: (store (s32) into stack + 4)
+  ; ILP32-NEXT:   G_STORE [[C7]](s32), [[PTR_ADD1]](p0) :: (store (s32) into stack + 4, basealign 16)
   ; ILP32-NEXT:   $x10 = COPY [[ANYEXT]](s32)
   ; ILP32-NEXT:   $x11 = COPY [[ANYEXT1]](s32)
   ; ILP32-NEXT:   $x12 = COPY [[C2]](s32)
@@ -189,7 +280,7 @@ define i32 @caller_many_scalars() nounwind {
   ; ILP32F-NEXT:   G_STORE [[UV3]](s32), [[PTR_ADD]](p0) :: (store (s32) into stack, align 16)
   ; ILP32F-NEXT:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
   ; ILP32F-NEXT:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
-  ; ILP32F-NEXT:   G_STORE [[C7]](s32), [[PTR_ADD1]](p0) :: (store (s32) into stack + 4)
+  ; ILP32F-NEXT:   G_STORE [[C7]](s32), [[PTR_ADD1]](p0) :: (store (s32) into stack + 4, basealign 16)
   ; ILP32F-NEXT:   $x10 = COPY [[ANYEXT]](s32)
   ; ILP32F-NEXT:   $x11 = COPY [[ANYEXT1]](s32)
   ; ILP32F-NEXT:   $x12 = COPY [[C2]](s32)
@@ -225,7 +316,7 @@ define i32 @caller_many_scalars() nounwind {
   ; ILP32D-NEXT:   G_STORE [[UV3]](s32), [[PTR_ADD]](p0) :: (store (s32) into stack, align 16)
   ; ILP32D-NEXT:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
   ; ILP32D-NEXT:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
-  ; ILP32D-NEXT:   G_STORE [[C7]](s32), [[PTR_ADD1]](p0) :: (store (s32) into stack + 4)
+  ; ILP32D-NEXT:   G_STORE [[C7]](s32), [[PTR_ADD1]](p0) :: (store (s32) into stack + 4, basealign 16)
   ; ILP32D-NEXT:   $x10 = COPY [[ANYEXT]](s32)
   ; ILP32D-NEXT:   $x11 = COPY [[ANYEXT1]](s32)
   ; ILP32D-NEXT:   $x12 = COPY [[C2]](s32)

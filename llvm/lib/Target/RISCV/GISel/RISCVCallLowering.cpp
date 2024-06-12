@@ -91,12 +91,12 @@ struct RISCVOutgoingValueHandler : public CallLowering::OutgoingValueHandler {
                             const MachinePointerInfo &MPO,
                             const CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
-    uint64_t LocMemOffset = VA.getLocMemOffset();
+    //uint64_t LocMemOffset = VA.getLocMemOffset();
 
     // TODO: Move StackAlignment to subtarget and share with FrameLowering.
     auto MMO =
         MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
-                                commonAlignment(Align(16), LocMemOffset));
+                                commonAlignment(Align(16), 0));
 
     Register ExtReg = extendRegister(ValVReg, VA);
     MIRBuilder.buildStore(ExtReg, Addr, *MMO);
