@@ -514,8 +514,10 @@ bool RISCVCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
   F.dump();
   llvm::errs() << "VReg SIze: " << VRegs.size() << "\n";
 
-  if (F.arg_empty() && !F.isVarArg())
+  if (F.arg_empty() && !F.isVarArg()) {
+    llvm::errs() << "-- END lowerFormalArguments --\n";
     return true;
+  }
 
   const RISCVSubtarget &Subtarget =
       MIRBuilder.getMF().getSubtarget<RISCVSubtarget>();
@@ -609,6 +611,7 @@ bool RISCVCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
 
   const RISCVSubtarget &Subtarget =
       MIRBuilder.getMF().getSubtarget<RISCVSubtarget>();
+      // GET REG TYPE: Subtarget.getTargetLowering()->getRegisterType()
   for (auto &AInfo : Info.OrigArgs) {
     if (!isSupportedArgumentType(AInfo.Ty, Subtarget))
       return false;

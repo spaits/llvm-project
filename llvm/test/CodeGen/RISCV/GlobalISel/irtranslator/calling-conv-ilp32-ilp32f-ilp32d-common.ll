@@ -16,6 +16,38 @@
 ; Check that on RV32, i64 is passed in a pair of registers. Unlike
 ; the convention for varargs, this need not be an aligned pair.
 
+define i64 @fun(i128 %x, i128 %y ) {
+  ; RV32I-LABEL: name: fun
+  ; RV32I: bb.1 (%ir-block.0):
+  ; RV32I-NEXT:   liveins: $x10, $x11
+  ; RV32I-NEXT: {{  $}}
+  ; RV32I-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x10
+  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s128) = G_LOAD [[COPY]](p0) :: (load (s128), align 1)
+  ; RV32I-NEXT:   [[COPY1:%[0-9]+]]:_(p0) = COPY $x11
+  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s128) = G_LOAD [[COPY1]](p0) :: (load (s128), align 1)
+  ; RV32I-NEXT:   [[SHL:%[0-9]+]]:_(s128) = G_SHL [[LOAD]], [[LOAD1]](s128)
+  ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[SHL]](s128)
+  ; RV32I-NEXT:   [[LSHR:%[0-9]+]]:_(s128) = G_LSHR [[LOAD]], [[LOAD1]](s128)
+  ; RV32I-NEXT:   [[TRUNC1:%[0-9]+]]:_(s64) = G_TRUNC [[LSHR]](s128)
+  ; RV32I-NEXT:   [[ADD:%[0-9]+]]:_(s64) = G_ADD [[TRUNC]], [[TRUNC1]]
+  ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
+  ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)
+  ; RV32I-NEXT:   $x11 = COPY [[UV1]](s32)
+  ; RV32I-NEXT:   PseudoRET implicit $x10, implicit $x11
+  %a = shl i128 %x, %y
+  %2 = trunc i128 %a to i64
+  %b = lshr i128 %x, %y
+  %3 = trunc i128 %b to i64
+  %4 = add i64 %2, %3
+  ret i64 %2
+}
+
+define i32 @fun_caller( ) {
+  %1 = call i64 @fun(i128 1, i128 2)
+  %2 = trunc i64 %1 to i32
+  ret i32 %2
+}
+
 define i32 @callee_i64_in_regs(i32 %a, i64 %b) nounwind {
   ; RV32I-LABEL: name: callee_i64_in_regs
   ; RV32I: bb.1 (%ir-block.0):

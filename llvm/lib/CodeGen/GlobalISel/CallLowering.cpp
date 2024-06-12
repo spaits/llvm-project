@@ -803,14 +803,15 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // For each split register, create and assign a vreg that will store
       // the incoming component of the larger value. These will later be
       // merged to form the final vreg.
-      for (unsigned Part = 0; Part < NumParts; ++Part) {
-        if(VA.getLocInfo() == CCValAssign::Indirect && Args[i].Flags[Part].isSplit()) {
-          Args[i].Regs[Part] = MRI.createGenericVirtualRegister(LLT::pointer(0, 32));
-          break;
+      if(VA.getLocInfo() == CCValAssign::Indirect && Args[i].Flags[0].isSplit()) {
+          Args[i].Regs[0] = MRI.createGenericVirtualRegister(LLT::pointer(0, 32));
           //MRI.createGenericVirtualRegister()
+      } else {
+        for (unsigned Part = 0; Part < NumParts; ++Part) {
+          Args[i].Regs[Part] = MRI.createGenericVirtualRegister(NewLLT);
         }
-        Args[i].Regs[Part] = MRI.createGenericVirtualRegister(NewLLT);
       }
+      
     }
 
     assert((j + (NumParts - 1)) < ArgLocs.size() &&
@@ -831,12 +832,25 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       CCValAssign &VA = ArgLocs[j + Idx];
       const ISD::ArgFlagsTy Flags = Args[i].Flags[Part];
 
-      if(VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
+      if(VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() && Handler.isIncomingArgumentHandler()) {
         llvm::errs() << "INDIRECT FOUND" << i << " " << Part << "\n";
         llvm::errs() << NumParts << "\n";
         //buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs[0], Args[i].Regs[0], OrigTy,
         //                        LocTy, Args[i].Flags[0]);
         //Register VReg0 = MIRBuilder.getMRI()->createVirtualRegister(&RISCV::GPRRegClass);
+        Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
+        //MIRBuilder.get
+        //Handler.assignValueToAddress(,VA.getLocReg())
+        break;
+      }
+      if(VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() && !Handler.isIncomingArgumentHandler()) {
+        llvm::errs() << "INDIRECT FOUND OUT" << i << " " << Part << "\n";
+        llvm::errs() << NumParts << "\n";
+        //buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs[0], Args[i].Regs[0], OrigTy,
+        //                        LocTy, Args[i].Flags[0]);
+        //Register VReg0 = MIRBuilder.getMRI()->createVirtualRegister(&RISCV::GPRRegClass);
+        MachinePointerInfo DstMPO;
+        Handler.assignValueToAddress(Args[i].OrigRegs[Part], Args[i].Regs[Part],OrigTy,DstMPO,VA);
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
         //MIRBuilder.get
         //Handler.assignValueToAddress(,VA.getLocReg())
