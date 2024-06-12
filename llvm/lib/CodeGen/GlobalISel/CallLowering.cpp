@@ -24,6 +24,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/Alignment.h"
 #include "llvm/Target/TargetMachine.h"
 
 #define DEBUG_TYPE "call-lowering"
@@ -31,6 +32,13 @@
 using namespace llvm;
 
 void CallLowering::anchor() {}
+
+static Type *getTypeForLLT(LLT Ty, LLVMContext &C) {
+  if (Ty.isVector())
+    return FixedVectorType::get(IntegerType::get(C, Ty.getScalarSizeInBits()),
+                                Ty.getNumElements());
+  return IntegerType::get(C, Ty.getSizeInBits());
+}
 
 /// Helper function which updates \p Flags when \p AttrFn returns true.
 static void
@@ -654,6 +662,12 @@ bool CallLowering::determineAssignments(ValueAssigner &Assigner,
     // we currently support.
     unsigned NumParts =
         TLI->getNumRegistersForCallingConv(Ctx, CallConv, CurVT);
+    bool IsIndirectPassing = NumParts == 1 && NewVT.getScalarSizeInBits() < Args[i].Ty->getScalarSizeInBits();
+    if (NumParts == 1 && NewVT.getScalarSizeInBits() < Args[i].Ty->getScalarSizeInBits()) {
+      llvm::errs() << "Should do an indirect passing\n";
+    } else {
+      llvm::errs() << "Should not do an indirect passing\n";
+    }
 
     if (NumParts == 1) {
       // Try to use the register type if we couldn't assign the VT.
@@ -662,6 +676,14 @@ bool CallLowering::determineAssignments(ValueAssigner &Assigner,
         return false;
       continue;
     }
+
+    //if (IsIndirectPassing) {
+    //  Args[i].Flags[0].setByRef();
+    //  if (Assigner.assignArg(i, CurVT, NewVT, NewVT, CCValAssign::Indirect, Args[i],
+    //                         Args[i].Flags[0], CCInfo))
+    //    return false;
+    //  continue;
+    //}
 
     // For incoming arguments (physregs to vregs), we could have values in
     // physregs (or memlocs) which we want to extract and copy to vregs.
@@ -676,7 +698,7 @@ bool CallLowering::determineAssignments(ValueAssigner &Assigner,
     // E.g. passing an s128 on AArch64.
     ISD::ArgFlagsTy OrigFlags = Args[i].Flags[0];
     Args[i].Flags.clear();
-
+    // Almost the same as in SelDag
     for (unsigned Part = 0; Part < NumParts; ++Part) {
       ISD::ArgFlagsTy Flags = OrigFlags;
       if (Part == 0) {
@@ -705,6 +727,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                      SmallVectorImpl<CCValAssign> &ArgLocs,
                                      MachineIRBuilder &MIRBuilder,
                                      ArrayRef<Register> ThisReturnRegs) const {
+                                      llvm::errs() << "BEGIN handleAssignments\n";
+                                      llvm::errs() << "ArgLocs size: " << ArgLocs.size() << "\n";
   MachineFunction &MF = MIRBuilder.getMF();
   MachineRegisterInfo &MRI = MF.getRegInfo();
   const Function &F = MF.getFunction();
@@ -727,9 +751,12 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
   SmallVector<std::function<void()>> DelayedOutgoingRegAssignments;
 
   for (unsigned i = 0, j = 0; i != NumArgs; ++i, ++j) {
+    llvm::errs() << "Begin args loop" << i << "/" << NumArgs << " \n";
     assert(j < ArgLocs.size() && "Skipped too many arg locs");
     CCValAssign &VA = ArgLocs[j];
     assert(VA.getValNo() == i && "Location doesn't correspond to current arg");
+
+    
 
     if (VA.needsCustom()) {
       std::function<void()> Thunk;
@@ -756,11 +783,19 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
     // There should be Regs.size() ArgLocs per argument.
     // This should be the same as getNumRegistersForCallingConv
     const unsigned NumParts = Args[i].Flags.size();
+    if(VA.getLocInfo() == CCValAssign::Indirect) {
+      llvm::errs() << "INDIRECT FOUND\n";
+      llvm::errs() << NumParts << "\n";
+    } else {
+      llvm::errs() << "NO INDIRECT FOUND\n";
+      llvm::errs() << NumParts << "\n";
+    }
 
     // Now split the registers into the assigned types.
     Args[i].OrigRegs.assign(Args[i].Regs.begin(), Args[i].Regs.end());
 
     if (NumParts != 1 || NewLLT != OrigTy) {
+      llvm::errs() << "Virtual regsiter creations\n";
       // If we can't directly assign the register, we need one or more
       // intermediate values.
       Args[i].Regs.resize(NumParts);
@@ -768,15 +803,21 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // For each split register, create and assign a vreg that will store
       // the incoming component of the larger value. These will later be
       // merged to form the final vreg.
-      for (unsigned Part = 0; Part < NumParts; ++Part)
+      for (unsigned Part = 0; Part < NumParts; ++Part) {
+        if(VA.getLocInfo() == CCValAssign::Indirect && Args[i].Flags[Part].isSplit()) {
+          Args[i].Regs[Part] = MRI.createGenericVirtualRegister(LLT::pointer(0, 32));
+          break;
+          //MRI.createGenericVirtualRegister()
+        }
         Args[i].Regs[Part] = MRI.createGenericVirtualRegister(NewLLT);
+      }
     }
 
     assert((j + (NumParts - 1)) < ArgLocs.size() &&
            "Too many regs for number of args");
 
     // Coerce into outgoing value types before register assignment.
-    if (!Handler.isIncomingArgumentHandler() && OrigTy != ValTy) {
+    if (!Handler.isIncomingArgumentHandler() && OrigTy != ValTy && VA.getLocInfo() != CCValAssign::Indirect) {
       assert(Args[i].OrigRegs.size() == 1);
       buildCopyToRegs(MIRBuilder, Args[i].Regs, Args[i].OrigRegs[0], OrigTy,
                       ValTy, extendOpFromFlags(Args[i].Flags[0]));
@@ -790,7 +831,20 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       CCValAssign &VA = ArgLocs[j + Idx];
       const ISD::ArgFlagsTy Flags = Args[i].Flags[Part];
 
+      if(VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
+        llvm::errs() << "INDIRECT FOUND" << i << " " << Part << "\n";
+        llvm::errs() << NumParts << "\n";
+        //buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs[0], Args[i].Regs[0], OrigTy,
+        //                        LocTy, Args[i].Flags[0]);
+        //Register VReg0 = MIRBuilder.getMRI()->createVirtualRegister(&RISCV::GPRRegClass);
+        Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
+        //MIRBuilder.get
+        //Handler.assignValueToAddress(,VA.getLocReg())
+        break;
+      }
+
       if (VA.isMemLoc() && !Flags.isByVal()) {
+        llvm::errs() << "Shouly go here?\n";
         // Individual pieces may have been spilled to the stack and others
         // passed in registers.
 
@@ -807,6 +861,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       }
 
       if (VA.isMemLoc() && Flags.isByVal()) {
+        llvm::errs() << "GISEl VA.isMemLoc() && Flags.isByVal()\n";
         assert(Args[i].Regs.size() == 1 &&
                "didn't expect split byval pointer");
 
@@ -815,6 +870,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
           MachinePointerInfo MPO;
           Register StackAddr = Handler.getStackAddress(
               Flags.getByValSize(), VA.getLocMemOffset(), MPO, Flags);
+              OrigTy.dump();
           MIRBuilder.buildCopy(Args[i].Regs[0], StackAddr);
         } else {
           // For outgoing byval arguments, insert the implicit copy byval
@@ -853,13 +909,18 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       if (i == 0 && !ThisReturnRegs.empty() &&
           Handler.isIncomingArgumentHandler() &&
           isTypeIsValidForThisReturn(ValVT)) {
+        llvm::errs() << "Nil assing value\n";
+
         Handler.assignValueToReg(ArgReg, ThisReturnRegs[Part], VA);
         continue;
       }
 
-      if (Handler.isIncomingArgumentHandler())
+      if (Handler.isIncomingArgumentHandler()) {
+        llvm::errs() << "One assing value\n";
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
+      }
       else {
+        llvm::errs() << "B assing value\n";
         DelayedOutgoingRegAssignments.emplace_back([=, &Handler]() {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
         });
@@ -868,9 +929,35 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
 
     // Now that all pieces have been assigned, re-pack the register typed values
     // into the original value typed registers.
-    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
+    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
+        VA.getLocInfo() == CCValAssign::Indirect) {
+      llvm::errs() << "NEWNEWNEW\n";
+      OrigTy.dump();
+      LocTy.dump();
+      //MachinePointerInfo PtrInfo = MachinePointerInfo::getFixedStack(MF, FI);
+      MachinePointerInfo SrcMPO(Args[i].OrigValue);
+      MachinePointerInfo DstMPO;
+      //Align DstAlign = std::max(Args[i].Flags[0].getNonZeroByValAlign(),
+      //                              inferAlignFromPtrInfo(MF, SrcMPO));
+      Align al{};
+
+      //Register Addr;
+      //MIRBuilder.materializePtrAdd(Addr, DemoteReg, OffsetLLTy, Offsets[I]);
+      //MIRBuilder.materializePtrAdd();
+      //auto *MMO = MF.getMachineMemOperand(PtrInfo, MachineMemOperand::MOLoad,
+      //                                  MRI.getType(VRegs[I]),
+      //                                  commonAlignment(BaseAlign, Offsets[I]));
+      //MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], MIRBuilder.get);
+      Align Alignment = DL.getABITypeAlign(getTypeForLLT(OrigTy, MIRBuilder.getContext()));
+      //MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], DstMPO, Alignment);
+      Handler.assignValueToAddress(Args[i].OrigRegs[0], Args[i].Regs[0],OrigTy,DstMPO,VA);
+      
+    } else if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
       // Merge the split registers into the expected larger result vregs of
       // the original call.
+      llvm::errs() << "GISel framework buildCopyFromRegs\n";
+      OrigTy.dump();
+      LocTy.dump();
       buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs, Args[i].Regs, OrigTy,
                         LocTy, Args[i].Flags[0]);
     }
@@ -879,7 +966,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
   }
   for (auto &Fn : DelayedOutgoingRegAssignments)
     Fn();
-
+    llvm::errs() << "== End handleAssignments ==\n";
   return true;
 }
 

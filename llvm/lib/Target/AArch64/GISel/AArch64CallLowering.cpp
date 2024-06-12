@@ -635,6 +635,8 @@ void AArch64CallLowering::saveVarArgRegisters(
 bool AArch64CallLowering::lowerFormalArguments(
     MachineIRBuilder &MIRBuilder, const Function &F,
     ArrayRef<ArrayRef<Register>> VRegs, FunctionLoweringInfo &FLI) const {
+  llvm::errs() << "AArch64 lower formal arguments called\n";
+
   MachineFunction &MF = MIRBuilder.getMF();
   MachineBasicBlock &MBB = MIRBuilder.getMBB();
   MachineRegisterInfo &MRI = MF.getRegInfo();
@@ -663,6 +665,7 @@ bool AArch64CallLowering::lowerFormalArguments(
     insertSRetIncomingArgument(F, SplitArgs, FLI.DemoteRegister, MRI, DL);
 
   unsigned i = 0;
+  llvm::errs() << "VReg SIze: " << VRegs.size() << "\n";
   for (auto &Arg : F.args()) {
     if (DL.getTypeStoreSize(Arg.getType()).isZero())
       continue;
@@ -686,6 +689,12 @@ bool AArch64CallLowering::lowerFormalArguments(
         BoolArgs.push_back({OrigReg, WideReg});
       }
     }
+    llvm::errs() << "Dump Arg and ArgType [" << Arg.getArgNo() << "]\n";
+    Arg.dump();
+    Arg.getType()->dump();
+    llvm::errs() << "No VRegs: " << VRegs[i].size() << "\n";
+    llvm::errs() << "No Falgs: " << OrigArg.Flags.size() << "\n";
+    llvm::errs() << "SplitArgInfosSize: " << SplitArgs.size() << "\n";
 
     if (Arg.hasAttribute(Attribute::SwiftAsync))
       MF.getInfo<AArch64FunctionInfo>()->setHasSwiftAsyncContext(true);
@@ -1253,6 +1262,7 @@ bool AArch64CallLowering::lowerTailCall(
 
 bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
                                     CallLoweringInfo &Info) const {
+  llvm::errs() << "AArch64 lower call called\n";
   MachineFunction &MF = MIRBuilder.getMF();
   const Function &F = MF.getFunction();
   MachineRegisterInfo &MRI = MF.getRegInfo();

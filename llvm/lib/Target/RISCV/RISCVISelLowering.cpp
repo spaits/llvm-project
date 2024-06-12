@@ -2298,10 +2298,22 @@ MVT RISCVTargetLowering::getRegisterTypeForCallingConv(LLVMContext &Context,
     return MVT::f32;
 
   MVT PartVT = TargetLowering::getRegisterTypeForCallingConv(Context, CC, VT);
+  Subtarget.getXLen();
+  //llvm::errs() << "RISCVTargetLowering::getRegisterTypeForCallingConv " << PartVT.getSizeInBits() << "\n";
+  //if (PartVT.getSizeInBits() > Subtarget.getXLen() * 2) {
+  //  // this->getTargetMachine().getPointerSizeInBits(0) * 2
+  //  llvm::errs() << "Found out that > 2*XLen\n";
+  //  return MVT::i32;
+  //} else {
+  //  llvm::errs() << "SHPULD Found out that > 2*XLen\n";
+  //}
 
   if (RV64LegalI32 && Subtarget.is64Bit() && PartVT == MVT::i32)
     return MVT::i64;
-
+  llvm::errs()<< "     RV getRegTypeForCallConv returning:";
+  PartVT.dump();
+  llvm::errs()<< "     for:";
+  VT.dump();
   return PartVT;
 }
 
@@ -2313,6 +2325,11 @@ unsigned RISCVTargetLowering::getNumRegistersForCallingConv(LLVMContext &Context
   if (VT == MVT::f16 && Subtarget.hasStdExtFOrZfinx() &&
       !Subtarget.hasStdExtZfhminOrZhinxmin())
     return 1;
+  
+  //llvm::errs() << "getNumRegistersForCallingConv: " << VT.getScalarSizeInBits() << "\n";
+  //if (VT.getScalarSizeInBits() > Subtarget.getXLen() * 2) {
+  //  return 1;
+  //}
 
   return TargetLowering::getNumRegistersForCallingConv(Context, CC, VT);
 }
@@ -18615,7 +18632,6 @@ static bool CC_RISCVAssign2XLen(unsigned XLen, CCState &State, CCValAssign VA1,
   const RISCVSubtarget &STI =
       State.getMachineFunction().getSubtarget<RISCVSubtarget>();
   ArrayRef<MCPhysReg> ArgGPRs = RISCV::getArgGPRs(STI.getTargetABI());
-
   if (Register Reg = State.AllocateReg(ArgGPRs)) {
     // At least one half can be passed via register.
     State.addLoc(CCValAssign::getReg(VA1.getValNo(), VA1.getValVT(), Reg,
@@ -18657,6 +18673,7 @@ bool RISCV::CC_RISCV(const DataLayout &DL, RISCVABI::ABI ABI, unsigned ValNo,
                      ISD::ArgFlagsTy ArgFlags, CCState &State, bool IsFixed,
                      bool IsRet, Type *OrigTy, const RISCVTargetLowering &TLI,
                      RVVArgDispatcher &RVVDispatcher) {
+  llvm::errs() << "CC_RISCV called\n";
   unsigned XLen = DL.getLargestLegalIntTypeSizeInBits();
   assert(XLen == 32 || XLen == 64);
   MVT XLenVT = XLen == 32 ? MVT::i32 : MVT::i64;
@@ -19373,8 +19390,11 @@ SDValue RISCVTargetLowering::LowerFormalArguments(
                      CallConv == CallingConv::Fast ? RISCV::CC_RISCV_FastCC
                                                    : RISCV::CC_RISCV);
 
+  llvm::errs() << "SelDag Arg locs: " << ArgLocs.size() << "\n";
   for (unsigned i = 0, e = ArgLocs.size(), InsIdx = 0; i != e; ++i, ++InsIdx) {
     CCValAssign &VA = ArgLocs[i];
+    llvm::errs() << "GIsel lower dump: " << i << "\n";
+    ArgLocs[i].getLocVT().dump();
     SDValue ArgValue;
     // Passing f64 on RV32D with a soft float ABI must be handled as a special
     // case.
@@ -19385,13 +19405,15 @@ SDValue RISCVTargetLowering::LowerFormalArguments(
       ArgValue = unpackFromRegLoc(DAG, Chain, VA, DL, Ins[InsIdx], *this);
     else
       ArgValue = unpackFromMemLoc(DAG, Chain, VA, DL);
-
+    
+    // Here is how its done in SelDag.
     if (VA.getLocInfo() == CCValAssign::Indirect) {
       // If the original argument was split and passed by reference (e.g. i128
       // on RV32), we need to load all parts of it here (using the same
       // address). Vectors may be partly split to registers and partly to the
       // stack, in which case the base address is partly offset and subsequent
       // stores are relative to that.
+      llvm::errs() << "SelDag type size: " << VA.getValVT().getStoreSizeInBits() << "\n";
       InVals.push_back(DAG.getLoad(VA.getValVT(), DL, Chain, ArgValue,
                                    MachinePointerInfo()));
       unsigned ArgIndex = Ins[InsIdx].OrigArgIndex;

@@ -17,8 +17,10 @@
 #include "RISCVMachineFunctionInfo.h"
 #include "RISCVSubtarget.h"
 #include "llvm/CodeGen/Analysis.h"
+#include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -339,7 +341,8 @@ static bool isSupportedArgumentType(Type *T, const RISCVSubtarget &Subtarget,
   // TODO: Integers larger than 2*XLen are passed indirectly which is not
   // supported yet.
   if (T->isIntegerTy())
-    return T->getIntegerBitWidth() <= Subtarget.getXLen() * 2;
+    return true;
+    //return T->getIntegerBitWidth() <= Subtarget.getXLen() * 2;
   if (T->isFloatTy() || T->isDoubleTy())
     return true;
   if (T->isPointerTy())
@@ -360,7 +363,8 @@ static bool isSupportedReturnType(Type *T, const RISCVSubtarget &Subtarget,
   // TODO: Integers larger than 2*XLen are passed indirectly which is not
   // supported yet.
   if (T->isIntegerTy())
-    return T->getIntegerBitWidth() <= Subtarget.getXLen() * 2;
+    return true;
+//    return T->getIntegerBitWidth() <= Subtarget.getXLen() * 2;
   if (T->isFloatTy() || T->isDoubleTy())
     return true;
   if (T->isPointerTy())
@@ -505,6 +509,11 @@ bool RISCVCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
                                              FunctionLoweringInfo &FLI) const {
   // Early exit if there are no arguments. varargs are not part of F.args() but
   // must be lowered.
+  llvm::errs() << "-- BEGIN lowerFormalArguments --\n";
+  llvm::errs() << "F:\n";
+  F.dump();
+  llvm::errs() << "VReg SIze: " << VRegs.size() << "\n";
+
   if (F.arg_empty() && !F.isVarArg())
     return true;
 
@@ -527,38 +536,72 @@ bool RISCVCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
     // Construct the ArgInfo object from destination register and argument type.
     ArgInfo AInfo(VRegs[Index], Arg.getType(), Index);
     setArgFlags(AInfo, Index + AttributeList::FirstArgIndex, DL, F);
+    
 
     // Handle any required merging from split value types from physical
     // registers into the desired VReg. ArgInfo objects are constructed
     // correspondingly and appended to SplitArgInfos.
     splitToValueTypes(AInfo, SplitArgInfos, DL, CC);
+    //if (Arg.getType()->getIntegerBitWidth() <= Subtarget.getXLen() * 2) {
+    //  AInfo.Flags[0].setByRef();
+    //}
 
     TypeList.push_back(Arg.getType());
+    llvm::errs() << "Dump Arg and ArgType [" << Arg.getArgNo() << "]\n";
+    Arg.dump();
+    Arg.getType()->dump();
+    llvm::errs() << "No VRegs: " << VRegs[Index].size() << "\n";
+    llvm::errs() << "No Falgs: " << AInfo.Flags.size() << "\n";
+    llvm::errs() << "SplitArgInfosSize: " << SplitArgInfos.size() << "\n";
+    //for (auto flag : AInfo.Flags) {
+    //}
 
     ++Index;
   }
 
+  llvm::errs() << "Args size: " << Index << "\n";
+  llvm::errs() << "Dump split arg infos" << SplitArgInfos.size() << "\n";
+  for (auto ai : SplitArgInfos) {
+    llvm::errs() << "Idx: " << ai.OrigArgIndex << "\n";
+    llvm::errs() << "Value:\n";
+    //ai.OrigValue->dump();
+    ai.Ty->dump();
+    llvm::errs() << "Regs size: " << ai.Regs.size() << "\n";
+  }
+  llvm::errs() << "End Dump split arg infos\n";
+
   RVVArgDispatcher Dispatcher{&MF, getTLI<RISCVTargetLowering>(),
                               ArrayRef(TypeList)};
+  // assignArg
   RISCVIncomingValueAssigner Assigner(
       CC == CallingConv::Fast ? RISCV::CC_RISCV_FastCC : RISCV::CC_RISCV,
       /*IsRet=*/false, Dispatcher);
+
+  // Assigns: assignValueToAddress etc...
+  // Makes Live-ins
   RISCVFormalArgHandler Handler(MIRBuilder, MF.getRegInfo());
 
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CC, F.isVarArg(), MIRBuilder.getMF(), ArgLocs, F.getContext());
+  llvm::errs() << "ArgLocs size: " << ArgLocs.size() << "\n";
   if (!determineAssignments(Assigner, SplitArgInfos, CCInfo) ||
-      !handleAssignments(Handler, SplitArgInfos, CCInfo, ArgLocs, MIRBuilder))
-    return false;
+      !handleAssignments(Handler, SplitArgInfos, CCInfo, ArgLocs, MIRBuilder)) {
+        llvm::errs() << "-- END lowerFormalArguments RET FALSE #1 --\n";
+        return false;
+  }
 
-  if (F.isVarArg())
+  if (F.isVarArg()) {
+    llvm::errs() << "-- END lowerFormalArguments RET FALSE #2 --\n";
     saveVarArgRegisters(MIRBuilder, Handler, Assigner, CCInfo);
+  }
 
+  llvm::errs() << "-- END lowerFormalArguments RET TRUE --\n";
   return true;
 }
 
 bool RISCVCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
                                   CallLoweringInfo &Info) const {
+  llvm::errs() << "RISCV lower call\n";
   MachineFunction &MF = MIRBuilder.getMF();
   const DataLayout &DL = MF.getDataLayout();
   const Function &F = MF.getFunction();

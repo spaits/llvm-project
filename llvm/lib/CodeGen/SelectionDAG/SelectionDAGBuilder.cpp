@@ -11313,10 +11313,14 @@ void SelectionDAGISel::LowerArguments(const Function &F) {
                                     ArgCopyElisionCandidates);
 
   // Set up the incoming argument description vector.
+  llvm::errs() << "Sel dag dump args\n";
   for (const Argument &Arg : F.args()) {
+    llvm::errs() << "---\n";
     unsigned ArgNo = Arg.getArgNo();
+    Arg.dump();
     SmallVector<EVT, 4> ValueVTs;
     ComputeValueVTs(*TLI, DAG.getDataLayout(), Arg.getType(), ValueVTs);
+    llvm::errs() << "Value vts: " << ValueVTs.size() << "\n";
     bool isArgValueUsed = !Arg.use_empty();
     unsigned PartBase = 0;
     Type *FinalType = Arg.getType();
@@ -11428,11 +11432,15 @@ void SelectionDAGISel::LowerArguments(const Function &F) {
         Flags.setCopyElisionCandidate();
       if (Arg.hasAttribute(Attribute::Returned))
         Flags.setReturned();
-
+      // Same as in determineAssignments for GIsel
       MVT RegisterVT = TLI->getRegisterTypeForCallingConv(
           *CurDAG->getContext(), F.getCallingConv(), VT);
       unsigned NumRegs = TLI->getNumRegistersForCallingConv(
           *CurDAG->getContext(), F.getCallingConv(), VT);
+          llvm::errs() << "Num regs for calling conv: " << NumRegs << "\n";
+          RegisterVT.dump();
+          VT.dump();
+      // Almost same as in determineAssignments
       for (unsigned i = 0; i != NumRegs; ++i) {
         // For scalable vectors, use the minimum size; individual targets
         // are responsible for handling scalable vector arguments and
@@ -11455,7 +11463,13 @@ void SelectionDAGISel::LowerArguments(const Function &F) {
       PartBase += VT.getStoreSize().getKnownMinValue();
     }
   }
-
+  llvm::errs() << "GIsel ins:\n";
+  for (auto i : Ins) {
+    i.ArgVT.dump();
+    i.VT.dump();
+    llvm::errs() << "\n";
+  }
+  llvm::errs() << "GIsel ins end\n";
   // Call the target to set up the argument values.
   SmallVector<SDValue, 8> InVals;
   SDValue NewRoot = TLI->LowerFormalArguments(
