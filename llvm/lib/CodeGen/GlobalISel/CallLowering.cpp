@@ -765,7 +765,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // If we can't directly assign the register, we need one or more
       // intermediate values.
       Args[i].Regs.resize(NumParts);
-    
+
       // When we have indirect parameter passing we are receiving a pointer,
       // that points to the actual value. In that case we need a pointer.
       if (VA.getLocInfo() == CCValAssign::Indirect &&
@@ -804,9 +804,12 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // the value being passed. In this case copy the incoming pointer into a
       // virtual register so later we can load it.
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
-        if (Handler.isIncomingArgumentHandler())
+        if (Handler.isIncomingArgumentHandler()) {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
-        else {
+          Handler.assignValueToAddress(Args[i].OrigRegs[Part],
+                                       Args[i].Regs[Part], OrigTy,
+                                       MachinePointerInfo{}, VA);
+        } else {
           MachineFrameInfo &MFI = MF.getFrameInfo();
           int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
                                                Align(8), false);
@@ -815,8 +818,9 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
               MIRBuilder.buildFrameIndex(PointerTy, FrameIdx)
                   ->getOperand(0)
                   .getReg();
-          Handler.assignValueToAddress(Args[i].OrigRegs[Part], PointerToStackReg,
-                                       OrigTy, MachinePointerInfo{}, VA);
+          Handler.assignValueToAddress(Args[i].OrigRegs[Part],
+                                       PointerToStackReg, OrigTy,
+                                       MachinePointerInfo{}, VA);
           Handler.assignValueToReg(PointerToStackReg, VA.getLocReg(), VA);
         }
         break;
@@ -898,14 +902,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       }
     }
 
-    // In case of indirect parameter passing load the value referred to by
-    // the argument.
-    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
-        VA.getLocInfo() == CCValAssign::Indirect) {
-      Handler.assignValueToAddress(Args[i].OrigRegs[0], Args[i].Regs[0], OrigTy,
-                                   MachinePointerInfo{}, VA);
-
-    } else if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
+    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
       // Now that all pieces have been assigned, re-pack the register typed values
       // into the original value typed registers.
       buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs, Args[i].Regs, OrigTy,
