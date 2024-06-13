@@ -791,7 +791,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       buildCopyToRegs(MIRBuilder, Args[i].Regs, Args[i].OrigRegs[0], OrigTy,
                       ValTy, extendOpFromFlags(Args[i].Flags[0]));
     }
-
+    bool IndirectParameterPassingHandled = false;
     bool BigEndianPartOrdering = TLI->hasBigEndianPartOrdering(OrigVT, DL);
     for (unsigned Part = 0; Part < NumParts; ++Part) {
       Register ArgReg = Args[i].Regs[Part];
@@ -804,6 +804,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // the value being passed. In this case copy the incoming pointer into a
       // virtual register so later we can load it.
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
+        IndirectParameterPassingHandled = true;
         if (Handler.isIncomingArgumentHandler()) {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
           Handler.assignValueToAddress(Args[i].OrigRegs[Part],
@@ -902,9 +903,10 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       }
     }
 
-    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
-      // Now that all pieces have been assigned, re-pack the register typed values
-      // into the original value typed registers.
+    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
+        !IndirectParameterPassingHandled) {
+      // Now that all pieces have been assigned, re-pack the register typed
+      // values into the original value typed registers.
       buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs, Args[i].Regs, OrigTy,
                         LocTy, Args[i].Flags[0]);
     }
