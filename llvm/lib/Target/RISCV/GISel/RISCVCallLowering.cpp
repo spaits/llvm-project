@@ -89,12 +89,13 @@ struct RISCVOutgoingValueHandler : public CallLowering::OutgoingValueHandler {
                             const MachinePointerInfo &MPO,
                             const CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
-    uint64_t LocMemOffset = VA.getLocMemOffset();
-
+    uint64_t Offset = 0;
+    if (VA.isMemLoc())
+      Offset = VA.getLocMemOffset();
+    
     // TODO: Move StackAlignment to subtarget and share with FrameLowering.
-    auto MMO =
-        MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
-                                commonAlignment(Align(16), LocMemOffset));
+    auto *MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
+                                       commonAlignment(Align(16), Offset));
 
     Register ExtReg = extendRegister(ValVReg, VA);
     MIRBuilder.buildStore(ExtReg, Addr, *MMO);
@@ -341,10 +342,8 @@ static bool isLegalElementTypeForRVV(Type *EltTy,
 // TODO: Remove IsLowerArgs argument by adding support for vectors in lowerCall.
 static bool isSupportedArgumentType(Type *T, const RISCVSubtarget &Subtarget,
                                     bool IsLowerArgs = false) {
-  // TODO: Integers larger than 2*XLen are passed indirectly which is not
-  // supported yet.
   if (T->isIntegerTy())
-    return T->getIntegerBitWidth() <= Subtarget.getXLen() * 2;
+    return true;
   if (T->isHalfTy() || T->isFloatTy() || T->isDoubleTy())
     return true;
   if (T->isPointerTy())

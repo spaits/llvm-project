@@ -751,6 +751,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
     const LLT NewLLT = Handler.isIncomingArgumentHandler() ? LocTy : ValTy;
     const EVT OrigVT = EVT::getEVT(Args[i].Ty);
     const LLT OrigTy = getLLTForType(*Args[i].Ty, DL);
+    const LLT PointerTy = LLT::pointer(0, DL.getPointerSizeInBits(0));
 
     // Expected to be multiple regs for a single incoming arg.
     // There should be Regs.size() ArgLocs per argument.
@@ -764,19 +765,28 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // If we can't directly assign the register, we need one or more
       // intermediate values.
       Args[i].Regs.resize(NumParts);
-
-      // For each split register, create and assign a vreg that will store
-      // the incoming component of the larger value. These will later be
-      // merged to form the final vreg.
-      for (unsigned Part = 0; Part < NumParts; ++Part)
-        Args[i].Regs[Part] = MRI.createGenericVirtualRegister(NewLLT);
+    
+      // When we have indirect parameter passing we are receiving a pointer,
+      // that points to the actual value. In that case we need a pointer.
+      if (VA.getLocInfo() == CCValAssign::Indirect &&
+          Args[i].Flags[0].isSplit()) {
+        if (Handler.isIncomingArgumentHandler())
+          Args[i].Regs[0] = MRI.createGenericVirtualRegister(PointerTy);
+      } else {
+        // For each split register, create and assign a vreg that will store
+        // the incoming component of the larger value. These will later be
+        // merged to form the final vreg.
+        for (unsigned Part = 0; Part < NumParts; ++Part)
+          Args[i].Regs[Part] = MRI.createGenericVirtualRegister(NewLLT);
+      }
     }
 
     assert((j + (NumParts - 1)) < ArgLocs.size() &&
            "Too many regs for number of args");
 
     // Coerce into outgoing value types before register assignment.
-    if (!Handler.isIncomingArgumentHandler() && OrigTy != ValTy) {
+    if (!Handler.isIncomingArgumentHandler() && OrigTy != ValTy &&
+        VA.getLocInfo() != CCValAssign::Indirect) {
       assert(Args[i].OrigRegs.size() == 1);
       buildCopyToRegs(MIRBuilder, Args[i].Regs, Args[i].OrigRegs[0], OrigTy,
                       ValTy, extendOpFromFlags(Args[i].Flags[0]));
@@ -789,6 +799,28 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       unsigned Idx = BigEndianPartOrdering ? NumParts - 1 - Part : Part;
       CCValAssign &VA = ArgLocs[j + Idx];
       const ISD::ArgFlagsTy Flags = Args[i].Flags[Part];
+
+      // We found an indirect parameter passing and we are at the first part of
+      // the value being passed. In this case copy the incoming pointer into a
+      // virtual register so later we can load it.
+      if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
+        if (Handler.isIncomingArgumentHandler())
+          Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
+        else {
+          MachineFrameInfo &MFI = MF.getFrameInfo();
+          int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
+                                               Align(8), false);
+
+          auto PointerToStackReg =
+              MIRBuilder.buildFrameIndex(PointerTy, FrameIdx)
+                  ->getOperand(0)
+                  .getReg();
+          Handler.assignValueToAddress(Args[i].OrigRegs[Part], PointerToStackReg,
+                                       OrigTy, MachinePointerInfo{}, VA);
+          Handler.assignValueToReg(PointerToStackReg, VA.getLocReg(), VA);
+        }
+        break;
+      }
 
       if (VA.isMemLoc() && !Flags.isByVal()) {
         // Individual pieces may have been spilled to the stack and others
@@ -866,11 +898,16 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       }
     }
 
-    // Now that all pieces have been assigned, re-pack the register typed values
-    // into the original value typed registers.
-    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
-      // Merge the split registers into the expected larger result vregs of
-      // the original call.
+    // In case of indirect parameter passing load the value referred to by
+    // the argument.
+    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
+        VA.getLocInfo() == CCValAssign::Indirect) {
+      Handler.assignValueToAddress(Args[i].OrigRegs[0], Args[i].Regs[0], OrigTy,
+                                   MachinePointerInfo{}, VA);
+
+    } else if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
+      // Now that all pieces have been assigned, re-pack the register typed values
+      // into the original value typed registers.
       buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs, Args[i].Regs, OrigTy,
                         LocTy, Args[i].Flags[0]);
     }

@@ -16,6 +16,85 @@
 ; Check that on RV64, i128 is passed in a pair of registers. Unlike
 ; the convention for varargs, this need not be an aligned pair.
 
+define i64 @callee_256i_in_regs(i256 %x, i256 %y ) {
+
+  ; RV64I-LABEL: name: callee_256i_in_regs
+  ; RV64I: bb.1 (%ir-block.0):
+  ; RV64I-NEXT:   liveins: $x10, $x11
+  ; RV64I-NEXT: {{  $}}
+  ; RV64I-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x10
+  ; RV64I-NEXT:   [[LOAD:%[0-9]+]]:_(s256) = G_LOAD [[COPY]](p0) :: (load (s256), align 1)
+  ; RV64I-NEXT:   [[COPY1:%[0-9]+]]:_(p0) = COPY $x11
+  ; RV64I-NEXT:   [[LOAD1:%[0-9]+]]:_(s256) = G_LOAD [[COPY1]](p0) :: (load (s256), align 1)
+  ; RV64I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD]](s256)
+  ; RV64I-NEXT:   $x10 = COPY [[TRUNC]](s64)
+  ; RV64I-NEXT:   PseudoRET implicit $x10
+  %2 = trunc i256 %x to i64
+  ret i64 %2
+}
+
+define i32 @caller_256i_in_regs( ) {
+  ; LP64-LABEL: name: caller_256i_in_regs
+  ; LP64: bb.1 (%ir-block.0):
+  ; LP64-NEXT:   [[C:%[0-9]+]]:_(s256) = G_CONSTANT i256 1
+  ; LP64-NEXT:   [[C1:%[0-9]+]]:_(s256) = G_CONSTANT i256 2
+  ; LP64-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; LP64-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
+  ; LP64-NEXT:   G_STORE [[C]](s256), [[FRAME_INDEX]](p0) :: (store (s256), align 16)
+  ; LP64-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
+  ; LP64-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
+  ; LP64-NEXT:   G_STORE [[C1]](s256), [[FRAME_INDEX1]](p0) :: (store (s256), align 16)
+  ; LP64-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
+  ; LP64-NEXT:   PseudoCALL target-flags(riscv-call) @callee_256i_in_regs, csr_ilp32_lp64, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10
+  ; LP64-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; LP64-NEXT:   [[COPY:%[0-9]+]]:_(s64) = COPY $x10
+  ; LP64-NEXT:   [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY]](s64)
+  ; LP64-NEXT:   [[ANYEXT:%[0-9]+]]:_(s64) = G_ANYEXT [[TRUNC]](s32)
+  ; LP64-NEXT:   $x10 = COPY [[ANYEXT]](s64)
+  ; LP64-NEXT:   PseudoRET implicit $x10
+  ;
+  ; LP64F-LABEL: name: caller_256i_in_regs
+  ; LP64F: bb.1 (%ir-block.0):
+  ; LP64F-NEXT:   [[C:%[0-9]+]]:_(s256) = G_CONSTANT i256 1
+  ; LP64F-NEXT:   [[C1:%[0-9]+]]:_(s256) = G_CONSTANT i256 2
+  ; LP64F-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; LP64F-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
+  ; LP64F-NEXT:   G_STORE [[C]](s256), [[FRAME_INDEX]](p0) :: (store (s256), align 16)
+  ; LP64F-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
+  ; LP64F-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
+  ; LP64F-NEXT:   G_STORE [[C1]](s256), [[FRAME_INDEX1]](p0) :: (store (s256), align 16)
+  ; LP64F-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
+  ; LP64F-NEXT:   PseudoCALL target-flags(riscv-call) @callee_256i_in_regs, csr_ilp32f_lp64f, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10
+  ; LP64F-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; LP64F-NEXT:   [[COPY:%[0-9]+]]:_(s64) = COPY $x10
+  ; LP64F-NEXT:   [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY]](s64)
+  ; LP64F-NEXT:   [[ANYEXT:%[0-9]+]]:_(s64) = G_ANYEXT [[TRUNC]](s32)
+  ; LP64F-NEXT:   $x10 = COPY [[ANYEXT]](s64)
+  ; LP64F-NEXT:   PseudoRET implicit $x10
+  ;
+  ; LP64D-LABEL: name: caller_256i_in_regs
+  ; LP64D: bb.1 (%ir-block.0):
+  ; LP64D-NEXT:   [[C:%[0-9]+]]:_(s256) = G_CONSTANT i256 1
+  ; LP64D-NEXT:   [[C1:%[0-9]+]]:_(s256) = G_CONSTANT i256 2
+  ; LP64D-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; LP64D-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
+  ; LP64D-NEXT:   G_STORE [[C]](s256), [[FRAME_INDEX]](p0) :: (store (s256), align 16)
+  ; LP64D-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
+  ; LP64D-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
+  ; LP64D-NEXT:   G_STORE [[C1]](s256), [[FRAME_INDEX1]](p0) :: (store (s256), align 16)
+  ; LP64D-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
+  ; LP64D-NEXT:   PseudoCALL target-flags(riscv-call) @callee_256i_in_regs, csr_ilp32d_lp64d, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10
+  ; LP64D-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; LP64D-NEXT:   [[COPY:%[0-9]+]]:_(s64) = COPY $x10
+  ; LP64D-NEXT:   [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY]](s64)
+  ; LP64D-NEXT:   [[ANYEXT:%[0-9]+]]:_(s64) = G_ANYEXT [[TRUNC]](s32)
+  ; LP64D-NEXT:   $x10 = COPY [[ANYEXT]](s64)
+  ; LP64D-NEXT:   PseudoRET implicit $x10
+  %1 = call i64 @callee_256i_in_regs(i256 1, i256 2)
+  %2 = trunc i64 %1 to i32
+  ret i32 %2
+}
+
 define i64 @callee_i128_in_regs(i64 %a, i128 %b) nounwind {
   ; RV64I-LABEL: name: callee_i128_in_regs
   ; RV64I: bb.1 (%ir-block.0):
