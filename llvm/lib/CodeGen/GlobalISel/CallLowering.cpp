@@ -743,6 +743,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       continue;
     }
 
+    auto AllocaAddressSpace = MF.getDataLayout().getAllocaAddrSpace();
+
     const MVT ValVT = VA.getValVT();
     const MVT LocVT = VA.getLocVT();
 
@@ -751,8 +753,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
     const LLT NewLLT = Handler.isIncomingArgumentHandler() ? LocTy : ValTy;
     const EVT OrigVT = EVT::getEVT(Args[i].Ty);
     const LLT OrigTy = getLLTForType(*Args[i].Ty, DL);
-    const LLT PointerTy = LLT::pointer(MF.getDataLayout().getAllocaAddrSpace(),
-                                       DL.getPointerSizeInBits(0));
+    const LLT PointerTy = LLT::pointer(
+        AllocaAddressSpace, DL.getPointerSizeInBits(AllocaAddressSpace));
 
     // Expected to be multiple regs for a single incoming arg.
     // There should be Regs.size() ArgLocs per argument.
