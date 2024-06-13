@@ -812,8 +812,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                        Args[i].Regs[Part], OrigTy,
                                        MachinePointerInfo{}, VA);
         } else {
-          Align StackAlign =
-              MF.getSubtarget().getFrameLowering()->getStackAlign();
+          Align StackAlign = DL.getPrefTypeAlign(Args[i].Ty);
           MachineFrameInfo &MFI = MF.getFrameInfo();
           int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
                                                StackAlign, false);
