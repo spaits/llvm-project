@@ -811,9 +811,11 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                        Args[i].Regs[Part], OrigTy,
                                        MachinePointerInfo{}, VA);
         } else {
+          Align StackAlign =
+              MF.getSubtarget().getFrameLowering()->getStackAlign();
           MachineFrameInfo &MFI = MF.getFrameInfo();
           int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
-                                               Align(8), false);
+                                               StackAlign, false);
 
           auto PointerToStackReg =
               MIRBuilder.buildFrameIndex(PointerTy, FrameIdx)
