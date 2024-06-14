@@ -810,17 +810,20 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // virtual register so later we can load it.
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
         IndirectParameterPassingHandled = true;
-        if (Handler.isIncomingArgumentHandler()) {
-          Register PhysReg;
-          if (VA.isRegLoc()) {
-            PhysReg = VA.getLocReg();
-          } else if (VA.isMemLoc()) {
-            LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
+        bool IsInStack = false;
+        Register PhysReg;
+        if (VA.isRegLoc()) {
+          PhysReg = VA.getLocReg();
+        } else if (VA.isMemLoc()) {
+          IsInStack = true;
+          LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
+          MachinePointerInfo MPO;
+          PhysReg = Handler.getStackAddress(
+          MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
+        }
 
-            MachinePointerInfo MPO;
-            PhysReg = Handler.getStackAddress(
-            MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
-          }
+        if (Handler.isIncomingArgumentHandler()) {
+          
           Handler.assignValueToReg(ArgReg, PhysReg, VA);
           Align Alignment = DL.getABITypeAlign(Args[i].Ty);
           MachinePointerInfo DstMPO;
@@ -844,10 +847,16 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
           }
           DstAlign = std::max(FlagAlignment,
                               inferAlignFromPtrInfo(MF, DstMPO));
+          
           MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg,
                                 DstMPO, DstAlign);
           
-          Handler.assignValueToReg(PointerToStackReg, VA.getLocReg(), VA);
+          if (!IsInStack) {
+            Handler.assignValueToReg(PointerToStackReg, PhysReg, VA);
+          } else {
+            MIRBuilder.buildStore(PointerToStackReg, PhysReg,
+                                  DstMPO, DstAlign);
+          }
         }
         break;
       }
