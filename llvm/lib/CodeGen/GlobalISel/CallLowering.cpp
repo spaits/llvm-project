@@ -772,7 +772,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       Args[i].Regs.resize(NumParts);
 
       // When we have indirect parameter passing we are receiving a pointer,
-      // that points to the actual value. In that case we need a pointer.
+      // that points to the actual value, so we need one "temporary" pointer.
       if (VA.getLocInfo() == CCValAssign::Indirect &&
           Args[i].Flags[0].isSplit()) {
         if (Handler.isIncomingArgumentHandler())
@@ -796,6 +796,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       buildCopyToRegs(MIRBuilder, Args[i].Regs, Args[i].OrigRegs[0], OrigTy,
                       ValTy, extendOpFromFlags(Args[i].Flags[0]));
     }
+
     bool IndirectParameterPassingHandled = false;
     bool BigEndianPartOrdering = TLI->hasBigEndianPartOrdering(OrigVT, DL);
     for (unsigned Part = 0; Part < NumParts; ++Part) {
@@ -805,9 +806,20 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       CCValAssign &VA = ArgLocs[j + Idx];
       const ISD::ArgFlagsTy Flags = Args[i].Flags[Part];
 
-      // We found an indirect parameter passing and we are at the first part of
-      // the value being passed. In this case copy the incoming pointer into a
-      // virtual register so later we can load it.
+      // We found an indirect parameter passing, and we have an
+      // OutgoingValueHandler as our handler (so we are at the call site or the
+      // return value). In this case, start the construction of the following
+      // GMIR, that is responsible for the preparation of indirect parameter
+      // passing:
+      //
+      // %1(indirectly passed type) = The value to pass
+      // %3(pointer) = G_FRAME_INDEX %stack.0
+      // G_STORE %1, %3 :: (store (s128), align 8)
+      // 
+      // After this GMIR, the remaining part of the loop body will decide how
+      // to get the value to the caller and we break out of the loop.
+      // NOTE: In the case, when the the pointer pointing to the value is passed
+      // in a register there is an exception to this, that is detailed bellow.
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() &&
           !Handler.isIncomingArgumentHandler()) {
         Align StackAlign = DL.getPrefTypeAlign(Args[i].Ty);
@@ -826,7 +838,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         } else {
           FlagAlignment = Flags.getNonZeroOrigAlign();
         }
-        Align DstAlign = std::max(FlagAlignment, inferAlignFromPtrInfo(MF, DstMPO));
+        Align DstAlign =
+            std::max(FlagAlignment, inferAlignFromPtrInfo(MF, DstMPO));
 
         MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg, DstMPO,
                               DstAlign);
@@ -907,12 +920,14 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                      DstMPO, DstAlign, SrcMPO, SrcAlign,
                                      MemSize, VA);
         }
-      // QUESTION: How to keep this assert with the new if then else structured code?
-      //assert(!VA.needsCustom() && "custom loc should have been handled already");
+        // QUESTION: How to keep this assert with the new if then else
+        // structured code?
+        // assert(!VA.needsCustom() && "custom loc should have been handled
+        // already");
 
       } else if (i == 0 && !ThisReturnRegs.empty() &&
-          Handler.isIncomingArgumentHandler() &&
-          isTypeIsValidForThisReturn(ValVT) && VA.isRegLoc()) {
+                 Handler.isIncomingArgumentHandler() &&
+                 isTypeIsValidForThisReturn(ValVT) && VA.isRegLoc()) {
         Handler.assignValueToReg(ArgReg, ThisReturnRegs[Part], VA);
       } else if (Handler.isIncomingArgumentHandler() && VA.isRegLoc()) {
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
@@ -923,7 +938,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       }
 
       // Finish the handling of indirect parameter passing when receiving
-      // the value.
+      // the value (we are in the called function or the caller when receiving
+      // the return value).
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() &&
           Handler.isIncomingArgumentHandler()) {
         Align Alignment = DL.getABITypeAlign(Args[i].Ty);
