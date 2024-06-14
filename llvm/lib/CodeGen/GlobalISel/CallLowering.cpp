@@ -19,6 +19,7 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -819,10 +820,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
           int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
                                                StackAlign, false);
 
-          auto PointerToStackReg =
-              MIRBuilder.buildFrameIndex(PointerTy, FrameIdx)
-                  ->getOperand(0)
-                  .getReg();
+          Register PointerToStackReg =
+              MIRBuilder.buildFrameIndex(PointerTy, FrameIdx).getReg(0);
           Handler.assignValueToAddress(Args[i].OrigRegs[Part],
                                        PointerToStackReg, OrigTy,
                                        MachinePointerInfo{}, VA);
