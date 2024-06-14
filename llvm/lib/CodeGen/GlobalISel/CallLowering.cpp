@@ -808,57 +808,51 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // We found an indirect parameter passing and we are at the first part of
       // the value being passed. In this case copy the incoming pointer into a
       // virtual register so later we can load it.
-      if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
-        IndirectParameterPassingHandled = true;
-        bool IsInStack = false;
-        Register PhysReg;
-        if (VA.isRegLoc()) {
-          PhysReg = VA.getLocReg();
-        } else if (VA.isMemLoc()) {
-          IsInStack = true;
-          LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
-          MachinePointerInfo MPO;
-          PhysReg = Handler.getStackAddress(
-          MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
-        }
+      if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() &&
+          !Handler.isIncomingArgumentHandler()) {
+        Align StackAlign = DL.getPrefTypeAlign(Args[i].Ty);
+        MachineFrameInfo &MFI = MF.getFrameInfo();
+        int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
+                                             StackAlign, false);
 
-        if (Handler.isIncomingArgumentHandler()) {
-          
-          Handler.assignValueToReg(ArgReg, PhysReg, VA);
-          Align Alignment = DL.getABITypeAlign(Args[i].Ty);
-          MachinePointerInfo DstMPO;
-          MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], DstMPO, Alignment);
+        Register PointerToStackReg =
+            MIRBuilder.buildFrameIndex(PointerTy, FrameIdx).getReg(0);
+
+        MachinePointerInfo DstMPO;
+
+        Align FlagAlignment{};
+        if (Flags.isByVal()) {
+          FlagAlignment = Flags.getNonZeroByValAlign();
         } else {
-          Align StackAlign = DL.getPrefTypeAlign(Args[i].Ty);
-          MachineFrameInfo &MFI = MF.getFrameInfo();
-          int FrameIdx = MFI.CreateStackObject(OrigTy.getScalarSizeInBits(),
-                                               StackAlign, false);
-
-          Register PointerToStackReg =
-              MIRBuilder.buildFrameIndex(PointerTy, FrameIdx).getReg(0);
-          
-          MachinePointerInfo DstMPO;
-          Align DstAlign{};
-          Align FlagAlignment{};
-          if (Flags.isByVal()) {
-            FlagAlignment = Flags.getNonZeroByValAlign();
-          } else {
-            FlagAlignment = Flags.getNonZeroOrigAlign();
-          }
-          DstAlign = std::max(FlagAlignment,
-                              inferAlignFromPtrInfo(MF, DstMPO));
-          
-          MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg,
-                                DstMPO, DstAlign);
-          
-          if (!IsInStack) {
-            Handler.assignValueToReg(PointerToStackReg, PhysReg, VA);
-          } else {
-            MIRBuilder.buildStore(PointerToStackReg, PhysReg,
-                                  DstMPO, DstAlign);
-          }
+          FlagAlignment = Flags.getNonZeroOrigAlign();
         }
-        break;
+        Align DstAlign = std::max(FlagAlignment, inferAlignFromPtrInfo(MF, DstMPO));
+
+        MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg, DstMPO,
+                              DstAlign);
+
+        // This value assign is needed here for the case, when the pointer is
+        // being put on the stack before a function call, since there is no
+        // other branch in the later coming code that would assign the pointer
+        // to the register passed to the callee.
+        //
+        // Let's suppose we are on a target, where there are only 32 bit
+        // physical registers. Like the riscv32 target and we want to pass a 128
+        // bit value. If we did not have this branch with the break we would end
+        // up with GMIR like this:
+        //
+        // %1:_(s128) = G_CONSTANT i128 1
+        // %4:_(p0) = G_FRAME_INDEX %stack.1
+        // G_STORE %2:_(s128), %4:_(p0) :: (store (s128), align 8)
+        // $x10 = COPY %1:_(s128)
+        //
+        // So the later code would try to copy the 128 bit value directly into
+        // the 32 bit register.
+        if (VA.isRegLoc()) {
+          Handler.assignValueToReg(PointerToStackReg, VA.getLocReg(), VA);
+          break;
+        }
+        IndirectParameterPassingHandled = true;
       }
 
       if (VA.isMemLoc() && !Flags.isByVal()) {
@@ -874,10 +868,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
             MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
 
         Handler.assignValueToAddress(Args[i], Part, StackAddr, MemTy, MPO, VA);
-        continue;
-      }
-
-      if (VA.isMemLoc() && Flags.isByVal()) {
+      } else if (VA.isMemLoc() && Flags.isByVal()) {
         assert(Args[i].Regs.size() == 1 &&
                "didn't expect split byval pointer");
 
@@ -916,25 +907,40 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                      DstMPO, DstAlign, SrcMPO, SrcAlign,
                                      MemSize, VA);
         }
-        continue;
-      }
+      // QUESTION: How to keep this assert with the new if then else structured code?
+      //assert(!VA.needsCustom() && "custom loc should have been handled already");
 
-      assert(!VA.needsCustom() && "custom loc should have been handled already");
-
-      if (i == 0 && !ThisReturnRegs.empty() &&
+      } else if (i == 0 && !ThisReturnRegs.empty() &&
           Handler.isIncomingArgumentHandler() &&
-          isTypeIsValidForThisReturn(ValVT)) {
+          isTypeIsValidForThisReturn(ValVT) && VA.isRegLoc()) {
         Handler.assignValueToReg(ArgReg, ThisReturnRegs[Part], VA);
-        continue;
-      }
-
-      if (Handler.isIncomingArgumentHandler())
+      } else if (Handler.isIncomingArgumentHandler() && VA.isRegLoc()) {
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
-      else {
+      } else if (VA.isRegLoc()) {
         DelayedOutgoingRegAssignments.emplace_back([=, &Handler]() {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
         });
       }
+
+      // Finish the handling of indirect parameter passing when receiving
+      // the value.
+      if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() &&
+          Handler.isIncomingArgumentHandler()) {
+        Align Alignment = DL.getABITypeAlign(Args[i].Ty);
+        MachinePointerInfo DstMPO;
+
+        // Since we are doing indirect parameter passing, we know that the value
+        // in the temporary register is not the value passed to the function,
+        // but rather a pointer to that value. Let's load that value into the
+        // virtual register where the parameter should go.
+        MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], DstMPO,
+                             Alignment);
+
+        IndirectParameterPassingHandled = true;
+      }
+
+      if (IndirectParameterPassingHandled)
+        break;
     }
 
     if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
