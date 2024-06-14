@@ -16,6 +16,62 @@
 ; Check that on RV32, i64 is passed in a pair of registers. Unlike
 ; the convention for varargs, this need not be an aligned pair.
 
+define i64 @callee_128i_in_regs_stack(i64 %x0, i64 %x1, i64 %x2, i64 %x4, i64 %x5, i64 %x6, i64 %x7, i64 %x8, i128 %y ) {
+  ; RV32I-LABEL: name: callee_128i_in_regs_stack
+  ; RV32I: bb.1 (%ir-block.0):
+  ; RV32I-NEXT:   liveins: $v23, $x10, $x11, $x12, $x13, $x14, $x15, $x16, $x17
+  ; RV32I-NEXT: {{  $}}
+  ; RV32I-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
+  ; RV32I-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x11
+  ; RV32I-NEXT:   [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY]](s32), [[COPY1]](s32)
+  ; RV32I-NEXT:   [[COPY2:%[0-9]+]]:_(s32) = COPY $x12
+  ; RV32I-NEXT:   [[COPY3:%[0-9]+]]:_(s32) = COPY $x13
+  ; RV32I-NEXT:   [[MV1:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY2]](s32), [[COPY3]](s32)
+  ; RV32I-NEXT:   [[COPY4:%[0-9]+]]:_(s32) = COPY $x14
+  ; RV32I-NEXT:   [[COPY5:%[0-9]+]]:_(s32) = COPY $x15
+  ; RV32I-NEXT:   [[MV2:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY4]](s32), [[COPY5]](s32)
+  ; RV32I-NEXT:   [[COPY6:%[0-9]+]]:_(s32) = COPY $x16
+  ; RV32I-NEXT:   [[COPY7:%[0-9]+]]:_(s32) = COPY $x17
+  ; RV32I-NEXT:   [[MV3:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY6]](s32), [[COPY7]](s32)
+  ; RV32I-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.8
+  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (load (s32) from %fixed-stack.8, align 16)
+  ; RV32I-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.7
+  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (load (s32) from %fixed-stack.7)
+  ; RV32I-NEXT:   [[MV4:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[LOAD]](s32), [[LOAD1]](s32)
+  ; RV32I-NEXT:   [[FRAME_INDEX2:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.6
+  ; RV32I-NEXT:   [[LOAD2:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX2]](p0) :: (load (s32) from %fixed-stack.6, align 8)
+  ; RV32I-NEXT:   [[FRAME_INDEX3:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.5
+  ; RV32I-NEXT:   [[LOAD3:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX3]](p0) :: (load (s32) from %fixed-stack.5)
+  ; RV32I-NEXT:   [[MV5:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[LOAD2]](s32), [[LOAD3]](s32)
+  ; RV32I-NEXT:   [[FRAME_INDEX4:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.4
+  ; RV32I-NEXT:   [[LOAD4:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX4]](p0) :: (load (s32) from %fixed-stack.4, align 16)
+  ; RV32I-NEXT:   [[FRAME_INDEX5:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.3
+  ; RV32I-NEXT:   [[LOAD5:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX5]](p0) :: (load (s32) from %fixed-stack.3)
+  ; RV32I-NEXT:   [[MV6:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[LOAD4]](s32), [[LOAD5]](s32)
+  ; RV32I-NEXT:   [[FRAME_INDEX6:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.2
+  ; RV32I-NEXT:   [[LOAD6:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX6]](p0) :: (load (s32) from %fixed-stack.2, align 8)
+  ; RV32I-NEXT:   [[FRAME_INDEX7:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
+  ; RV32I-NEXT:   [[LOAD7:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX7]](p0) :: (load (s32) from %fixed-stack.1)
+  ; RV32I-NEXT:   [[MV7:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[LOAD6]](s32), [[LOAD7]](s32)
+  ; RV32I-NEXT:   [[FRAME_INDEX8:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
+  ; RV32I-NEXT:   [[COPY8:%[0-9]+]]:_(p0) = COPY [[FRAME_INDEX8]](p0)
+  ; RV32I-NEXT:   [[LOAD8:%[0-9]+]]:_(s128) = G_LOAD [[COPY8]](p0) :: (load (s128), align 8)
+  ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD8]](s128)
+  ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
+  ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)
+  ; RV32I-NEXT:   $x11 = COPY [[UV1]](s32)
+  ; RV32I-NEXT:   PseudoRET implicit $x10, implicit $x11
+  %2 = trunc i128 %y to i64
+  ret i64 %2
+}
+
+define i32 @caller_128i_in_regs_stack() {
+  %1 = call i64 @callee_128i_in_regs_stack(i64 0, i64 1, i64 2, i64 3, i64 4, i64 5, i64 6, i64 7, i128 42)
+  %2 = trunc i64 %1 to i32
+  ret i32 %2
+}
+
+
 define i64 @callee_128i_in_regs(i128 %x, i128 %y ) {
   ; RV32I-LABEL: name: callee_128i_in_regs
   ; RV32I: bb.1 (%ir-block.0):

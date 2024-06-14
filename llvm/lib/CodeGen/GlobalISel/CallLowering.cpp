@@ -25,6 +25,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/Alignment.h"
 #include "llvm/Target/TargetMachine.h"
 
 #define DEBUG_TYPE "call-lowering"
@@ -810,7 +811,17 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit()) {
         IndirectParameterPassingHandled = true;
         if (Handler.isIncomingArgumentHandler()) {
-          Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
+          Register PhysReg;
+          if (VA.isRegLoc()) {
+            PhysReg = VA.getLocReg();
+          } else if (VA.isMemLoc()) {
+            LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
+
+            MachinePointerInfo MPO;
+            PhysReg = Handler.getStackAddress(
+            MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
+          }
+          Handler.assignValueToReg(ArgReg, PhysReg, VA);
           Align Alignment = DL.getABITypeAlign(Args[i].Ty);
           MachinePointerInfo DstMPO;
           MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], DstMPO, Alignment);
@@ -824,8 +835,15 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
               MIRBuilder.buildFrameIndex(PointerTy, FrameIdx).getReg(0);
           
           MachinePointerInfo DstMPO;
-          Align DstAlign = std::max(Flags.getNonZeroOrigAlign(),
-                                    inferAlignFromPtrInfo(MF, DstMPO));
+          Align DstAlign{};
+          Align FlagAlignment{};
+          if (Flags.isByVal()) {
+            FlagAlignment = Flags.getNonZeroByValAlign();
+          } else {
+            FlagAlignment = Flags.getNonZeroOrigAlign();
+          }
+          DstAlign = std::max(FlagAlignment,
+                              inferAlignFromPtrInfo(MF, DstMPO));
           MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg,
                                 DstMPO, DstAlign);
           
