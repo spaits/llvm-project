@@ -23,9 +23,9 @@ define i64 @callee_256i_in_regs(i256 %x, i256 %y ) {
   ; RV64I-NEXT:   liveins: $x10, $x11
   ; RV64I-NEXT: {{  $}}
   ; RV64I-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x10
-  ; RV64I-NEXT:   [[LOAD:%[0-9]+]]:_(s256) = G_LOAD [[COPY]](p0) :: (load (s256), align 1)
+  ; RV64I-NEXT:   [[LOAD:%[0-9]+]]:_(s256) = G_LOAD [[COPY]](p0) :: (load (s256), align 16)
   ; RV64I-NEXT:   [[COPY1:%[0-9]+]]:_(p0) = COPY $x11
-  ; RV64I-NEXT:   [[LOAD1:%[0-9]+]]:_(s256) = G_LOAD [[COPY1]](p0) :: (load (s256), align 1)
+  ; RV64I-NEXT:   [[LOAD1:%[0-9]+]]:_(s256) = G_LOAD [[COPY1]](p0) :: (load (s256), align 16)
   ; RV64I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD]](s256)
   ; RV64I-NEXT:   $x10 = COPY [[TRUNC]](s64)
   ; RV64I-NEXT:   PseudoRET implicit $x10

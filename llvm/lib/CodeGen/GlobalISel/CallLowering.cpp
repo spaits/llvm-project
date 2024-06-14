@@ -811,9 +811,9 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         IndirectParameterPassingHandled = true;
         if (Handler.isIncomingArgumentHandler()) {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
-          Handler.assignValueToAddress(Args[i].OrigRegs[Part],
-                                       Args[i].Regs[Part], OrigTy,
-                                       MachinePointerInfo{}, VA);
+          Align Alignment = DL.getABITypeAlign(Args[i].Ty);
+          MachinePointerInfo DstMPO;
+          MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], DstMPO, Alignment);
         } else {
           Align StackAlign = DL.getPrefTypeAlign(Args[i].Ty);
           MachineFrameInfo &MFI = MF.getFrameInfo();
@@ -822,9 +822,13 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
 
           Register PointerToStackReg =
               MIRBuilder.buildFrameIndex(PointerTy, FrameIdx).getReg(0);
-          Handler.assignValueToAddress(Args[i].OrigRegs[Part],
-                                       PointerToStackReg, OrigTy,
-                                       MachinePointerInfo{}, VA);
+          
+          MachinePointerInfo DstMPO;
+          Align DstAlign = std::max(Flags.getNonZeroOrigAlign(),
+                                    inferAlignFromPtrInfo(MF, DstMPO));
+          MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg,
+                                DstMPO, DstAlign);
+          
           Handler.assignValueToReg(PointerToStackReg, VA.getLocReg(), VA);
         }
         break;
