@@ -815,7 +815,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // %1(indirectly passed type) = The value to pass
       // %3(pointer) = G_FRAME_INDEX %stack.0
       // G_STORE %1, %3 :: (store (s128), align 8)
-      // 
+      //
       // After this GMIR, the remaining part of the loop body will decide how
       // to get the value to the caller and we break out of the loop.
       // NOTE: In the case, when the the pointer pointing to the value is passed
@@ -844,10 +844,10 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg, DstMPO,
                               DstAlign);
 
-        // This value assign is needed here for the case, when the pointer is
-        // being put on the stack before a function call, since there is no
-        // other branch in the later coming code that would assign the pointer
-        // to the register passed to the callee.
+        // This value assign is needed here for the case, when the pointer to
+        // stack is passed in a register since there is no other branch in the
+        // later coming code that would copy the pointer to stack to the
+        // register used in parameter passing.
         //
         // Let's suppose we are on a target, where there are only 32 bit
         // physical registers. Like the riscv32 target and we want to pass a 128
