@@ -41,9 +41,9 @@ define i32 @caller_256i_in_regs( ) {
   ; LP64-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
   ; LP64-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
   ; LP64-NEXT:   G_STORE [[C]](s256), [[FRAME_INDEX]](p0) :: (store (s256), align 16)
-  ; LP64-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
   ; LP64-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
   ; LP64-NEXT:   G_STORE [[C1]](s256), [[FRAME_INDEX1]](p0) :: (store (s256), align 16)
+  ; LP64-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
   ; LP64-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
   ; LP64-NEXT:   PseudoCALL target-flags(riscv-call) @callee_256i_in_regs, csr_ilp32_lp64, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10
   ; LP64-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
@@ -60,9 +60,9 @@ define i32 @caller_256i_in_regs( ) {
   ; LP64F-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
   ; LP64F-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
   ; LP64F-NEXT:   G_STORE [[C]](s256), [[FRAME_INDEX]](p0) :: (store (s256), align 16)
-  ; LP64F-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
   ; LP64F-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
   ; LP64F-NEXT:   G_STORE [[C1]](s256), [[FRAME_INDEX1]](p0) :: (store (s256), align 16)
+  ; LP64F-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
   ; LP64F-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
   ; LP64F-NEXT:   PseudoCALL target-flags(riscv-call) @callee_256i_in_regs, csr_ilp32f_lp64f, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10
   ; LP64F-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
@@ -79,9 +79,9 @@ define i32 @caller_256i_in_regs( ) {
   ; LP64D-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
   ; LP64D-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.0
   ; LP64D-NEXT:   G_STORE [[C]](s256), [[FRAME_INDEX]](p0) :: (store (s256), align 16)
-  ; LP64D-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
   ; LP64D-NEXT:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %stack.1
   ; LP64D-NEXT:   G_STORE [[C1]](s256), [[FRAME_INDEX1]](p0) :: (store (s256), align 16)
+  ; LP64D-NEXT:   $x10 = COPY [[FRAME_INDEX]](p0)
   ; LP64D-NEXT:   $x11 = COPY [[FRAME_INDEX1]](p0)
   ; LP64D-NEXT:   PseudoCALL target-flags(riscv-call) @callee_256i_in_regs, csr_ilp32d_lp64d, implicit-def $x1, implicit $x10, implicit $x11, implicit-def $x10
   ; LP64D-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2

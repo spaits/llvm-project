@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Register.h"
@@ -844,25 +845,21 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg, DstMPO,
                               DstAlign);
 
-        // This value assign is needed here for the case, when the pointer to
-        // stack is passed in a register since there is no other branch in the
-        // later coming code that would copy the pointer to stack to the
-        // register used in parameter passing.
-        //
-        // Let's suppose we are on a target, where there are only 32 bit
-        // physical registers. Like the riscv32 target and we want to pass a 128
-        // bit value. If we did not have this branch with the break we would end
-        // up with GMIR like this:
-        //
-        // %1:_(s128) = G_CONSTANT i128 1
-        // %4:_(p0) = G_FRAME_INDEX %stack.1
-        // G_STORE %2:_(s128), %4:_(p0) :: (store (s128), align 8)
-        // $x10 = COPY %1:_(s128)
-        //
-        // So the later code would try to copy the 128 bit value directly into
-        // the 32 bit register.
-        if (VA.isRegLoc()) {
-          Handler.assignValueToReg(PointerToStackReg, VA.getLocReg(), VA);
+        // If the value is not on the stack, then dispatch the process of
+        // moving it to the correct place for the call to the rest of the code.
+        if (!VA.isMemLoc()) {
+          ArgReg = PointerToStackReg;
+        }
+        // This value assign or load are needed here for the case, when the
+        // pointer to stack is passed, since there is no other case later that
+        // would handle this.
+        if (VA.isMemLoc()) {
+          LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
+          MachinePointerInfo MPO;
+          auto PassedStackAddress = Handler.getStackAddress(
+              MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
+          MIRBuilder.buildStore(PointerToStackReg, PassedStackAddress, DstMPO,
+                                DstAlign);
           break;
         }
         IndirectParameterPassingHandled = true;
