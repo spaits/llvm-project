@@ -831,7 +831,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         Register PointerToStackReg =
             MIRBuilder.buildFrameIndex(PointerTy, FrameIdx).getReg(0);
 
-        MachinePointerInfo DstMPO;
+        MachinePointerInfo DstMPO =
+            MachinePointerInfo::getFixedStack(MF, FrameIdx);
 
         Align FlagAlignment{};
         if (Flags.isByVal()) {
