@@ -845,21 +845,21 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
 
         // If the value is not on the stack, then dispatch the process of
         // moving it to the correct place for the call to the rest of the code.
-        if (!VA.isMemLoc()) {
+        //if (!VA.isMemLoc()) {
           ArgReg = PointerToStackReg;
-        }
+        //}
         // This value assign or load are needed here for the case, when the
         // pointer to stack is passed, since there is no other case later that
         // would handle this.
-        if (VA.isMemLoc()) {
-          LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
-          MachinePointerInfo MPO;
-          auto PassedStackAddress = Handler.getStackAddress(
-              MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
-          MIRBuilder.buildStore(PointerToStackReg, PassedStackAddress, DstMPO,
-                                DstAlign);
-          break;
-        }
+        //if (VA.isMemLoc()) {
+        //  LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
+        //  MachinePointerInfo MPO;
+        //  auto PassedStackAddress = Handler.getStackAddress(
+        //      MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
+        //  MIRBuilder.buildStore(PointerToStackReg, PassedStackAddress, DstMPO,
+        //                        DstAlign);
+        //  break;
+        //}
         IndirectParameterPassingHandled = true;
       }
 
@@ -874,6 +874,13 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         MachinePointerInfo MPO;
         Register StackAddr = Handler.getStackAddress(
             MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
+
+        // Finish the handling of indirect passing from the passers
+        // (OutgoingParameterHandler) side
+        if (IndirectParameterPassingHandled) {
+          Handler.assignValueToAddress(ArgReg, StackAddr, MemTy, MPO, VA);
+          break;
+        }
 
         Handler.assignValueToAddress(Args[i], Part, StackAddr, MemTy, MPO, VA);
       } else if (VA.isMemLoc() && Flags.isByVal()) {
