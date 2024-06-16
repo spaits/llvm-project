@@ -28,6 +28,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Target/TargetMachine.h"
+#include <cassert>
 
 #define DEBUG_TYPE "call-lowering"
 
@@ -51,6 +52,8 @@ addFlagsUsingAttrFn(ISD::ArgFlagsTy &Flags,
     Flags.setNest();
   if (AttrFn(Attribute::ByVal))
     Flags.setByVal();
+  if (AttrFn(Attribute::ByRef))
+    Flags.setByRef();
   if (AttrFn(Attribute::Preallocated))
     Flags.setPreallocated();
   if (AttrFn(Attribute::InAlloca))
@@ -834,14 +837,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         MachinePointerInfo DstMPO =
             MachinePointerInfo::getFixedStack(MF, FrameIdx);
 
-        Align FlagAlignment{};
-        if (Flags.isByVal()) {
-          FlagAlignment = Flags.getNonZeroByValAlign();
-        } else {
-          FlagAlignment = Flags.getNonZeroOrigAlign();
-        }
         Align DstAlign =
-            std::max(FlagAlignment, inferAlignFromPtrInfo(MF, DstMPO));
+            std::max(DL.getStackAlignment(), inferAlignFromPtrInfo(MF, DstMPO));
 
         MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg, DstMPO,
                               DstAlign);
