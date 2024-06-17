@@ -35,7 +35,7 @@ define i64 @callee_128i_in_regs_stack_fst(i64 %x1, i64 %x2, i64 %x3, i64 %x4, i1
   ; RV32I-NEXT:   [[MV3:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY6]](s32), [[COPY7]](s32)
   ; RV32I-NEXT:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
   ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(p0) = G_LOAD [[FRAME_INDEX]](p0) :: (load (s32) from %fixed-stack.0, align 16)
-  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s128) = G_LOAD [[LOAD]](p0) :: (load (s128), align 8)
+  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s128) = G_LOAD [[LOAD]](p0) :: (load (s128), align 8, addrspace 2147483661)
   ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD1]](s128)
   ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
   ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)
@@ -185,7 +185,7 @@ define i64 @callee_128i_in_regs_stack(i64 %x0, i64 %x1, i64 %x2, i64 %x4, i64 %x
   ; RV32I-NEXT:   [[MV7:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[LOAD6]](s32), [[LOAD7]](s32)
   ; RV32I-NEXT:   [[FRAME_INDEX8:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
   ; RV32I-NEXT:   [[LOAD8:%[0-9]+]]:_(p0) = G_LOAD [[FRAME_INDEX8]](p0) :: (load (s32) from %fixed-stack.0, align 16)
-  ; RV32I-NEXT:   [[LOAD9:%[0-9]+]]:_(s128) = G_LOAD [[LOAD8]](p0) :: (load (s128), align 8)
+  ; RV32I-NEXT:   [[LOAD9:%[0-9]+]]:_(s128) = G_LOAD [[LOAD8]](p0) :: (load (s128), align 8, addrspace 2147483681)
   ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD9]](s128)
   ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
   ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)
@@ -408,9 +408,9 @@ define i64 @callee_128i_in_regs(i128 %x, i128 %y ) {
   ; RV32I-NEXT:   liveins: $x10, $x11
   ; RV32I-NEXT: {{  $}}
   ; RV32I-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x10
-  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s128) = G_LOAD [[COPY]](p0) :: (load (s128), align 8)
+  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s128) = G_LOAD [[COPY]](p0) :: (load (s128), align 8, addrspace 2147483650)
   ; RV32I-NEXT:   [[COPY1:%[0-9]+]]:_(p0) = COPY $x11
-  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s128) = G_LOAD [[COPY1]](p0) :: (load (s128), align 8)
+  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s128) = G_LOAD [[COPY1]](p0) :: (load (s128), align 8, addrspace 2147483651)
   ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD]](s128)
   ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
   ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)
@@ -492,9 +492,9 @@ define i64 @callee_256i_in_regs(i256 %x, i256 %y ) {
   ; RV32I-NEXT:   liveins: $x10, $x11
   ; RV32I-NEXT: {{  $}}
   ; RV32I-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x10
-  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s256) = G_LOAD [[COPY]](p0) :: (load (s256), align 8)
+  ; RV32I-NEXT:   [[LOAD:%[0-9]+]]:_(s256) = G_LOAD [[COPY]](p0) :: (load (s256), align 8, addrspace 2147483650)
   ; RV32I-NEXT:   [[COPY1:%[0-9]+]]:_(p0) = COPY $x11
-  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s256) = G_LOAD [[COPY1]](p0) :: (load (s256), align 8)
+  ; RV32I-NEXT:   [[LOAD1:%[0-9]+]]:_(s256) = G_LOAD [[COPY1]](p0) :: (load (s256), align 8, addrspace 2147483651)
   ; RV32I-NEXT:   [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[LOAD]](s256)
   ; RV32I-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[TRUNC]](s64)
   ; RV32I-NEXT:   $x10 = COPY [[UV]](s32)

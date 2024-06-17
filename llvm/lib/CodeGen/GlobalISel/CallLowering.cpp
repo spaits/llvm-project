@@ -857,7 +857,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         // store. We may need to adjust the offset for big endian targets.
         LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
 
-        MachinePointerInfo MPO(ArgReg);
+        MachinePointerInfo MPO;
         Register StackAddr = Handler.getStackAddress(
             MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
 
@@ -926,13 +926,13 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       if (VA.getLocInfo() == CCValAssign::Indirect && Flags.isSplit() &&
           Handler.isIncomingArgumentHandler()) {
         Align Alignment = DL.getABITypeAlign(Args[i].Ty);
-        MachinePointerInfo DstMPO;
+        MachinePointerInfo MPO(Args[i].Regs[0]);
 
         // Since we are doing indirect parameter passing, we know that the value
         // in the temporary register is not the value passed to the function,
         // but rather a pointer to that value. Let's load that value into the
         // virtual register where the parameter should go.
-        MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], DstMPO,
+        MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], MPO,
                              Alignment);
 
         IndirectParameterPassingHandled = true;
