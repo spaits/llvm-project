@@ -23,9 +23,11 @@
 #include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cassert>
@@ -846,7 +848,6 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         // If the value is not on the stack, then dispatch the process of
         // moving it to the correct place for the call to the rest of the code.
         //if (!VA.isMemLoc()) {
-          ArgReg = PointerToStackReg;
         //}
         // This value assign or load are needed here for the case, when the
         // pointer to stack is passed, since there is no other case later that
@@ -860,6 +861,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         //                        DstAlign);
         //  break;
         //}
+        ArgReg = PointerToStackReg;
         IndirectParameterPassingHandled = true;
       }
 
@@ -878,7 +880,11 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         // Finish the handling of indirect passing from the passers
         // (OutgoingParameterHandler) side
         if (IndirectParameterPassingHandled) {
-          Handler.assignValueToAddress(ArgReg, StackAddr, MemTy, MPO, VA);
+          PointerType *PtrInAllocaTy =
+              PointerType::get(MIRBuilder.getContext(), AllocaAddressSpace);
+          Align AlignPtrInAlloca = DL.getPrefTypeAlign(PtrInAllocaTy);
+
+          MIRBuilder.buildStore(ArgReg, StackAddr, MPO, AlignPtrInAlloca);
           break;
         }
 
