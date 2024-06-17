@@ -17,20 +17,14 @@
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
-#include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
-#include "llvm/Support/Alignment.h"
 #include "llvm/Target/TargetMachine.h"
-#include <cassert>
 
 #define DEBUG_TYPE "call-lowering"
 
@@ -167,8 +161,9 @@ bool CallLowering::lowerCall(MachineIRBuilder &MIRBuilder, const CallBase &CB,
     // callee must be in the same TU and therefore we can direct-call it without
     // worrying about it being out of range.
     Info.Callee = MachineOperand::CreateGA(cast<GlobalValue>(CalleeV), 0);
-  } else
+  } else {
     Info.Callee = MachineOperand::CreateReg(GetCalleeReg(), false);
+  }
 
   Register ReturnHintAlignReg;
   Align ReturnHintAlign;
@@ -910,11 +905,12 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         }
       } else if (i == 0 && !ThisReturnRegs.empty() &&
                  Handler.isIncomingArgumentHandler() &&
-                 isTypeIsValidForThisReturn(ValVT))
+                 isTypeIsValidForThisReturn(ValVT)) {
+
         Handler.assignValueToReg(ArgReg, ThisReturnRegs[Part], VA);
-      else if (Handler.isIncomingArgumentHandler())
+      } else if (Handler.isIncomingArgumentHandler()) {
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
-      else {
+      } else {
         DelayedOutgoingRegAssignments.emplace_back([=, &Handler]() {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
         });
