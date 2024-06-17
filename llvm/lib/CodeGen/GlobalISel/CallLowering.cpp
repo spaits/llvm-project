@@ -862,7 +862,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
             MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
 
         // Finish the handling of indirect passing from the passers
-        // (OutgoingParameterHandler) side
+        // (OutgoingParameterHandler) side.
         if (IndirectParameterPassingHandled) {
           Handler.assignValueToAddress(ArgReg, StackAddr, PointerTy, MPO, VA);
           break;
