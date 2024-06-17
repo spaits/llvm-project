@@ -60,7 +60,7 @@ define i32 @caller_128i_in_regs_stack_fst( ) {
   ; ILP32-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
   ; ILP32-NEXT:   [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
   ; ILP32-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C2]](s32)
-  ; ILP32-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack)
+  ; ILP32-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack, align 1)
   ; ILP32-NEXT:   $x10 = COPY [[UV]](s32)
   ; ILP32-NEXT:   $x11 = COPY [[UV1]](s32)
   ; ILP32-NEXT:   $x12 = COPY [[UV2]](s32)
@@ -92,7 +92,7 @@ define i32 @caller_128i_in_regs_stack_fst( ) {
   ; ILP32F-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
   ; ILP32F-NEXT:   [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
   ; ILP32F-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C2]](s32)
-  ; ILP32F-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack)
+  ; ILP32F-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack, align 1)
   ; ILP32F-NEXT:   $x10 = COPY [[UV]](s32)
   ; ILP32F-NEXT:   $x11 = COPY [[UV1]](s32)
   ; ILP32F-NEXT:   $x12 = COPY [[UV2]](s32)
@@ -124,7 +124,7 @@ define i32 @caller_128i_in_regs_stack_fst( ) {
   ; ILP32D-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
   ; ILP32D-NEXT:   [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
   ; ILP32D-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C2]](s32)
-  ; ILP32D-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack)
+  ; ILP32D-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack, align 1)
   ; ILP32D-NEXT:   $x10 = COPY [[UV]](s32)
   ; ILP32D-NEXT:   $x11 = COPY [[UV1]](s32)
   ; ILP32D-NEXT:   $x12 = COPY [[UV2]](s32)
@@ -245,7 +245,7 @@ define i32 @caller_128i_in_regs_stack() {
   ; ILP32-NEXT:   G_STORE [[C8]](s128), [[FRAME_INDEX]](p0) :: (store (s128) into %stack.0)
   ; ILP32-NEXT:   [[C17:%[0-9]+]]:_(s32) = G_CONSTANT i32 32
   ; ILP32-NEXT:   [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C17]](s32)
-  ; ILP32-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD8]](p0) :: (store (p0) into stack + 32)
+  ; ILP32-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD8]](p0) :: (store (p0) into stack + 32, align 1)
   ; ILP32-NEXT:   $x10 = COPY [[UV]](s32)
   ; ILP32-NEXT:   $x11 = COPY [[UV1]](s32)
   ; ILP32-NEXT:   $x12 = COPY [[UV2]](s32)
@@ -312,7 +312,7 @@ define i32 @caller_128i_in_regs_stack() {
   ; ILP32F-NEXT:   G_STORE [[C8]](s128), [[FRAME_INDEX]](p0) :: (store (s128) into %stack.0)
   ; ILP32F-NEXT:   [[C17:%[0-9]+]]:_(s32) = G_CONSTANT i32 32
   ; ILP32F-NEXT:   [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C17]](s32)
-  ; ILP32F-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD8]](p0) :: (store (p0) into stack + 32)
+  ; ILP32F-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD8]](p0) :: (store (p0) into stack + 32, align 1)
   ; ILP32F-NEXT:   $x10 = COPY [[UV]](s32)
   ; ILP32F-NEXT:   $x11 = COPY [[UV1]](s32)
   ; ILP32F-NEXT:   $x12 = COPY [[UV2]](s32)
@@ -379,7 +379,7 @@ define i32 @caller_128i_in_regs_stack() {
   ; ILP32D-NEXT:   G_STORE [[C8]](s128), [[FRAME_INDEX]](p0) :: (store (s128) into %stack.0)
   ; ILP32D-NEXT:   [[C17:%[0-9]+]]:_(s32) = G_CONSTANT i32 32
   ; ILP32D-NEXT:   [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C17]](s32)
-  ; ILP32D-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD8]](p0) :: (store (p0) into stack + 32)
+  ; ILP32D-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD8]](p0) :: (store (p0) into stack + 32, align 1)
   ; ILP32D-NEXT:   $x10 = COPY [[UV]](s32)
   ; ILP32D-NEXT:   $x11 = COPY [[UV1]](s32)
   ; ILP32D-NEXT:   $x12 = COPY [[UV2]](s32)

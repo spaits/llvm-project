@@ -34,7 +34,7 @@ define i32 @caller_256i_in_regs_stack( ) {
   ; LP64-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
   ; LP64-NEXT:   [[C9:%[0-9]+]]:_(s64) = G_CONSTANT i64 0
   ; LP64-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s64)
-  ; LP64-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack)
+  ; LP64-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack, align 1)
   ; LP64-NEXT:   $x10 = COPY [[C]](s64)
   ; LP64-NEXT:   $x11 = COPY [[C1]](s64)
   ; LP64-NEXT:   $x12 = COPY [[C2]](s64)
@@ -68,7 +68,7 @@ define i32 @caller_256i_in_regs_stack( ) {
   ; LP64F-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
   ; LP64F-NEXT:   [[C9:%[0-9]+]]:_(s64) = G_CONSTANT i64 0
   ; LP64F-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s64)
-  ; LP64F-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack)
+  ; LP64F-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack, align 1)
   ; LP64F-NEXT:   $x10 = COPY [[C]](s64)
   ; LP64F-NEXT:   $x11 = COPY [[C1]](s64)
   ; LP64F-NEXT:   $x12 = COPY [[C2]](s64)
@@ -102,7 +102,7 @@ define i32 @caller_256i_in_regs_stack( ) {
   ; LP64D-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
   ; LP64D-NEXT:   [[C9:%[0-9]+]]:_(s64) = G_CONSTANT i64 0
   ; LP64D-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s64)
-  ; LP64D-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack)
+  ; LP64D-NEXT:   G_STORE [[FRAME_INDEX]](p0), [[PTR_ADD]](p0) :: (store (p0) into stack, align 1)
   ; LP64D-NEXT:   $x10 = COPY [[C]](s64)
   ; LP64D-NEXT:   $x11 = COPY [[C1]](s64)
   ; LP64D-NEXT:   $x12 = COPY [[C2]](s64)

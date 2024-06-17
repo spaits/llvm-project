@@ -857,18 +857,15 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         // store. We may need to adjust the offset for big endian targets.
         LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
 
-        MachinePointerInfo MPO;
+        MachinePointerInfo MPO(ArgReg);
         Register StackAddr = Handler.getStackAddress(
             MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
 
         // Finish the handling of indirect passing from the passers
         // (OutgoingParameterHandler) side
         if (IndirectParameterPassingHandled) {
-          PointerType *PtrInAllocaTy =
-              PointerType::get(MIRBuilder.getContext(), AllocaAddressSpace);
-          Align AlignPtrInAlloca = DL.getPrefTypeAlign(PtrInAllocaTy);
-
-          MIRBuilder.buildStore(ArgReg, StackAddr, MPO, AlignPtrInAlloca);
+          Align AlignPtr = inferAlignFromPtrInfo(MF, MPO);
+          MIRBuilder.buildStore(ArgReg, StackAddr, MPO, AlignPtr);
           break;
         }
 
