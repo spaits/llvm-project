@@ -908,18 +908,13 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                      DstMPO, DstAlign, SrcMPO, SrcAlign,
                                      MemSize, VA);
         }
-        // QUESTION: How to keep this assert with the new if then else
-        // structured code?
-        // assert(!VA.needsCustom() && "custom loc should have been handled
-        // already");
-
       } else if (i == 0 && !ThisReturnRegs.empty() &&
                  Handler.isIncomingArgumentHandler() &&
-                 isTypeIsValidForThisReturn(ValVT) && VA.isRegLoc()) {
+                 isTypeIsValidForThisReturn(ValVT))
         Handler.assignValueToReg(ArgReg, ThisReturnRegs[Part], VA);
-      } else if (Handler.isIncomingArgumentHandler() && VA.isRegLoc()) {
+      else if (Handler.isIncomingArgumentHandler())
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
-      } else if (VA.isRegLoc()) {
+      else {
         DelayedOutgoingRegAssignments.emplace_back([=, &Handler]() {
           Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
         });
@@ -947,10 +942,12 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         break;
     }
 
+    // Now that all pieces have been assigned, re-pack the register typed
+    // values into the original value typed registers.
     if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
         !IndirectParameterPassingHandled) {
-      // Now that all pieces have been assigned, re-pack the register typed
-      // values into the original value typed registers.
+      // Merge the split registers into the expected larger result vregs of
+      // the original call.
       buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs, Args[i].Regs, OrigTy,
                         LocTy, Args[i].Flags[0]);
     }
