@@ -863,9 +863,9 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
 
         // Finish the handling of indirect passing from the passers
         // (OutgoingParameterHandler) side
-        if (IndirectParameterPassingHandled) {
-          Align AlignPtr = inferAlignFromPtrInfo(MF, MPO);
-          MIRBuilder.buildStore(ArgReg, StackAddr, MPO, AlignPtr);
+        
+        if (IndirectParameterPassingHandled) {  
+          Handler.assignValueToAddress(ArgReg, StackAddr, PointerTy, MPO, VA);
           break;
         }
 
