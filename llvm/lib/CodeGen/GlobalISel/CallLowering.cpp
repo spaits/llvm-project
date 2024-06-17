@@ -845,22 +845,6 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         MIRBuilder.buildStore(Args[i].OrigRegs[Part], PointerToStackReg, DstMPO,
                               DstAlign);
 
-        // If the value is not on the stack, then dispatch the process of
-        // moving it to the correct place for the call to the rest of the code.
-        //if (!VA.isMemLoc()) {
-        //}
-        // This value assign or load are needed here for the case, when the
-        // pointer to stack is passed, since there is no other case later that
-        // would handle this.
-        //if (VA.isMemLoc()) {
-        //  LLT MemTy = Handler.getStackValueStoreType(DL, VA, Flags);
-        //  MachinePointerInfo MPO;
-        //  auto PassedStackAddress = Handler.getStackAddress(
-        //      MemTy.getSizeInBytes(), VA.getLocMemOffset(), MPO, Flags);
-        //  MIRBuilder.buildStore(PointerToStackReg, PassedStackAddress, DstMPO,
-        //                        DstAlign);
-        //  break;
-        //}
         ArgReg = PointerToStackReg;
         IndirectParameterPassingHandled = true;
       }
