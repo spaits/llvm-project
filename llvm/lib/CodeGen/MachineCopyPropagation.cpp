@@ -65,6 +65,7 @@
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/InitializePasses.h"
+#include "llvm/MC/MCRegister.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
@@ -110,9 +111,13 @@ class CopyTracker {
     MachineInstr *MI, *LastSeenUseInCopy;
     SmallVector<MCRegister, 4> DefRegs;
     bool Avail;
+    // Contain all the instructions that have ever invalidated a copy that.
+    bool Valid;
+    llvm::SmallVector<MachineInstr *, 4> InvalidatedBy;
   };
 
   DenseMap<MCRegister, CopyInfo> Copies;
+  DenseMap<MCRegister, CopyInfo> InvalidatedCopies;
 
 public:
   /// Mark all of the given registers and their subregisters as unavailable for
@@ -131,7 +136,7 @@ public:
 
   /// Remove register from copy maps.
   void invalidateRegister(MCRegister Reg, const TargetRegisterInfo &TRI,
-                          const TargetInstrInfo &TII, bool UseCopyInstr) {
+                          const TargetInstrInfo &TII, bool UseCopyInstr, MachineInstr *Invalidator = nullptr) {
     // Since Reg might be a subreg of some registers, only invalidate Reg is not
     // enough. We have to find the COPY defines Reg or registers defined by Reg
     // and invalidate all of them. Similarly, we must invalidate all of the
@@ -157,8 +162,16 @@ public:
           InvalidateCopy(MI);
       }
     }
-    for (MCRegUnit Unit : RegUnitsToInvalidate)
+    for (MCRegUnit Unit : RegUnitsToInvalidate) {
+      if (Copies.contains(Unit)) {
+        llvm::errs() << "Moving stuff to invalids\n";
+        Copies[Unit].Valid = false;
+        Copies[Unit].InvalidatedBy.push_back(Invalidator);
+        InvalidatedCopies.insert({Unit, Copies[Unit]});
+      }
       Copies.erase(Unit);
+    }
+      
   }
 
   /// Clobber a single register, removing it from the tracker's copy maps.
@@ -249,6 +262,29 @@ public:
 
   bool hasAnyCopies() {
     return !Copies.empty();
+  }
+
+
+  MachineInstr *findInvalidCopyForUnit(MCRegister RegUnit,
+                                const TargetRegisterInfo &TRI,
+                                bool MustBeAvailable = false) {
+    auto CI = InvalidatedCopies.find(RegUnit);
+    if (CI == InvalidatedCopies.end())
+      return nullptr;
+    if (MustBeAvailable && !CI->second.Avail)
+      return nullptr;
+    return CI->second.MI;
+  }
+
+  MachineInstr *findInvalidCopyDefViaUnit(MCRegister RegUnit,
+                                   const TargetRegisterInfo &TRI) {
+    auto CI = InvalidatedCopies.find(RegUnit);
+    if (CI == InvalidatedCopies.end())
+      return nullptr;
+    if (CI->second.DefRegs.size() != 1)
+      return nullptr;
+    MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
+    return findInvalidCopyForUnit(RU, TRI, true);
   }
 
   MachineInstr *findCopyForUnit(MCRegister RegUnit,
@@ -374,6 +410,16 @@ public:
     return CI->second.LastSeenUseInCopy;
   }
 
+  // Find last COPY that uses Reg.
+  MachineInstr *findLastSeenUseInInvalidCopy(MCRegister Reg,
+                                      const TargetRegisterInfo &TRI) {
+    MCRegUnit RU = *TRI.regunits(Reg).begin();
+    auto CI = InvalidatedCopies.find(RU);
+    if (CI == InvalidatedCopies.end())
+      return nullptr;
+    return CI->second.LastSeenUseInCopy;
+  }
+
   void clear() {
     Copies.clear();
   }
@@ -417,6 +463,7 @@ private:
   void EliminateSpillageCopies(MachineBasicBlock &MBB);
   bool eraseIfRedundant(MachineInstr &Copy, MCRegister Src, MCRegister Def);
   void forwardUses(MachineInstr &MI);
+  void tryToCollapseCopies(MachineInstr &MI);
   void propagateDefs(MachineInstr &MI);
   bool isForwardableRegClassCopy(const MachineInstr &Copy,
                                  const MachineInstr &UseI, unsigned UseIdx);
@@ -985,6 +1032,53 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
 }
 
+void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
+  if (!Tracker.hasAnyCopies())
+    llvm::errs() << "Handler Has no copies\n";
+
+  std::optional<DestSourcePair> CopyOperands = isCopyInstr(MI, *TII, UseCopyInstr);
+
+  assert(CopyOperands && MI.getNumOperands() == 2);
+
+  Register DefReg = CopyOperands->Destination->getReg();
+  Register SrcReg = CopyOperands->Source->getReg();
+
+  MachineInstr *PreviousCopy = Tracker.findAvailBackwardCopy(
+        MI, DefReg.asMCReg(), *TRI, *TII, UseCopyInstr);
+  if (!PreviousCopy) {
+    MachineInstr *Idk = Tracker.findLastSeenUseInCopy(DefReg.asMCReg(), *TRI);
+    if (Idk) {
+      llvm::errs() << "Looks good\n";
+      Idk->dump();
+      PreviousCopy = Idk;
+    } else {
+      llvm::errs() << "Doesnt look that good\n";
+      return;
+    }
+    llvm::errs() << "Could not found any copy\n";
+  }
+  llvm::errs() << "DUMPDUMPDUMP\n";
+  PreviousCopy->dump();
+
+  std::optional<DestSourcePair> PreviousCopyOperands = isCopyInstr(*PreviousCopy, *TII, UseCopyInstr);
+  const MachineOperand *PreviousCopySrc = PreviousCopyOperands->Source;
+  Register PreviousCopyDest = PreviousCopyOperands->Destination->getReg();
+  // Make sure we don't corrupt the data flow by removing a data from the register
+  // that would be propagated forward in that register.
+  if (PreviousCopySrc->isKill() && PreviousCopySrc->isRenamable()) {
+    llvm::errs() << "OKOKOK\n";
+    MI.getOperand(0).setReg(PreviousCopyDest);
+    llvm::errs() << "New MI:\n";
+    MI.dump();
+    llvm::errs() << "Throwing out:\n";
+    PreviousCopy->dump();
+    //PreviousCopy->eraseFromParent();
+    MaybeDeadCopies.insert(PreviousCopy);
+  } else {
+    llvm::errs() << "BADBADNOTGOOD\n";
+  }
+}
+
 void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
   if (!Tracker.hasAnyCopies())
     return;
@@ -1047,9 +1141,11 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     MachineBasicBlock &MBB) {
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
-
+  int i = 0;
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
     // Ignore non-trivial COPYs.
+    llvm::errs() << "### NEXT " << i++ << " :";
+    MI.dump();
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
     if (CopyOperands && MI.getNumOperands() == 2) {
@@ -1059,16 +1155,20 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
       if (!TRI->regsOverlap(DefReg, SrcReg)) {
         // Unlike forward cp, we don't invoke propagateDefs here,
         // just let forward cp do COPY-to-COPY propagation.
+
+        // TODO: Remove this
+        tryToCollapseCopies(MI);
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
-          Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
-          Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+          llvm::errs() << "Backward propagating\n";
+          // TODO add analysis call
+          
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
           continue;
         }
       }
     }
+
+    propagateDefs(MI);
 
     // Invalidate any earlyclobber regs first.
     for (const MachineOperand &MO : MI.operands())
@@ -1079,7 +1179,6 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
       }
 
-    propagateDefs(MI);
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;
@@ -1089,7 +1188,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
 
       if (MO.isDef())
         Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                   UseCopyInstr);
+                                   UseCopyInstr, &MI);
 
       if (MO.readsReg()) {
         if (MO.isDebug()) {
@@ -1103,7 +1202,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           }
         } else {
           Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
         }
       }
     }
@@ -1118,6 +1217,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
                                                   CopyDbgUsers[Copy].end());
 
     MRI->updateDbgUsersToReg(Src.asMCReg(), Def.asMCReg(), MaybeDeadDbgUsers);
+    llvm::errs() << "Erasing a dead copy:\n";
+    Copy->dump();
     Copy->eraseFromParent();
     ++NumDeletes;
   }
@@ -1476,6 +1577,8 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
     BackwardCopyPropagateBlock(MBB);
+    llvm::errs() << "Backward propagation ended. The MIR:\n";
+    MBB.dump();
     ForwardCopyPropagateBlock(MBB);
   }
 
