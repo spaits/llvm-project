@@ -124,6 +124,31 @@ static bool twoMIsHaveMutualOperandRegisters(const MachineInstr &MI1, const Mach
   return false;
 }
 
+static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
+  llvm::errs() << "Trying to move stuff\n";
+  llvm::MachineBasicBlock *MBB = A->getParent();
+assert(MBB == B->getParent() && "Both instructions must be in the same MachineBasicBlock");
+
+// Step 2: Find the iterator positions of A and B
+llvm::MachineBasicBlock::iterator APos = MBB->begin();
+llvm::MachineBasicBlock::iterator BPos = MBB->begin();
+
+for (auto it = MBB->begin(); it != MBB->end(); ++it) {
+    if (&*it == A) {
+        APos = it;
+    }
+    if (&*it == B) {
+        BPos = it;
+    }
+}
+
+assert(APos != MBB->end() && "Instruction A not found in the MachineBasicBlock");
+assert(BPos != MBB->end() && "Instruction B not found in the MachineBasicBlock");
+
+// Step 3: Move B after A
+MBB->splice(std::next(APos), MBB, BPos);
+}
+
 class CopyTracker {
   struct CopyInfo {
     MachineInstr *MI, *LastSeenUseInCopy;
@@ -1195,7 +1220,9 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
     if (auto DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(*PreviousCopy, *TRI, *TII, UseCopyInstr)) {
       llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
       //llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
-      (*DisablesPreviousCopy)[0].second->dump();
+      if (DisablesPreviousCopy->size() > 0) {
+        (*DisablesPreviousCopy)[0].second->dump();
+      }
     }
   }
 
@@ -1298,6 +1325,8 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
         Blocker->dump();
         if (!twoMIsHaveMutualOperandRegisters(MI, *Blocker)) {
           llvm::errs() << "NO DATA DEPENDENCY!\n";
+          // At this point we know that there is no data dependency between them.
+          moveBAfterA(Blocker, &MI);
         } else {
           llvm::errs() << "Data dep:\n";
           MI.dump();
@@ -1362,7 +1391,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
 
         // TODO: Remove this
         // CAUSES CRASH: Prob not invalidates correctly.
-        tryToCollapseCopies(MI);
+        //tryToCollapseCopies(MI);
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           llvm::errs() << "Backward propagating\n";
           // TODO add analysis call
