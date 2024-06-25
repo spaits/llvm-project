@@ -875,7 +875,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         if (VA.getLocInfo() == CCValAssign::Indirect)
           Handler.assignValueToAddress(ArgReg, StackAddr, PointerTy, MPO, VA);
         else
-          Handler.assignValueToAddress(Args[i], Part, StackAddr, MemTy, MPO, VA);
+          Handler.assignValueToAddress(Args[i], Part, StackAddr, MemTy, MPO,
+                                       VA);
       } else if (VA.isMemLoc() && Flags.isByVal()) {
         assert(Args[i].Regs.size() == 1 &&
                "didn't expect split byval pointer");

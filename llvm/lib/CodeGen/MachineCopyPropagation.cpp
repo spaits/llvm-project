@@ -55,6 +55,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -64,6 +65,7 @@
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/IR/FMF.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/MC/MCRegister.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -73,6 +75,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <iterator>
+#include <optional>
+#include <utility>
 
 using namespace llvm;
 
@@ -113,13 +117,26 @@ class CopyTracker {
     bool Avail;
     // Contain all the instructions that have ever invalidated a copy that.
     bool Valid;
-    llvm::SmallVector<MachineInstr *, 4> InvalidatedBy;
+    //llvm::SmallVector<MachineInstr *, 4> InvalidatedBy;
+    //llvm::SmallVector<std::pair<MCRegister, MachineInstr *>, 4> Dependencies;
+    bool CanNotBeCollapsed = false;
+    llvm::SmallVector<std::pair<MCRegister, MachineInstr *>> CannotCollapseBy;
   };
 
   DenseMap<MCRegister, CopyInfo> Copies;
   DenseMap<MCRegister, CopyInfo> InvalidatedCopies;
 
 public:
+
+  void dumpThisShit(const TargetRegisterInfo &TRI) {
+    for (auto c : Copies) {
+      llvm::errs() << "The reg " << printReg(c.getFirst(),&TRI) << "\n";
+      llvm::errs() << "A kibaszott cant collapse:\n";
+      for (auto fasz : c.second.CannotCollapseBy) {
+        fasz.second->dump();
+      }
+    }
+  }
   /// Mark all of the given registers and their subregisters as unavailable for
   /// copying.
   void markRegsUnavailable(ArrayRef<MCRegister> Regs,
@@ -132,6 +149,66 @@ public:
           CI->second.Avail = false;
       }
     }
+  }
+
+  // Basically signal to older copies that they can not be used for
+  // optimizations because the value was used as a source before the possible
+  // collapse.
+  void setCannotBeCollapsedBy(MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
+    std::optional<DestSourcePair> CopyOperands =
+                isCopyInstr(MI, TII, UseCopyInstr);
+    Register AvailSrc = CopyOperands->Source->getReg();
+    //Register AvailDef = CopyOperands->Destination->getReg();
+    MCRegister AsMcReg = AvailSrc.asMCReg();
+
+    auto CI = Copies.find(AvailSrc);
+    if (CI != Copies.end()) {
+      if (CI->second.MI) {
+      } else {
+      }
+      CI->second.CanNotBeCollapsed = true;
+      CI->second.CannotCollapseBy.push_back(std::make_pair(AvailSrc, &MI));
+    }
+    // NOTE: Does reg units work fine for riscv? According to this function
+    //       x10 consists of x11. It does not!
+    //for (MCRegUnit Unit : TRI.regunits(AsMcReg)) {
+    //  llvm::errs() << "Print a reg unit: " << printReg(AsMcReg, &TRI) << "\n"; 
+    //  auto CI = Copies.find(Unit);
+    //  if (CI != Copies.end()) {
+    //    llvm::errs() << "Using this shit: " << printReg(Unit, &TRI) << " " << printReg(AvailSrc, &TRI) << " " << printReg(AsMcReg, &TRI) << "\n";
+    //    llvm::errs() << "Setting can not be collapsed by:\n";
+    //    MI.dump();
+    //    llvm::errs() << "For\n";
+    //    if (CI->second.MI) {
+    //      CI->second.MI->dump();
+    //    } else {
+    //      llvm::errs() << "NO MI FOUND\n";
+    //    }
+    //    CI->second.CanNotBeCollapsed = true;
+    //    CI->second.CannotCollapseBy.push_back(std::make_pair(AvailSrc, &MI));
+    //  }
+    //}
+  }
+
+  
+  std::optional<llvm::SmallVector<std::pair<MCRegister, MachineInstr *>>> seeWhetherCopyCanBeCollapsed(MachineInstr &MI, const TargetRegisterInfo &TRI, const TargetInstrInfo &TII, bool UseCopyInstr) {
+    std::optional<DestSourcePair> CopyOperands =
+                isCopyInstr(MI, TII, UseCopyInstr);
+    Register AvailSrc = CopyOperands->Destination->getReg();
+    llvm::errs() << "Using this shit: " << printReg(AvailSrc, &TRI) << "\n";
+    //Register AvailDef = CopyOperands->Destination->getReg();
+    MCRegister AsMcReg = AvailSrc.asMCReg();
+    auto CI = Copies.find(AsMcReg);
+    if (CI == Copies.end()) {
+      llvm::errs() << "Cannot collapse by early return\n";
+      return {};
+    }
+    if (CI->second.DefRegs.size() != 1) {
+      llvm::errs() << "Cannot collapse by early return2\n";
+      return {};
+    }
+    llvm::errs() << "Returning CannotCollapseBy\n";
+    return CI->second.CannotCollapseBy;
   }
 
   /// Remove register from copy maps.
@@ -166,7 +243,7 @@ public:
       if (Copies.contains(Unit)) {
         llvm::errs() << "Moving stuff to invalids\n";
         Copies[Unit].Valid = false;
-        Copies[Unit].InvalidatedBy.push_back(Invalidator);
+        //Copies[Unit].InvalidatedBy.push_back(Invalidator);
         InvalidatedCopies.insert({Unit, Copies[Unit]});
       }
       Copies.erase(Unit);
@@ -246,24 +323,48 @@ public:
     MCRegister Def = CopyOperands->Destination->getReg().asMCReg();
 
     // Remember Def is defined by the copy.
-    for (MCRegUnit Unit : TRI.regunits(Def))
-      Copies[Unit] = {MI, nullptr, {}, true};
+    for (MCRegUnit Unit : TRI.regunits(Def)) {
+      llvm::errs() << "Src reconstr: " << printRegUnit(Unit, &TRI) << "\n";
+      if (Copies.contains(Unit)) {
+        llvm::errs() << "Fuck reconstr I save this shit.\n";
+        Copies[Unit].MI = MI;
+        Copies[Unit].LastSeenUseInCopy = nullptr;
+        Copies[Unit].DefRegs = {};
+        Copies[Unit].Avail = true;
+      } else {
+        Copies[Unit] = {MI, nullptr, {}, true};
+      }
+    }
+    //Copies[Unit].MI= MI;
 
     // Remember source that's copied to Def. Once it's clobbered, then
     // it's no longer available for copy propagation.
     for (MCRegUnit Unit : TRI.regunits(Src)) {
-      auto I = Copies.insert({Unit, {nullptr, nullptr, {}, false}});
+      llvm::errs() << "Def reconstr: " << printRegUnit(Unit, &TRI) << "\n";
+      bool egy = false;
+        llvm::SmallVector<std::pair<MCRegister, MachineInstr *>> ketto = {};
+      if (Copies.contains(Unit)) {
+        egy = Copies[Unit].CanNotBeCollapsed;
+        ketto =
+            Copies[Unit].CannotCollapseBy;
+      }
+      //CopyInfo{nullptr,nullptr,{},false, true,egy,ketto}
+      auto I = Copies.insert({Unit, {nullptr,nullptr,{},false, true,egy,ketto}});
       auto &Copy = I.first->second;
       if (!is_contained(Copy.DefRegs, Def))
         Copy.DefRegs.push_back(Def);
       Copy.LastSeenUseInCopy = MI;
     }
+    setCannotBeCollapsedBy(*MI, TII, TRI, UseCopyInstr);
   }
 
   bool hasAnyCopies() {
     return !Copies.empty();
   }
 
+  bool hasAnyInvalidCopies() {
+    return !InvalidatedCopies.empty();
+  }
 
   MachineInstr *findInvalidCopyForUnit(MCRegister RegUnit,
                                 const TargetRegisterInfo &TRI,
@@ -1037,14 +1138,36 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
     llvm::errs() << "Handler Has no copies\n";
 
   std::optional<DestSourcePair> CopyOperands = isCopyInstr(MI, *TII, UseCopyInstr);
+  //Tracker.setCannotBeCollapsedBy(MI, *TII, *TRI, UseCopyInstr);
 
   assert(CopyOperands && MI.getNumOperands() == 2);
 
   Register DefReg = CopyOperands->Destination->getReg();
   Register SrcReg = CopyOperands->Source->getReg();
 
+  // See that the value until here is used
+  //MachineInstr *PreviousCopyWhereSourceIsDest = Tracker.findCopyDefViaUnit(SrcReg.asMCReg(), *TRI);
+  //if (PreviousCopyWhereSourceIsDest) {
+  //  llvm::errs() << "Don't collapse copies like this\n";
+  //  llvm::errs() << "PreviousCopyWhereSourceIsDest:\n"; 
+  //  PreviousCopyWhereSourceIsDest->dump();
+  //  Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII, UseCopyInstr, &MI);
+  //}
+
   MachineInstr *PreviousCopy = Tracker.findAvailBackwardCopy(
         MI, DefReg.asMCReg(), *TRI, *TII, UseCopyInstr);
+  
+  if (PreviousCopy) {
+    llvm::errs() << "Previous copy was found\n";
+    PreviousCopy->dump();
+    // Check if previous copies have opt blockers
+    if (auto DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(*PreviousCopy, *TRI, *TII, UseCopyInstr)) {
+      llvm::errs() << "Dump the shit\n";
+      llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
+      (*DisablesPreviousCopy)[0].second->dump();
+    }
+  }
+
   if (!PreviousCopy) {
     MachineInstr *Idk = Tracker.findLastSeenUseInCopy(DefReg.asMCReg(), *TRI);
     if (Idk) {
@@ -1052,13 +1175,18 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
       Idk->dump();
       PreviousCopy = Idk;
     } else {
+      MachineInstr *Idk2 = Tracker.findLastSeenUseInInvalidCopy(DefReg.asMCReg(), *TRI); //Tracker.findLastSeenUseInCopy(DefReg.asMCReg(), *TRI);
+      if (Idk2) {
+        llvm::errs() << "IDK2 was found\n";
+        Idk2->dump();
+      }
       llvm::errs() << "Doesnt look that good\n";
       return;
     }
     llvm::errs() << "Could not found any copy\n";
   }
-  llvm::errs() << "DUMPDUMPDUMP\n";
-  PreviousCopy->dump();
+  //llvm::errs() << "DUMPDUMPDUMP\n";
+  //PreviousCopy->dump();
 
   std::optional<DestSourcePair> PreviousCopyOperands = isCopyInstr(*PreviousCopy, *TII, UseCopyInstr);
   const MachineOperand *PreviousCopySrc = PreviousCopyOperands->Source;
@@ -1073,6 +1201,7 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
     llvm::errs() << "Throwing out:\n";
     PreviousCopy->dump();
     //PreviousCopy->eraseFromParent();
+    // Jul 11
     MaybeDeadCopies.insert(PreviousCopy);
   } else {
     llvm::errs() << "BADBADNOTGOOD\n";
@@ -1080,8 +1209,10 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
 }
 
 void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
-  if (!Tracker.hasAnyCopies())
+  if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies()) {
+    llvm::errs() << "AAA\n";
     return;
+  }
 
   for (unsigned OpIdx = 0, OpEnd = MI.getNumOperands(); OpIdx != OpEnd;
        ++OpIdx) {
@@ -1103,8 +1234,16 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
 
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
-    if (!Copy)
+    if (!Copy) {
+      MachineInstr *InavCopy = Tracker.findInvalidCopyDefViaUnit(MODef.getReg(), *TRI);
+        if (InavCopy) {
+          llvm::errs() << "Inav Copy found\n";
+          InavCopy->dump();
+        } else {
+          llvm::errs() << "AAAAAAAAAAAAAAAA\n";
+        }
       continue;
+    }
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
@@ -1157,12 +1296,14 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // just let forward cp do COPY-to-COPY propagation.
 
         // TODO: Remove this
+        // CAUSES CRASH: Prob not invalidates correctly.
         tryToCollapseCopies(MI);
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           llvm::errs() << "Backward propagating\n";
           // TODO add analysis call
           
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
+          llvm::errs() << "Fuck the shit\n";
           continue;
         }
       }
@@ -1574,6 +1715,8 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
 
   for (MachineBasicBlock &MBB : MF) {
+    // TODO: Spillage optimization could maybe be moved into the already
+    //       existing traversal.
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
     BackwardCopyPropagateBlock(MBB);

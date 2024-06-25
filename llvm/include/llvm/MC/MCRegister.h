@@ -11,6 +11,7 @@
 
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <limits>
 
