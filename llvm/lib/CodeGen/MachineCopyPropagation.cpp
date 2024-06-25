@@ -131,6 +131,12 @@ public:
   void dumpThisShit(const TargetRegisterInfo &TRI) {
     for (auto c : Copies) {
       llvm::errs() << "The reg " << printReg(c.getFirst(),&TRI) << "\n";
+      llvm::errs() << "The MI:\n";
+      if (auto a = c.second.MI) {
+        a->dump();
+      } else {
+        llvm::errs() << "No mi\n";
+      }
       llvm::errs() << "A kibaszott cant collapse:\n";
       for (auto fasz : c.second.CannotCollapseBy) {
         fasz.second->dump();
@@ -160,14 +166,25 @@ public:
     Register AvailSrc = CopyOperands->Source->getReg();
     //Register AvailDef = CopyOperands->Destination->getReg();
     MCRegister AsMcReg = AvailSrc.asMCReg();
-
+    llvm::errs() << "Setting cannot be collapsed by\n";
+    //llvm::errs() << "The current state of copies:\n";
+    //dumpThisShit(TRI);
+    //llvm::errs() << "\n";
     auto CI = Copies.find(AvailSrc);
     if (CI != Copies.end()) {
+      llvm::errs() << "Found cannot be collapsed by:\n";
       if (CI->second.MI) {
+        llvm::errs() << "This: " << printReg(AvailSrc, &TRI) << "\n";
+        CI->second.MI->dump();
       } else {
+        llvm::errs() << "NO MI\n";
       }
+      llvm::errs() << "Cannot be collpsed because of:\n";
+      MI.dump();
       CI->second.CanNotBeCollapsed = true;
       CI->second.CannotCollapseBy.push_back(std::make_pair(AvailSrc, &MI));
+    } else {
+      llvm::errs() << "No collapse is blocked\n";
     }
     // NOTE: Does reg units work fine for riscv? According to this function
     //       x10 consists of x11. It does not!
@@ -195,10 +212,10 @@ public:
     std::optional<DestSourcePair> CopyOperands =
                 isCopyInstr(MI, TII, UseCopyInstr);
     Register AvailSrc = CopyOperands->Destination->getReg();
-    llvm::errs() << "Using this shit: " << printReg(AvailSrc, &TRI) << "\n";
+ //   llvm::errs() << "Using this shit: " << printReg(AvailSrc, &TRI) << "\n";
     //Register AvailDef = CopyOperands->Destination->getReg();
     MCRegister AsMcReg = AvailSrc.asMCReg();
-    auto CI = Copies.find(AsMcReg);
+    auto CI = Copies.find(AvailSrc);
     if (CI == Copies.end()) {
       llvm::errs() << "Cannot collapse by early return\n";
       return {};
@@ -207,7 +224,6 @@ public:
       llvm::errs() << "Cannot collapse by early return2\n";
       return {};
     }
-    llvm::errs() << "Returning CannotCollapseBy\n";
     return CI->second.CannotCollapseBy;
   }
 
@@ -324,9 +340,7 @@ public:
 
     // Remember Def is defined by the copy.
     for (MCRegUnit Unit : TRI.regunits(Def)) {
-      llvm::errs() << "Src reconstr: " << printRegUnit(Unit, &TRI) << "\n";
       if (Copies.contains(Unit)) {
-        llvm::errs() << "Fuck reconstr I save this shit.\n";
         Copies[Unit].MI = MI;
         Copies[Unit].LastSeenUseInCopy = nullptr;
         Copies[Unit].DefRegs = {};
@@ -340,7 +354,6 @@ public:
     // Remember source that's copied to Def. Once it's clobbered, then
     // it's no longer available for copy propagation.
     for (MCRegUnit Unit : TRI.regunits(Src)) {
-      llvm::errs() << "Def reconstr: " << printRegUnit(Unit, &TRI) << "\n";
       bool egy = false;
         llvm::SmallVector<std::pair<MCRegister, MachineInstr *>> ketto = {};
       if (Copies.contains(Unit)) {
@@ -1162,8 +1175,8 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
     PreviousCopy->dump();
     // Check if previous copies have opt blockers
     if (auto DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(*PreviousCopy, *TRI, *TII, UseCopyInstr)) {
-      llvm::errs() << "Dump the shit\n";
-      llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
+      llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
+      //llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
       (*DisablesPreviousCopy)[0].second->dump();
     }
   }
@@ -1188,27 +1201,30 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
   //llvm::errs() << "DUMPDUMPDUMP\n";
   //PreviousCopy->dump();
 
-  std::optional<DestSourcePair> PreviousCopyOperands = isCopyInstr(*PreviousCopy, *TII, UseCopyInstr);
-  const MachineOperand *PreviousCopySrc = PreviousCopyOperands->Source;
-  Register PreviousCopyDest = PreviousCopyOperands->Destination->getReg();
-  // Make sure we don't corrupt the data flow by removing a data from the register
-  // that would be propagated forward in that register.
-  if (PreviousCopySrc->isKill() && PreviousCopySrc->isRenamable()) {
-    llvm::errs() << "OKOKOK\n";
-    MI.getOperand(0).setReg(PreviousCopyDest);
-    llvm::errs() << "New MI:\n";
-    MI.dump();
-    llvm::errs() << "Throwing out:\n";
-    PreviousCopy->dump();
-    //PreviousCopy->eraseFromParent();
-    // Jul 11
-    MaybeDeadCopies.insert(PreviousCopy);
-  } else {
-    llvm::errs() << "BADBADNOTGOOD\n";
-  }
+  // Collapses the working case
+  //std::optional<DestSourcePair> PreviousCopyOperands = isCopyInstr(*PreviousCopy, *TII, UseCopyInstr);
+  //const MachineOperand *PreviousCopySrc = PreviousCopyOperands->Source;
+  //Register PreviousCopyDest = PreviousCopyOperands->Destination->getReg();
+  //// Make sure we don't corrupt the data flow by removing a data from the register
+  //// that would be propagated forward in that register.
+  //if (PreviousCopySrc->isKill() && PreviousCopySrc->isRenamable()) {
+  //  llvm::errs() << "OKOKOK\n";
+  //  MI.getOperand(0).setReg(PreviousCopyDest);
+  //  llvm::errs() << "New MI:\n";
+  //  MI.dump();
+  //  llvm::errs() << "Throwing out:\n";
+  //  PreviousCopy->dump();
+  //  //PreviousCopy->eraseFromParent();
+  //  // Jul 11
+  //  MaybeDeadCopies.insert(PreviousCopy);
+  //} else {
+  //  llvm::errs() << "BADBADNOTGOOD\n";
+  //}
 }
 
 void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
+  llvm::errs() << "Trying to propagate defs.\n";
+  MI.dump();
   if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies()) {
     llvm::errs() << "AAA\n";
     return;
@@ -1218,20 +1234,23 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
        ++OpIdx) {
     MachineOperand &MODef = MI.getOperand(OpIdx);
 
-    if (!MODef.isReg() || MODef.isUse())
+    if (!MODef.isReg() || MODef.isUse()) {
       continue;
+    }
 
     // Ignore non-trivial cases.
-    if (MODef.isTied() || MODef.isUndef() || MODef.isImplicit())
+    if (MODef.isTied() || MODef.isUndef() || MODef.isImplicit()) {
       continue;
+    }
 
-    if (!MODef.getReg())
+    if (!MODef.getReg()) {
       continue;
+    }
 
     // We only handle if the register comes from a vreg.
-    if (!MODef.isRenamable())
+    if (!MODef.isRenamable()) {
       continue;
-
+    }
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
     if (!Copy) {
@@ -1242,8 +1261,27 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
         } else {
           llvm::errs() << "AAAAAAAAAAAAAAAA\n";
         }
+      llvm::errs() << "Nothing found\n";
       continue;
     }
+    llvm::errs() << "Got a Copy:\n";
+    Copy->dump();
+
+
+  if (Copy) {
+    llvm::errs() << "Previous copy was found\n";
+    Copy->dump();
+    // Check if previous copies have opt blockers
+    if (auto DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(*Copy, *TRI, *TII, UseCopyInstr)) {
+      llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
+      llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
+      (*DisablesPreviousCopy)[0].second->dump();
+    }
+  }
+
+
+
+
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
@@ -1303,22 +1341,23 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           // TODO add analysis call
           
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
-          llvm::errs() << "Fuck the shit\n";
+          Tracker.setCannotBeCollapsedBy(MI, *TII, *TRI, UseCopyInstr);
           continue;
         }
+        Tracker.setCannotBeCollapsedBy(MI, *TII, *TRI, UseCopyInstr);
       }
     }
 
     propagateDefs(MI);
 
     // Invalidate any earlyclobber regs first.
-    for (const MachineOperand &MO : MI.operands())
-      if (MO.isReg() && MO.isEarlyClobber()) {
-        MCRegister Reg = MO.getReg().asMCReg();
-        if (!Reg)
-          continue;
-        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
-      }
+    //for (const MachineOperand &MO : MI.operands())
+    //  if (MO.isReg() && MO.isEarlyClobber()) {
+    //    MCRegister Reg = MO.getReg().asMCReg();
+    //    if (!Reg)
+    //      continue;
+    //    Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
+    //  }
 
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
@@ -1327,9 +1366,9 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
       if (!MO.getReg())
         continue;
 
-      if (MO.isDef())
-        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                   UseCopyInstr, &MI);
+//      if (MO.isDef())
+//        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
+//                                   UseCopyInstr, &MI);
 
       if (MO.readsReg()) {
         if (MO.isDebug()) {
@@ -1342,8 +1381,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
             }
           }
         } else {
-          Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, &MI);
+  //        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
+  //                                   UseCopyInstr, &MI);
         }
       }
     }
