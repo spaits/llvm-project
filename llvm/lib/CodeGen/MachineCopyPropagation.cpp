@@ -73,6 +73,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugCounter.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <iterator>
 #include <optional>
@@ -110,6 +111,19 @@ static std::optional<DestSourcePair> isCopyInstr(const MachineInstr &MI,
   return std::nullopt;
 }
 
+static bool twoMIsHaveMutualOperandRegisters(const MachineInstr &MI1, const MachineInstr &MI2) {
+  for (int i = 0; i < MI1.getNumOperands(); i++) {
+    for (int j = 0; j < MI2.getNumOperands(); j++) {
+      auto MI1OP = MI1.getOperand(i);
+      auto MI2OP = MI2.getOperand(j);
+      if (MI1OP.isReg() && MI2OP.isReg() && MI1OP.getReg() == MI2OP.getReg()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 class CopyTracker {
   struct CopyInfo {
     MachineInstr *MI, *LastSeenUseInCopy;
@@ -129,6 +143,7 @@ class CopyTracker {
 public:
 
   void dumpThisShit(const TargetRegisterInfo &TRI) {
+    llvm::errs() << "-- Dump start --\n";
     for (auto c : Copies) {
       llvm::errs() << "The reg " << printReg(c.getFirst(),&TRI) << "\n";
       llvm::errs() << "The MI:\n";
@@ -142,6 +157,7 @@ public:
         fasz.second->dump();
       }
     }
+    llvm::errs() << "-- Dump end --\n";
   }
   /// Mark all of the given registers and their subregisters as unavailable for
   /// copying.
@@ -216,8 +232,10 @@ public:
     //Register AvailDef = CopyOperands->Destination->getReg();
     MCRegister AsMcReg = AvailSrc.asMCReg();
     auto CI = Copies.find(AvailSrc);
+    MI.dump();
+    llvm::errs() << "Searching for disabled by with: " << printReg(AvailSrc, &TRI) << "\n";
     if (CI == Copies.end()) {
-      llvm::errs() << "Cannot collapse by early return\n";
+      llvm::errs() << "Cannot collapse by early return SIZE\n";
       return {};
     }
     if (CI->second.DefRegs.size() != 1) {
@@ -337,7 +355,7 @@ public:
 
     MCRegister Src = CopyOperands->Source->getReg().asMCReg();
     MCRegister Def = CopyOperands->Destination->getReg().asMCReg();
-
+    setCannotBeCollapsedBy(*MI, TII, TRI, UseCopyInstr);
     // Remember Def is defined by the copy.
     for (MCRegUnit Unit : TRI.regunits(Def)) {
       if (Copies.contains(Unit)) {
@@ -1275,13 +1293,22 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (auto DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(*Copy, *TRI, *TII, UseCopyInstr)) {
       llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
       llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
-      (*DisablesPreviousCopy)[0].second->dump();
+      if (DisablesPreviousCopy->size() > 0) {
+        auto *Blocker = (*DisablesPreviousCopy)[0/*DisablesPreviousCopy->size() - 1*/].second;
+        Blocker->dump();
+        if (!twoMIsHaveMutualOperandRegisters(MI, *Blocker)) {
+          llvm::errs() << "NO DATA DEPENDENCY!\n";
+        } else {
+          llvm::errs() << "Data dep:\n";
+          MI.dump();
+          Blocker->dump();
+        }
+        // Now check if the blocker has a blocker;
+        // Decide if the two has mutual registers
+        
+      }
     }
   }
-
-
-
-
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
@@ -1341,7 +1368,6 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           // TODO add analysis call
           
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
-          Tracker.setCannotBeCollapsedBy(MI, *TII, *TRI, UseCopyInstr);
           continue;
         }
         Tracker.setCannotBeCollapsedBy(MI, *TII, *TRI, UseCopyInstr);
