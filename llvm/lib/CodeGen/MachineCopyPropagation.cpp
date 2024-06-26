@@ -72,6 +72,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugCounter.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -155,7 +156,7 @@ class CopyTracker {
     SmallVector<MCRegister, 4> DefRegs;
     bool Avail;
     // Contain all the instructions that have ever invalidated a copy that.
-    bool Valid;
+    bool Valid = true;
     //llvm::SmallVector<MachineInstr *, 4> InvalidatedBy;
     //llvm::SmallVector<std::pair<MCRegister, MachineInstr *>, 4> Dependencies;
     bool CanNotBeCollapsed = false;
@@ -341,7 +342,7 @@ public:
         //Copies[Unit].InvalidatedBy.push_back(Invalidator);
         InvalidatedCopies.insert({Unit, Copies[Unit]});
       }
-      Copies.erase(Unit);
+      //Copies.erase(Unit);
     }
       
   }
@@ -420,10 +421,11 @@ public:
     // Remember Def is defined by the copy.
     for (MCRegUnit Unit : TRI.regunits(Def)) {
       if (Copies.contains(Unit)) {
-        Copies[Unit].MI = MI;
-        Copies[Unit].LastSeenUseInCopy = nullptr;
-        Copies[Unit].DefRegs = {};
-        Copies[Unit].Avail = true;
+        //Copies[Unit].MI = MI;
+        //Copies[Unit].LastSeenUseInCopy = nullptr;
+        //Copies[Unit].DefRegs = {};
+        //Copies[Unit].Avail = true;
+        Copies[Unit] = {MI, nullptr, {}, true};
       } else {
         Copies[Unit] = {MI, nullptr, {}, true};
       }
@@ -433,15 +435,17 @@ public:
     // Remember source that's copied to Def. Once it's clobbered, then
     // it's no longer available for copy propagation.
     for (MCRegUnit Unit : TRI.regunits(Src)) {
-      bool egy = false;
+      bool egy = true;
         llvm::SmallVector<std::pair<MCRegister, MachineInstr *>> ketto = {};
-      if (Copies.contains(Unit)) {
-        egy = Copies[Unit].CanNotBeCollapsed;
-        ketto =
-            Copies[Unit].CannotCollapseBy;
-      }
+      //if (Copies.contains(Unit)) {
+      //  egy = Copies[Unit].CanNotBeCollapsed;
+      //  ketto =
+      //      Copies[Unit].CannotCollapseBy;
+      //}
       //CopyInfo{nullptr,nullptr,{},false, true,egy,ketto}
-      auto I = Copies.insert({Unit, {nullptr,nullptr,{},false, true,egy,ketto}});
+
+      //Set before 1 to true.
+      auto I = Copies.insert({Unit, {nullptr,nullptr,{},false, false,egy,ketto}});
       auto &Copy = I.first->second;
       if (!is_contained(Copy.DefRegs, Def))
         Copy.DefRegs.push_back(Def);
@@ -491,13 +495,19 @@ public:
     return CI->second.MI;
   }
 
+  // TODO: Maybe use types to signal validity of copy with std::variant and the
+  //       using keyword.  
   MachineInstr *findCopyDefViaUnit(MCRegister RegUnit,
-                                   const TargetRegisterInfo &TRI) {
+                                   const TargetRegisterInfo &TRI,
+                                   bool OnlyValid = false) {
     auto CI = Copies.find(RegUnit);
     if (CI == Copies.end())
       return nullptr;
     if (CI->second.DefRegs.size() != 1)
       return nullptr;
+    if (OnlyValid && !CI->second.Valid)
+      return nullptr;
+
     MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
     return findCopyForUnit(RU, TRI, true);
   }
@@ -1359,7 +1369,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
                   *Copy, *TRI, *TII, UseCopyInstr);
           DisablesPreviousCopy.has_value()) {
         llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
-        llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
+        llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size() << "\n";
         if (DisablesPreviousCopy->size() > 0) {
           auto *Blocker = (*DisablesPreviousCopy)[0/*DisablesPreviousCopy->size() - 1*/].second;
           Blocker->dump();
@@ -1374,6 +1384,9 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
           }
           // Now check if the blocker has a blocker;
           // Decide if the two has mutual registers
+        } else {
+          // TODO: Not enough information here
+          continue;
         }
       }
     }
@@ -1431,6 +1444,9 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // TODO: Remove this
         // CAUSES CRASH: Prob not invalidates correctly.
         //tryToCollapseCopies(MI);
+
+        // If the copy is not a data source for the copy chain, then track the
+        // copy.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           llvm::errs() << "Backward propagating\n";
           // TODO add analysis call
@@ -1445,13 +1461,15 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     propagateDefs(MI);
 
     // Invalidate any earlyclobber regs first.
-    //for (const MachineOperand &MO : MI.operands())
-    //  if (MO.isReg() && MO.isEarlyClobber()) {
-    //    MCRegister Reg = MO.getReg().asMCReg();
-    //    if (!Reg)
-    //      continue;
-    //    Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
-    //  }
+    // Can be reintroduced
+    for (const MachineOperand &MO : MI.operands())
+      if (MO.isReg() && MO.isEarlyClobber()) {
+        MCRegister Reg = MO.getReg().asMCReg();
+        if (!Reg)
+          continue;
+        // TODO: Use new invalidation method
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
+      }
 
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
@@ -1459,10 +1477,13 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
 
       if (!MO.getReg())
         continue;
-
-//      if (MO.isDef())
-//        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-//                                   UseCopyInstr, &MI);
+      
+      // Cannot be reintroduced
+      // TODO: Try is copy in the conditions
+      if (MO.isDef())
+      //&& CopyOperands && MI.getNumOperands() == 2
+        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
+                                   UseCopyInstr, &MI);
 
       if (MO.readsReg()) {
         if (MO.isDebug()) {
@@ -1475,8 +1496,9 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
             }
           }
         } else {
-  //        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-  //                                   UseCopyInstr, &MI);
+          // CANNOT BE REINTRODUCED
+          Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
+                                     UseCopyInstr, &MI);
         }
       }
     }
