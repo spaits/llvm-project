@@ -128,26 +128,25 @@ static bool twoMIsHaveMutualOperandRegisters(const MachineInstr &MI1, const Mach
 static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
   llvm::errs() << "Trying to move stuff\n";
   llvm::MachineBasicBlock *MBB = A->getParent();
-assert(MBB == B->getParent() && "Both instructions must be in the same MachineBasicBlock");
+  assert(MBB == B->getParent() && "Both instructions must be in the same MachineBasicBlock");
 
-// Step 2: Find the iterator positions of A and B
-llvm::MachineBasicBlock::iterator APos = MBB->begin();
-llvm::MachineBasicBlock::iterator BPos = MBB->begin();
+  llvm::MachineBasicBlock::iterator APos = MBB->begin();
+  llvm::MachineBasicBlock::iterator BPos = MBB->begin();
 
-for (auto it = MBB->begin(); it != MBB->end(); ++it) {
+  for (auto it = MBB->begin(); it != MBB->end(); ++it) {
     if (&*it == A) {
         APos = it;
     }
     if (&*it == B) {
         BPos = it;
     }
-}
+  }
 
-assert(APos != MBB->end() && "Instruction A not found in the MachineBasicBlock");
-assert(BPos != MBB->end() && "Instruction B not found in the MachineBasicBlock");
+  assert(APos != MBB->end() && "Instruction A not found in the MachineBasicBlock");
+  assert(BPos != MBB->end() && "Instruction B not found in the MachineBasicBlock");
 
-// Step 3: Move B after A
-MBB->splice(std::next(APos), MBB, BPos);
+  // Step 3: Move B after A
+  MBB->splice(std::next(APos), MBB, BPos);
 }
 
 class CopyTracker {
@@ -178,9 +177,9 @@ public:
       } else {
         llvm::errs() << "No mi\n";
       }
-      llvm::errs() << "A kibaszott cant collapse:\n";
-      for (auto fasz : c.second.CannotCollapseBy) {
-        fasz.second->dump();
+      llvm::errs() << "The cant collapse:\n";
+      for (auto e : c.second.CannotCollapseBy) {
+        e.second->dump();
       }
     }
     llvm::errs() << "-- Dump end --\n";
@@ -308,6 +307,7 @@ public:
   }
 
   /// Remove register from copy maps.
+  /// ONLY USED FOR BACKWARD PROPAGATION
   void invalidateRegister(MCRegister Reg, const TargetRegisterInfo &TRI,
                           const TargetInstrInfo &TII, bool UseCopyInstr, MachineInstr *Invalidator = nullptr) {
     // Since Reg might be a subreg of some registers, only invalidate Reg is not
