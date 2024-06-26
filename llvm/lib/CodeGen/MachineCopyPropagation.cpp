@@ -207,7 +207,7 @@ public:
     Register AvailSrc = CopyOperands->Source->getReg();
     //Register AvailDef = CopyOperands->Destination->getReg();
     MCRegister AsMcReg = AvailSrc.asMCReg();
-    llvm::errs() << "Setting cannot be collapsed by\n";
+    llvm::errs() << "Setting cannot be collapsed by using " << printReg(AvailSrc, &TRI) << " not " << printReg(AsMcReg, &TRI)  << "\n";
     //llvm::errs() << "The current state of copies:\n";
     //dumpThisShit(TRI);
     //llvm::errs() << "\n";
@@ -225,7 +225,27 @@ public:
       CI->second.CanNotBeCollapsed = true;
       CI->second.CannotCollapseBy.push_back(std::make_pair(AvailSrc, &MI));
     } else {
-      llvm::errs() << "No collapse is blocked\n";
+      llvm::errs() << "No collapse is blocked by big reg trying parts\n";
+      for (MCRegUnit Unit : TRI.regunits(AsMcReg)) {
+        llvm::errs() << "Using reg unit for search: " << printReg(Unit, &TRI) << "\n";
+        auto CI = Copies.find(Unit);
+        if (CI != Copies.end()) {
+          llvm::errs() << "Now blocked\n";
+          CI->second.CanNotBeCollapsed = true;
+          CI->second.CannotCollapseBy.push_back(std::make_pair(AvailSrc, &MI));
+
+          llvm::errs() << "Found cannot be collapsed by:\n";
+          if (CI->second.MI) {
+            llvm::errs() << "This: " << printReg(AvailSrc, &TRI) << "\n";
+            CI->second.MI->dump();
+          } else {
+            llvm::errs() << "NO MI\n";
+          }
+        } else {
+          llvm::errs() << "Still nothing\n";
+        }
+      }
+      //dumpThisShit(TRI);
     }
     // NOTE: Does reg units work fine for riscv? According to this function
     //       x10 consists of x11. It does not!
@@ -248,24 +268,40 @@ public:
     //}
   }
 
-  
-  std::optional<llvm::SmallVector<std::pair<MCRegister, MachineInstr *>>> seeWhetherCopyCanBeCollapsed(MachineInstr &MI, const TargetRegisterInfo &TRI, const TargetInstrInfo &TII, bool UseCopyInstr) {
+  std::optional<llvm::SmallVector<std::pair<MCRegister, MachineInstr *>>>
+  seeWhetherCopyCanBeCollapsed(MachineInstr &MI, const TargetRegisterInfo &TRI,
+                               const TargetInstrInfo &TII, bool UseCopyInstr) {
     std::optional<DestSourcePair> CopyOperands =
-                isCopyInstr(MI, TII, UseCopyInstr);
+        isCopyInstr(MI, TII, UseCopyInstr);
     Register AvailSrc = CopyOperands->Destination->getReg();
- //   llvm::errs() << "Using this shit: " << printReg(AvailSrc, &TRI) << "\n";
-    //Register AvailDef = CopyOperands->Destination->getReg();
     MCRegister AsMcReg = AvailSrc.asMCReg();
     auto CI = Copies.find(AvailSrc);
     MI.dump();
-    llvm::errs() << "Searching for disabled by with: " << printReg(AvailSrc, &TRI) << "\n";
+    llvm::errs() << "Searching for disabled by with: "
+                 << printReg(AvailSrc, &TRI) << "\n";
     if (CI == Copies.end()) {
       llvm::errs() << "Cannot collapse by early return SIZE\n";
-      return {};
-    }
-    if (CI->second.DefRegs.size() != 1) {
-      llvm::errs() << "Cannot collapse by early return2\n";
-      return {};
+      for (MCRegUnit Unit : TRI.regunits(AsMcReg)) {
+        {
+          llvm::errs() << "Using reg unit for search: " << printReg(Unit, &TRI)
+                       << "\n";
+          auto CI = Copies.find(Unit);
+          if (CI != Copies.end()) {
+            llvm::errs() << "Now blocked\n";
+            return CI->second.CannotCollapseBy;
+          } else {
+            llvm::errs() << "Still nothing\n";
+            return {};
+          }
+        }
+        llvm::errs() << "Shall try with reg units\n";
+        return {};
+      }
+
+      if (CI->second.DefRegs.size() != 1) {
+        llvm::errs() << "Cannot collapse by early return2\n";
+        return {};
+      }
     }
     return CI->second.CannotCollapseBy;
   }
@@ -1313,31 +1349,34 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     Copy->dump();
 
 
-  if (Copy) {
-    llvm::errs() << "Previous copy was found\n";
-    Copy->dump();
-    // Check if previous copies have opt blockers
-    if (auto DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(*Copy, *TRI, *TII, UseCopyInstr)) {
-      llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
-      llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
-      if (DisablesPreviousCopy->size() > 0) {
-        auto *Blocker = (*DisablesPreviousCopy)[0/*DisablesPreviousCopy->size() - 1*/].second;
-        Blocker->dump();
-        if (!twoMIsHaveMutualOperandRegisters(MI, *Blocker)) {
-          llvm::errs() << "NO DATA DEPENDENCY!\n";
-          // At this point we know that there is no data dependency between them.
-          moveBAfterA(Blocker, &MI);
-        } else {
-          llvm::errs() << "Data dep:\n";
-          MI.dump();
+    if (Copy) {
+      llvm::errs() << "Previous copy was found\n";
+      Copy->dump();
+      // Check if previous copies have opt blockers
+      if (std::optional<
+              llvm::SmallVector<std::pair<MCRegister, MachineInstr *>>>
+              DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(
+                  *Copy, *TRI, *TII, UseCopyInstr);
+          DisablesPreviousCopy.has_value()) {
+        llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
+        llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size()<< "\n";
+        if (DisablesPreviousCopy->size() > 0) {
+          auto *Blocker = (*DisablesPreviousCopy)[0/*DisablesPreviousCopy->size() - 1*/].second;
           Blocker->dump();
+          if (!twoMIsHaveMutualOperandRegisters(MI, *Blocker)) {
+            llvm::errs() << "NO DATA DEPENDENCY!\n";
+            // At this point we know that there is no data dependency between them.
+            moveBAfterA(Blocker, &MI);
+          } else {
+            llvm::errs() << "Data dep:\n";
+            MI.dump();
+            Blocker->dump();
+          }
+          // Now check if the blocker has a blocker;
+          // Decide if the two has mutual registers
         }
-        // Now check if the blocker has a blocker;
-        // Decide if the two has mutual registers
-        
       }
     }
-  }
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
