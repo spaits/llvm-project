@@ -1387,6 +1387,8 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
           } else {
             continue;
           }
+        } else {
+          continue;
         }
       } else {
         continue;

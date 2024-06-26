@@ -659,12 +659,11 @@ define i64 @smin_i64_negone(i64 %a) {
 ;
 ; RV32ZBB-LABEL: smin_i64_negone:
 ; RV32ZBB:       # %bb.0:
-; RV32ZBB-NEXT:    li a2, -1
-; RV32ZBB-NEXT:    min a2, a1, a2
+; RV32ZBB-NEXT:    li a1, -1
+; RV32ZBB-NEXT:    min a1, a1, a2
 ; RV32ZBB-NEXT:    slti a1, a1, 0
 ; RV32ZBB-NEXT:    addi a1, a1, -1
 ; RV32ZBB-NEXT:    or a0, a1, a0
-; RV32ZBB-NEXT:    mv a1, a2
 ; RV32ZBB-NEXT:    ret
 ;
 ; RV64ZBB-LABEL: smin_i64_negone:
