@@ -500,6 +500,7 @@ public:
   //       using keyword.  
   MachineInstr *findCopyDefViaUnit(MCRegister RegUnit,
                                    const TargetRegisterInfo &TRI,
+                                   // Shall this not be false by default?
                                    bool MustBeAvailable = true) {
     auto CI = Copies.find(RegUnit);
     if (CI == Copies.end())
@@ -518,6 +519,7 @@ public:
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII,
                                       bool UseCopyInstr,
+                                      // This should be true by default
                                       bool MustBeAvailable = false) {
     MCRegUnit RU = *TRI.regunits(Reg).begin();
     MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI, MustBeAvailable);
@@ -1345,54 +1347,53 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (!MODef.isRenamable()) {
       continue;
     }
+
+    // Try to find an available copy first.
     MachineInstr *Copy = Tracker.findBackwardCopy(
-        MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr, false);
+        MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr, true);
     if (!Copy) {
-      MachineInstr *InavCopy = Tracker.findInvalidCopyDefViaUnit(MODef.getReg(), *TRI);
-      if (InavCopy) {
-        llvm::errs() << "Inav Copy found\n";
-        InavCopy->dump();
-      } else {
-        llvm::errs() << "AAAAAAAAAAAAAAAA\n";
-      }
-      llvm::errs() << "Nothing found\n";
-      continue;
-    }
-    llvm::errs() << "Got a Copy:\n";
-    Copy->dump();
-
-
-    if (Copy) {
-      llvm::errs() << "Previous copy was found\n";
-      Copy->dump();
-      // Check if previous copies have opt blockers
-      if (std::optional<
+      //MachineInstr *InavCopy = Tracker.findInvalidCopyDefViaUnit(MODef.getReg(), *TRI);
+      //if (InavCopy) {
+      //  llvm::errs() << "Inav Copy found\n";
+      //  InavCopy->dump();
+      //} else {
+      //  llvm::errs() << "AAAAAAAAAAAAAAAA\n";
+      //}
+      //llvm::errs() << "Nothing found\n";
+      //continue;
+      Copy = Tracker.findBackwardCopy(MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr, false);
+      if (Copy) {
+        if (std::optional<
               llvm::SmallVector<std::pair<MCRegister, MachineInstr *>>>
               DisablesPreviousCopy = Tracker.seeWhetherCopyCanBeCollapsed(
                   *Copy, *TRI, *TII, UseCopyInstr);
           DisablesPreviousCopy.has_value()) {
-        llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
-        llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size() << "\n";
-        if (DisablesPreviousCopy->size() > 0) {
-          auto *Blocker = (*DisablesPreviousCopy)[0/*DisablesPreviousCopy->size() - 1*/].second;
-          Blocker->dump();
-          if (!twoMIsHaveMutualOperandRegisters(MI, *Blocker)) {
-            llvm::errs() << "NO DATA DEPENDENCY!\n";
-            // At this point we know that there is no data dependency between them.
-            moveBAfterA(Blocker, &MI);
-          } else {
-            llvm::errs() << "Data dep:\n";
-            MI.dump();
+          llvm::errs() << "Previous copy can not be collapsed, because there is:\n";
+          llvm::errs() << "LETSGOOO " << DisablesPreviousCopy->size() << "\n";
+          if (DisablesPreviousCopy->size() > 0) {
+            auto *Blocker = (*DisablesPreviousCopy)[0/*DisablesPreviousCopy->size() - 1*/].second;
             Blocker->dump();
+            if (!twoMIsHaveMutualOperandRegisters(MI, *Blocker)) {
+              llvm::errs() << "NO DATA DEPENDENCY!\n";
+              // At this point we know that there is no data dependency between them.
+              moveBAfterA(Blocker, &MI);
+            } else {
+              llvm::errs() << "Data dep:\n";
+              MI.dump();
+              Blocker->dump();
+            }
+            // Now check if the blocker has a blocker;
+            // Decide if the two has mutual registers
+          } else {
+            continue;
           }
-          // Now check if the blocker has a blocker;
-          // Decide if the two has mutual registers
-        } else {
-          // TODO: Not enough information here
-          continue;
         }
+      } else {
+        continue;
       }
     }
+    llvm::errs() << "Got a Copy:\n";
+    Copy->dump();    
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
