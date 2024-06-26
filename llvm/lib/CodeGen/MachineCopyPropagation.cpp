@@ -338,7 +338,8 @@ public:
     for (MCRegUnit Unit : RegUnitsToInvalidate) {
       if (Copies.contains(Unit)) {
         llvm::errs() << "Moving stuff to invalids\n";
-        Copies[Unit].Valid = false;
+        // It may be avail but valid
+        Copies[Unit].Avail = false;
         //Copies[Unit].InvalidatedBy.push_back(Invalidator);
         InvalidatedCopies.insert({Unit, Copies[Unit]});
       }
@@ -499,25 +500,27 @@ public:
   //       using keyword.  
   MachineInstr *findCopyDefViaUnit(MCRegister RegUnit,
                                    const TargetRegisterInfo &TRI,
-                                   bool OnlyValid = false) {
+                                   bool MustBeAvailable = true) {
     auto CI = Copies.find(RegUnit);
     if (CI == Copies.end())
       return nullptr;
     if (CI->second.DefRegs.size() != 1)
       return nullptr;
-    if (OnlyValid && !CI->second.Valid)
+    // It may be avail but valid
+    if (MustBeAvailable && !CI->second.Avail)
       return nullptr;
 
     MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
-    return findCopyForUnit(RU, TRI, true);
+    return findCopyForUnit(RU, TRI, MustBeAvailable);
   }
 
-  MachineInstr *findAvailBackwardCopy(MachineInstr &I, MCRegister Reg,
+  MachineInstr *findBackwardCopy(MachineInstr &I, MCRegister Reg,
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII,
-                                      bool UseCopyInstr) {
+                                      bool UseCopyInstr,
+                                      bool MustBeAvailable = false) {
     MCRegUnit RU = *TRI.regunits(Reg).begin();
-    MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI);
+    MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI, MustBeAvailable);
 
     if (!AvailCopy)
       return nullptr;
@@ -1256,7 +1259,7 @@ void MachineCopyPropagation::tryToCollapseCopies(MachineInstr &MI) {
   //  Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII, UseCopyInstr, &MI);
   //}
 
-  MachineInstr *PreviousCopy = Tracker.findAvailBackwardCopy(
+  MachineInstr *PreviousCopy = Tracker.findBackwardCopy(
         MI, DefReg.asMCReg(), *TRI, *TII, UseCopyInstr);
   
   if (PreviousCopy) {
@@ -1342,16 +1345,16 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (!MODef.isRenamable()) {
       continue;
     }
-    MachineInstr *Copy = Tracker.findAvailBackwardCopy(
-        MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
+    MachineInstr *Copy = Tracker.findBackwardCopy(
+        MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr, false);
     if (!Copy) {
       MachineInstr *InavCopy = Tracker.findInvalidCopyDefViaUnit(MODef.getReg(), *TRI);
-        if (InavCopy) {
-          llvm::errs() << "Inav Copy found\n";
-          InavCopy->dump();
-        } else {
-          llvm::errs() << "AAAAAAAAAAAAAAAA\n";
-        }
+      if (InavCopy) {
+        llvm::errs() << "Inav Copy found\n";
+        InavCopy->dump();
+      } else {
+        llvm::errs() << "AAAAAAAAAAAAAAAA\n";
+      }
       llvm::errs() << "Nothing found\n";
       continue;
     }
