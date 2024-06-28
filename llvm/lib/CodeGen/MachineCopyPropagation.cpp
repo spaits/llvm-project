@@ -294,6 +294,8 @@ public:
     return {};
   }
 
+  // NOTE: This only sets data dependencies for copes that are in the Copies
+  //       map. No analysis is done for other instructions.
   void setDataDependenciesForOnesBefore(MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
     //llvm::errs() << "Setting the data dependencies using MI:\n";
     //MI.dump();
@@ -323,6 +325,29 @@ public:
       }
       llvm::errs() << "SHALL NOT BE HERE\n";
     }
+  }
+
+  bool hasDataDependency(MachineInstr &MI, const TargetInstrInfo &TII,
+                         const TargetRegisterInfo &TRI, bool UseCopyInstr) {
+    for (int i = 0; i < MI.getNumOperands(); i++) {
+      auto Op = MI.getOperand(i);
+      if (!Op.isReg())
+        continue;
+      auto Reg = MI.getOperand(i).getReg();
+      if (!Reg)
+        continue;
+      auto McReg = Reg.asMCReg();
+      if (!McReg)
+        continue;
+      
+      for (MCRegUnit Unit : TRI.regunits(McReg)) {
+        auto CI = Copies.find(Unit);
+        if (CI != Copies.end() && (CI->second.DefinedPreviously || CI->second.UsedPreviously)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// Remove register from copy maps.
@@ -1272,11 +1297,16 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
         continue;
       }
 
+      //bool HasNonCopyDependency = std::any_of(DisablesPreviousCopy->begin(), DisablesPreviousCopy->end(), [&](auto Elem) {return isCopyInstr(*(Elem.second), *TII, UseCopyInstr);});
+      //bool HasDependentInstruction = std::any_of(DisablesPreviousCopy->begin(), DisablesPreviousCopy->end(), [&](auto Elem) {return Tracker.hasDataDependency(*(Elem.second), *TII, *TRI, UseCopyInstr);});
+
       // TODO used the last elem instead
       auto *Blocker =
-          (*DisablesPreviousCopy)[0 /*DisablesPreviousCopy->size() - 1*/]
+          (*DisablesPreviousCopy)[ DisablesPreviousCopy->size() - 1]
               .second;
-      if (twoMIsHaveMutualOperandRegisters(MI, *Blocker, TRI)) {
+
+      // Is has dependency even needed?
+      if (twoMIsHaveMutualOperandRegisters(MI, *Blocker, TRI) && Tracker.hasDataDependency(*Blocker, *TII, *TRI, UseCopyInstr)) {
         llvm::errs() << "The two MI have dependency on each other\n";
         continue;
       }
