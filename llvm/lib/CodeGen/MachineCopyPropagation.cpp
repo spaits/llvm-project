@@ -191,46 +191,60 @@ public:
     }
   }
 
-  void setLaterDefinesForReg(Register Reg, MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
-    MCRegister AsMcReg = Reg.asMCReg();
-    llvm::errs() << "See where " << printReg(Reg, &TRI) << " is defined\n";
+  void setLaterDefinesForReg(int Idx, MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
+    MCRegister AsMcReg = MI.getOperand(Idx).getReg().asMCReg();
+    llvm::errs() << "See where " << printReg(AsMcReg, &TRI) << " is defined\n";
 
     for (MCRegUnit Unit : TRI.regunits(AsMcReg)) {
       auto CI = Copies.find(Unit);
       if (CI != Copies.end()) {
         llvm::errs() << "Mark setLaterDefines " << printRegUnit(CI->first, &TRI) << " " << printReg(Unit, &TRI) << "\n";
-        CI->second.DefinesPreviously.push_back(std::make_pair(Reg, &MI));
+        CI->second.DefinesPreviously.push_back(std::make_pair(AsMcReg, &MI));
         CI->second.DefinedPreviously = true;
 
         llvm::errs() << "DEFINES:\n";
         MI.dump();
         llvm::errs() << "Is a data dependency of:\n";
         auto *Tmp = CI->second.MI;
-        if (Tmp) {
-          Tmp->dump();
-        } else {
-          llvm::errs() << "COULDNT BE PRINTED\n";
+        if (!Tmp) {
+          continue;
         }
-
+        Tmp->dump();
         //if ((!Copies[Unit].Avail && Copies[Unit].HoldsValueToBeUsed))
         //  Copies.erase(Unit);
+
+        for (int i = 0; i < Tmp->getNumOperands(); i++) {
+          if (!Tmp->getOperand(i).isReg())
+            continue;
+
+          auto MR = Tmp->getOperand(i).getReg().asMCReg();
+          if (!MR)
+            continue;
+          for (MCRegUnit Unit2 : TRI.regunits(MR)) {
+            auto CI2 = Copies.find(Unit2);
+            if (CI2 != Copies.end() && Unit != Unit2) {
+              CI->second.DefinesPreviously.push_back(std::make_pair(AsMcReg, &MI));
+              CI->second.DefinedPreviously = true;
+            }
+          }
+        }
       }
     }
   }
 
-  void setLaterUsersForReg(Register Reg, MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
-    MCRegister AsMcReg = Reg.asMCReg();
+  void setLaterUsersForReg(int Idx, MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
+    MCRegister AsMcReg = MI.getOperand(Idx).getReg().asMCReg();
     if (!AsMcReg) {
       llvm::errs() << "No mc register\n";
       return;
     }
-    llvm::errs() << "See where " << printReg(Reg, &TRI) << " is used\n";
+    llvm::errs() << "See where " << printReg(AsMcReg, &TRI) << " is used\n";
     for (MCRegUnit Unit : TRI.regunits(AsMcReg)) {
       // DONT FIND BUT FILTER
       auto CI = Copies.find(Unit);
       if (CI != Copies.end()) {
         llvm::errs() << "Mark setLaterUsers " << printRegUnit(CI->first, &TRI) << " " << printReg(Unit, &TRI) << "\n";
-        CI->second.UsesPreviously.push_back(std::make_pair(Reg, &MI));
+        CI->second.UsesPreviously.push_back(std::make_pair(AsMcReg, &MI));
         CI->second.UsedPreviously = true;
         //if ((!Copies[Unit].Avail && Copies[Unit].HoldsValueToBeUsed))
         //  Copies.erase(Unit);
@@ -239,10 +253,25 @@ public:
         MI.dump();
         llvm::errs() << "Is a data dependency of:\n";
         auto *Tmp = CI->second.MI;
-        if (Tmp) {
-          Tmp->dump();
-        } else {
-          llvm::errs() << "COULDNT BE PRINTED\n";
+        if (!Tmp) {
+          continue;
+        }
+        Tmp->dump();
+        for (int i = 0; i < Tmp->getNumOperands(); i++) {
+          if ( !Tmp->getOperand(i).isReg())
+            continue;
+
+          auto MR = Tmp->getOperand(i).getReg().asMCReg();
+          llvm::errs() << "Also set use for " << printReg(MR, &TRI) << "\n";
+          if (!MR)
+            continue;
+          for (MCRegUnit Unit2 : TRI.regunits(MR)) {
+            auto CI2 = Copies.find(Unit2);
+            if (CI2 != Copies.end() && Unit != Unit2) {
+              CI2->second.UsesPreviously.push_back(std::make_pair(AsMcReg, &MI));
+              CI2->second.UsedPreviously = true;
+            }
+          }
         }
       }
     }
@@ -282,14 +311,14 @@ public:
       if (Operand.isReg() && Operand.isDef()) {
         // Set def data dependency
         //llvm::errs() << "Setting data for defines called\n";
-        setLaterDefinesForReg(Operand.getReg(), MI, TII, TRI, UseCopyInstr);
+        setLaterDefinesForReg(i, MI, TII, TRI, UseCopyInstr);
         continue;
       }
 
       if (Operand.isReg() && Operand.isUse()) {
         // Set use data dependency
         //llvm::errs() << "Setting data for uses called\n";
-        setLaterUsersForReg(Operand.getReg(), MI, TII, TRI, UseCopyInstr);
+        setLaterUsersForReg(i, MI, TII, TRI, UseCopyInstr);
         continue;
       }
       llvm::errs() << "SHALL NOT BE HERE\n";
@@ -1339,7 +1368,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
 
     propagateDefs(MI);
     Tracker.setDataDependenciesForOnesBefore(MI, *TII, *TRI, UseCopyInstr);
-    
+
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;
