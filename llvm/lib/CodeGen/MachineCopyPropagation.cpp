@@ -101,6 +101,16 @@ static cl::opt<cl::boolOrDefault>
 
 namespace {
 
+static bool hasOverlap2(const MachineInstr &MI,
+                                const Register &Use,
+                                const TargetRegisterInfo *TRI) {
+  for (const MachineOperand &MIUse : MI.operands())
+    if (MIUse.isReg() && TRI->regsOverlap(Use, MIUse.getReg()))
+      return true;
+
+  return false;
+}
+
 static std::optional<DestSourcePair> isCopyInstr(const MachineInstr &MI,
                                                  const TargetInstrInfo &TII,
                                                  bool UseCopyInstr) {
@@ -187,9 +197,11 @@ public:
         llvm::errs() << "  No MI found\n";
       }
       llvm::errs() << "  Used Previously: " << i.second.UsedPreviously << "  Defined previously: " << i.second.DefinedPreviously << "\n";
+      
     }
     llvm::errs() << "-- Dumping copies END --\n";
   }
+
   /// Mark all of the given registers and their subregisters as unavailable for
   /// copying.
   void markRegsUnavailable(ArrayRef<MCRegister> Regs,
@@ -210,6 +222,7 @@ public:
       return;
 
     for (MCRegUnit Unit : TRI.regunits(AsMcReg)) {
+      // If any copy opts last seen in use is defined here, then 
       auto CI = Copies.find(Unit);
       if (CI != Copies.end()) {
         CI->second.DefinesPreviously.push_back(std::make_pair(AsMcReg, &MI));
@@ -239,6 +252,24 @@ public:
         }
       }
     }
+
+    llvm::SmallVector<std::pair<MCRegister, MachineInstr *>> laterPushBack;
+    for (auto i : Copies) {
+      for (auto j : i.second.DefinesPreviously) {
+        if (hasOverlap2(*(j.second),MI.getOperand(Idx).getReg(), &TRI)) {
+          laterPushBack.push_back(std::make_pair(AsMcReg, &MI));
+        }
+      }
+      for (auto j : i.second.UsesPreviously) {
+        if (hasOverlap2(*(j.second),MI.getOperand(Idx).getReg(), &TRI)) {
+          laterPushBack.push_back(std::make_pair(AsMcReg, &MI));
+        }
+      }
+      for (auto elem : laterPushBack) {
+        i.second.DefinesPreviously.push_back(elem);
+      }
+    }
+
   }
 
   void setLaterUsersForReg(int Idx, MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
@@ -281,6 +312,24 @@ public:
         }
       }
     }
+
+    llvm::SmallVector<std::pair<MCRegister, MachineInstr *>> laterPushBack;
+    // Early ret if cont
+    for (auto i : Copies) {
+      for (auto j : i.second.UsesPreviously) {
+        if (hasOverlap2(*(j.second),MI.getOperand(Idx).getReg(), &TRI)) {
+          laterPushBack.push_back(std::make_pair(AsMcReg, &MI));
+        }
+      }
+      for (auto j : i.second.DefinesPreviously) {
+        if (hasOverlap2(*(j.second),MI.getOperand(Idx).getReg(), &TRI)) {
+          laterPushBack.push_back(std::make_pair(AsMcReg, &MI));
+        }
+      }
+      for (auto elem : laterPushBack) {
+        i.second.UsesPreviously.push_back(elem);
+      }
+    }
   }
 
   std::optional<llvm::SmallVector<std::pair<MCRegister, MachineInstr *>>>
@@ -303,8 +352,8 @@ public:
   // NOTE: This only sets data dependencies for copes that are in the Copies
   //       map. No analysis is done for other instructions.
   void setDataDependenciesForOnesBefore(MachineInstr &MI, const TargetInstrInfo &TII, const TargetRegisterInfo &TRI, bool UseCopyInstr) {
-    //llvm::errs() << "Setting the data dependencies using MI:\n";
-    //MI.dump();
+    llvm::errs() << "Setting the data dependencies using MI:\n";
+    MI.dump();
 
     for (int i = 0; i < MI.getNumOperands(); i++) {
       MachineOperand Operand = MI.getOperand(i);
