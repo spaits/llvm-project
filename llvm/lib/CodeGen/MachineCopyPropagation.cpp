@@ -362,13 +362,16 @@ public:
     }
   }
 
-  std::optional<llvm::SmallVector<Blocker *>> getFirstPreviousUseOfAnyRegisterInMI(MachineInstr *MI, const TargetRegisterInfo &TRI) {
+  std::optional<llvm::SmallVector<Blocker *>>
+  getFirstPreviousUseOfAnyRegisterInMI(MachineInstr *MI,
+                                       const TargetRegisterInfo &TRI) {
     for (auto OP : MI->operands()) {
       if (!OP.isReg()) {
         continue;
       }
       auto OpReg = OP.getReg();
-      //llvm::errs() << "Next reg for dep search: " << printReg(OpReg, &TRI) << "\n";
+      // llvm::errs() << "Next reg for dep search: " << printReg(OpReg, &TRI) <<
+      // "\n";
 
       auto OpMCReg = OpReg.asMCReg();
       if (!OpMCReg)
@@ -378,16 +381,46 @@ public:
       for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
         auto CI = Copies.find(OpUnit);
         if (CI != Copies.end()) {
-          for(auto Blocker : CI->second.UsedBy) {
+          for (Blocker *Blocker : CI->second.UsedBy) {
             Blockers.push_back(Blocker);
           }
         }
       }
-      return std::optional<llvm::SmallVector<Blocker *>>{Blockers};
+
+      return Blockers;
     }
     return {};
   }
 
+  std::optional<llvm::SmallVector<Blocker *>>
+  getFirstPreviousDefOfAnyRegisterInMI(MachineInstr *MI,
+                                       const TargetRegisterInfo &TRI) {
+    for (auto OP : MI->operands()) {
+      if (!OP.isReg()) {
+        continue;
+      }
+      auto OpReg = OP.getReg();
+      // llvm::errs() << "Next reg for dep search: " << printReg(OpReg, &TRI) <<
+      // "\n";
+
+      auto OpMCReg = OpReg.asMCReg();
+      if (!OpMCReg)
+        continue;
+
+      llvm::SmallVector<Blocker *> Blockers;
+      for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
+        auto CI = Copies.find(OpUnit);
+        if (CI != Copies.end()) {
+          for (Blocker *Blocker : CI->second.DefinedBy) {
+            Blockers.push_back(Blocker);
+          }
+        }
+      }
+
+      return Blockers;
+    }
+    return {};
+  }
 
   /// Add this copy's registers into the tracker's copy maps.
   void trackCopy(MachineInstr *MI, const TargetRegisterInfo &TRI,
@@ -1188,14 +1221,39 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
       continue;
     }
 
+    auto depDefs = Tracker.getFirstPreviousDefOfAnyRegisterInMI(Copy, *TRI);
+    if (!depDefs) {
+      llvm::errs() << "NO depDefs\n";
+      continue;
+    }
+
+    if (depDefs->size() > 0) {
+      Tracker.invalidateRegister(MODef.getReg(), *TRI, *TII, UseCopyInstr);
+      continue;
+    }
+
     //llvm::errs() << "Got the optional: " << a->size() << "\n";
     // TODO: dont just check the last one
-    if (a->size() > 0) {
+    
+    // For now let's just deal with only one dependency
+    // TODO: It would be easy to extend it to top level dependencies
+    if (a->size() == 1) {
       //llvm::errs() << "YEAAAHHHH\n";
-      if (!twoMIsHaveMutualOperandRegisters(MI, *(*a)[(*a).size() - 1]->MI, TRI))
+      if (!twoMIsHaveMutualOperandRegisters(MI, *(*a)[(*a).size() - 1]->MI, TRI)) {
+        llvm::errs() << "The number of dependencies: " << a->size() << "\n";
+        llvm::errs() << "The MI:\n";
+        MI.dump();
+        llvm::errs() << "The copy found:\n";
+        Copy->dump();
+        llvm::errs() << "The blocker:\n";
+        (*a)[(*a).size() - 1]->MI->dump();
+
         moveBAfterA((*a)[(*a).size() - 1]->MI, &MI);
+      }
       else
         continue;
+    } else if (a->size() > 1) {
+      continue;
     }
 
     //for (auto i : (*a)) {
@@ -1255,12 +1313,12 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // Unlike forward cp, we don't invoke propagateDefs here,
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
+
+          // TODO Make a function that sets all of these 
           Tracker.setUsesForMI(&MI, *TRI, *TII, UseCopyInstr);
-          //Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-          //                           UseCopyInstr);
-          //Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
-          //                           UseCopyInstr);
+          Tracker.setDefinesForMI(&MI, *TRI, *TII, UseCopyInstr);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
+
           continue;
         }
       }
