@@ -4953,12 +4953,12 @@ define void @cmpxchg_i64_acquire_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a5, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 2
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a5
 ; RV32I-NEXT:    li a5, 0
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
@@ -4970,12 +4970,12 @@ define void @cmpxchg_i64_acquire_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a5, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 2
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a5
 ; RV32IA-NEXT:    li a5, 0
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
@@ -5046,13 +5046,13 @@ define void @cmpxchg_i64_acquire_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a6, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 2
 ; RV32I-NEXT:    li a5, 2
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a6
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
 ; RV32I-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5063,13 +5063,13 @@ define void @cmpxchg_i64_acquire_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a6, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 2
 ; RV32IA-NEXT:    li a5, 2
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a6
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
 ; RV32IA-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5139,12 +5139,12 @@ define void @cmpxchg_i64_release_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a5, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 3
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a5
 ; RV32I-NEXT:    li a5, 0
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
@@ -5156,12 +5156,12 @@ define void @cmpxchg_i64_release_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a5, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 3
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a5
 ; RV32IA-NEXT:    li a5, 0
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
@@ -5232,13 +5232,13 @@ define void @cmpxchg_i64_release_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a6, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 3
 ; RV32I-NEXT:    li a5, 2
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a6
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
 ; RV32I-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5249,13 +5249,13 @@ define void @cmpxchg_i64_release_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a6, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 3
 ; RV32IA-NEXT:    li a5, 2
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a6
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
 ; RV32IA-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5325,12 +5325,12 @@ define void @cmpxchg_i64_acq_rel_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a5, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 4
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a5
 ; RV32I-NEXT:    li a5, 0
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
@@ -5342,12 +5342,12 @@ define void @cmpxchg_i64_acq_rel_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a5, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 4
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a5
 ; RV32IA-NEXT:    li a5, 0
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
@@ -5418,13 +5418,13 @@ define void @cmpxchg_i64_acq_rel_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a6, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 4
 ; RV32I-NEXT:    li a5, 2
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a6
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
 ; RV32I-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5435,13 +5435,13 @@ define void @cmpxchg_i64_acq_rel_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a6, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 4
 ; RV32IA-NEXT:    li a5, 2
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a6
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
 ; RV32IA-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5511,12 +5511,12 @@ define void @cmpxchg_i64_seq_cst_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a5, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 5
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a5
 ; RV32I-NEXT:    li a5, 0
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
@@ -5528,12 +5528,12 @@ define void @cmpxchg_i64_seq_cst_monotonic(ptr %ptr, i64 %cmp, i64 %val) nounwin
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a5, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 5
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a5
 ; RV32IA-NEXT:    li a5, 0
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
@@ -5604,13 +5604,13 @@ define void @cmpxchg_i64_seq_cst_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a6, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 5
 ; RV32I-NEXT:    li a5, 2
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a6
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
 ; RV32I-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5621,13 +5621,13 @@ define void @cmpxchg_i64_seq_cst_acquire(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a6, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 5
 ; RV32IA-NEXT:    li a5, 2
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a6
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
 ; RV32IA-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5697,13 +5697,13 @@ define void @cmpxchg_i64_seq_cst_seq_cst(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32I:       # %bb.0:
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32I-NEXT:    mv a2, a3
+; RV32I-NEXT:    sw a3, 4(sp)
 ; RV32I-NEXT:    mv a6, a4
-; RV32I-NEXT:    sw a2, 4(sp)
 ; RV32I-NEXT:    sw a1, 0(sp)
 ; RV32I-NEXT:    mv a1, sp
 ; RV32I-NEXT:    li a4, 5
 ; RV32I-NEXT:    li a5, 5
-; RV32I-NEXT:    mv a2, a3
 ; RV32I-NEXT:    mv a3, a6
 ; RV32I-NEXT:    call __atomic_compare_exchange_8
 ; RV32I-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload
@@ -5714,13 +5714,13 @@ define void @cmpxchg_i64_seq_cst_seq_cst(ptr %ptr, i64 %cmp, i64 %val) nounwind 
 ; RV32IA:       # %bb.0:
 ; RV32IA-NEXT:    addi sp, sp, -16
 ; RV32IA-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
+; RV32IA-NEXT:    mv a2, a3
+; RV32IA-NEXT:    sw a3, 4(sp)
 ; RV32IA-NEXT:    mv a6, a4
-; RV32IA-NEXT:    sw a2, 4(sp)
 ; RV32IA-NEXT:    sw a1, 0(sp)
 ; RV32IA-NEXT:    mv a1, sp
 ; RV32IA-NEXT:    li a4, 5
 ; RV32IA-NEXT:    li a5, 5
-; RV32IA-NEXT:    mv a2, a3
 ; RV32IA-NEXT:    mv a3, a6
 ; RV32IA-NEXT:    call __atomic_compare_exchange_8
 ; RV32IA-NEXT:    lw ra, 12(sp) # 4-byte Folded Reload

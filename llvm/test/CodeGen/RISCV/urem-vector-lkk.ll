@@ -789,9 +789,9 @@ define <4 x i64> @dont_fold_urem_i64(<4 x i64> %x) nounwind {
 ; RV32I-NEXT:    lw s3, 20(a1)
 ; RV32I-NEXT:    lw s4, 8(a1)
 ; RV32I-NEXT:    lw s5, 12(a1)
-; RV32I-NEXT:    lw a1, 4(a1)
 ; RV32I-NEXT:    mv s6, a0
 ; RV32I-NEXT:    lw a0, 0(a1)
+; RV32I-NEXT:    lw a1, 4(a1)
 ; RV32I-NEXT:    li a2, 1
 ; RV32I-NEXT:    li a3, 0
 ; RV32I-NEXT:    call __umoddi3
@@ -857,9 +857,9 @@ define <4 x i64> @dont_fold_urem_i64(<4 x i64> %x) nounwind {
 ; RV32IM-NEXT:    lw s3, 20(a1)
 ; RV32IM-NEXT:    lw s4, 8(a1)
 ; RV32IM-NEXT:    lw s5, 12(a1)
-; RV32IM-NEXT:    lw a1, 4(a1)
 ; RV32IM-NEXT:    mv s6, a0
 ; RV32IM-NEXT:    lw a0, 0(a1)
+; RV32IM-NEXT:    lw a1, 4(a1)
 ; RV32IM-NEXT:    li a2, 1
 ; RV32IM-NEXT:    li a3, 0
 ; RV32IM-NEXT:    call __umoddi3
