@@ -1376,10 +1376,10 @@ define { double, i32 } @test_frexp_f64_i32(double %a) nounwind {
 ; RV32I-NEXT:    addi sp, sp, -16
 ; RV32I-NEXT:    sw ra, 12(sp) # 4-byte Folded Spill
 ; RV32I-NEXT:    sw s0, 8(sp) # 4-byte Folded Spill
-; RV32I-NEXT:    mv a0, a1
 ; RV32I-NEXT:    mv a3, a2
 ; RV32I-NEXT:    mv s0, a0
 ; RV32I-NEXT:    addi a2, sp, 4
+; RV32I-NEXT:    mv a0, a1
 ; RV32I-NEXT:    mv a1, a3
 ; RV32I-NEXT:    call frexp
 ; RV32I-NEXT:    lw a2, 4(sp)
@@ -1598,10 +1598,10 @@ define { fp128, i32 } @test_frexp_f128_i32(fp128 %a) nounwind {
 ; RV64IFD-NEXT:    addi sp, sp, -32
 ; RV64IFD-NEXT:    sd ra, 24(sp) # 8-byte Folded Spill
 ; RV64IFD-NEXT:    sd s0, 16(sp) # 8-byte Folded Spill
-; RV64IFD-NEXT:    mv a0, a1
 ; RV64IFD-NEXT:    mv a3, a2
 ; RV64IFD-NEXT:    mv s0, a0
 ; RV64IFD-NEXT:    addi a2, sp, 12
+; RV64IFD-NEXT:    mv a0, a1
 ; RV64IFD-NEXT:    mv a1, a3
 ; RV64IFD-NEXT:    call frexpl
 ; RV64IFD-NEXT:    lw a2, 12(sp)
@@ -1651,10 +1651,10 @@ define { fp128, i32 } @test_frexp_f128_i32(fp128 %a) nounwind {
 ; RV64IZFINXZDINX-NEXT:    addi sp, sp, -32
 ; RV64IZFINXZDINX-NEXT:    sd ra, 24(sp) # 8-byte Folded Spill
 ; RV64IZFINXZDINX-NEXT:    sd s0, 16(sp) # 8-byte Folded Spill
-; RV64IZFINXZDINX-NEXT:    mv a0, a1
 ; RV64IZFINXZDINX-NEXT:    mv a3, a2
 ; RV64IZFINXZDINX-NEXT:    mv s0, a0
 ; RV64IZFINXZDINX-NEXT:    addi a2, sp, 12
+; RV64IZFINXZDINX-NEXT:    mv a0, a1
 ; RV64IZFINXZDINX-NEXT:    mv a1, a3
 ; RV64IZFINXZDINX-NEXT:    call frexpl
 ; RV64IZFINXZDINX-NEXT:    lw a2, 12(sp)
@@ -1704,10 +1704,10 @@ define { fp128, i32 } @test_frexp_f128_i32(fp128 %a) nounwind {
 ; RV64I-NEXT:    addi sp, sp, -32
 ; RV64I-NEXT:    sd ra, 24(sp) # 8-byte Folded Spill
 ; RV64I-NEXT:    sd s0, 16(sp) # 8-byte Folded Spill
-; RV64I-NEXT:    mv a0, a1
 ; RV64I-NEXT:    mv a3, a2
 ; RV64I-NEXT:    mv s0, a0
 ; RV64I-NEXT:    addi a2, sp, 12
+; RV64I-NEXT:    mv a0, a1
 ; RV64I-NEXT:    mv a1, a3
 ; RV64I-NEXT:    call frexpl
 ; RV64I-NEXT:    lw a2, 12(sp)

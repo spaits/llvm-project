@@ -118,21 +118,21 @@ static bool hasOverlap(const MachineInstr &MI, Register &Use, const TargetRegist
 }
 
 static bool twoMIsHaveMutualOperandRegisters(const MachineInstr &MI1, const MachineInstr &MI2, const TargetRegisterInfo *TRI) {
-  llvm::errs() << "See if ";
-  MI1.dump();
-  llvm::errs() << "has mutual reg with: ";
-  MI2.dump();
+  //llvm::errs() << "See if ";
+  //MI1.dump();
+  //llvm::errs() << "has mutual reg with: ";
+  //MI2.dump();
   for (int i = 0; i < MI1.getNumOperands(); i++) {
     for (int j = 0; j < MI2.getNumOperands(); j++) {
       auto MI1OP = MI1.getOperand(i);
       auto MI2OP = MI2.getOperand(j);
       if (MI1OP.isReg() && MI2OP.isReg() && TRI->regsOverlap(MI1OP.getReg(), MI2OP.getReg())) {
-        llvm::errs() << "They have mutal dep\n";
+        //llvm::errs() << "They have mutal dep\n";
         return true;
       }
     }
   }
-  llvm::errs() << "They dont have\n";
+  //llvm::errs() << "They dont have\n";
   return false;
 }
 
@@ -156,13 +156,13 @@ static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
   //assert(BPos != MBB->end() && "Instruction B not found in the MachineBasicBlock");
   // Step 3: Move B after A
   //MBB->splice(std::next(APos), MBB, BPos);
-  llvm::errs() << "Why cant I move?\n";
-  B->dump();
-  A->dump();
+  //llvm::errs() << "Why cant I move?\n";
+  //B->dump();
+  //A->dump();
 
   MBB->remove(B);
   MBB->insertAfter(--A->getIterator(), B);
-  MBB->dump();
+  //MBB->dump();
 }
 
 
@@ -191,6 +191,18 @@ class CopyTracker {
   DenseMap<MachineInstr*, Blocker> Blockers;
 
 public:
+  void dumpBlockers() {
+    llvm::errs() << "-- Dumping blockers BEGIN --\n";
+    for (auto i : Blockers) {
+      llvm::errs() << "MI (Key):\n";
+      i.first->dump();
+      llvm::errs() << "The values:\nMI:\n";
+      i.second.MI->dump();
+      llvm::errs() << "Used before: " << i.second.UsedPreviously << " Defined Before: " << i.second.DefinedPreviously << "\n\n";
+    }
+    llvm::errs() << "-- Dumping blockers END --\n";
+
+  }
   /// Mark all of the given registers and their subregisters as unavailable for
   /// copying.
   void markRegsUnavailable(ArrayRef<MCRegister> Regs,
@@ -302,18 +314,19 @@ public:
     }
   }
 
+  // FIXME : llvm/test/CodeGen/RISCV/rvv/fixed-vectors-interleaved-access-zve32x.ll doesnt work
   void setUsesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
                     const TargetInstrInfo &TII, bool UseCopyInstr) {
-    llvm::errs() << "Setting instructions blocked\n";
-    MI->dump();
+    //llvm::errs() << "Setting instructions blocked\n";
+    //MI->dump();
     for (llvm::MachineOperand UsedOperand : MI->uses()) {
       if (!UsedOperand.isReg()) {
-        return;
+        continue;
       }
       Register UsedOpReg = UsedOperand.getReg();
       MCRegister UsedOpMCReg = UsedOpReg.asMCReg();
       if (!UsedOpMCReg)
-        return;
+        continue;
 
       for (MCRegUnit UsedOPMcRegUnit : TRI.regunits(UsedOpMCReg)) {
         // Set up the first level of the dependency tree
@@ -336,9 +349,11 @@ public:
       }
     }
 
-    for (auto dep : Blockers) {
+    for (auto &&dep : Blockers) {
       if (twoMIsHaveMutualOperandRegisters(*dep.second.MI, *MI, &TRI)) {
-        dep.second.UsedPreviously = true;
+        //llvm::errs() << "Setting the shit if not eq\n";
+        if (dep.second.MI != MI)
+          dep.second.UsedPreviously = true;
       }
     }
   }
@@ -349,12 +364,12 @@ public:
     for (llvm::MachineOperand DefinedOperand : MI->defs()) {
       // Erase the uses
       if (!DefinedOperand.isReg()) {
-        return;
+        continue;
       }
       Register DefinedOpReg = DefinedOperand.getReg();
       MCRegister DefinedOpMCReg = DefinedOpReg.asMCReg();
       if (!DefinedOpMCReg)
-        return;
+        continue;
 
       for (MCRegUnit DefinedOPMcRegUnit : TRI.regunits(DefinedOpMCReg)) {
         auto CopyThatDependsOnIt = Copies.find(DefinedOPMcRegUnit);
@@ -363,8 +378,8 @@ public:
         }
       }
 
-      for (auto dep : Blockers) {
-        if (twoMIsHaveMutualOperandRegisters(*dep.second.MI, *MI, &TRI)) {
+      for (auto &&dep : Blockers) {
+        if (twoMIsHaveMutualOperandRegisters(*dep.second.MI, *MI, &TRI) && dep.second.MI != MI) {
           dep.second.DefinedPreviously = true;
         }
       }
@@ -418,24 +433,25 @@ public:
       if (!OpMCReg)
         continue;
 
-      llvm::SmallVector<Blocker *> Blockers;
+      llvm::SmallVector<Blocker *> Blockers2;
       for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
         auto CI = Copies.find(OpUnit);
         if (CI != Copies.end()) {
           for (Blocker *Blocker : CI->second.UsedBy) {
-            if (!Blocker->UsedPreviously && !Blocker->DefinedPreviously && !Blocker->OtherDeps) {
-              llvm::errs() << "Clean previous use was found\n";
-              Blockers.push_back(Blocker);
+            auto InBlockers = Blockers.find(Blocker->MI);
+            if (!InBlockers->second.UsedPreviously && !InBlockers->second.DefinedPreviously && !InBlockers->second.OtherDeps) {
+              //llvm::errs() << "Clean previous use was found\n";
+              Blockers2.push_back(Blocker);
             }
             else {
-              llvm::errs() << "Too much dependency\n";
+              //llvm::errs() << "Too much dependency\n";
               return {};
             }
           }
         }
       }
 
-      return Blockers;
+      return Blockers2;
     }
     return {};
   }
@@ -1263,20 +1279,22 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (!Copy)
       continue;
 
-    auto a = Tracker.getFirstPreviousUseOfAnyRegisterInMI(Copy, *TRI);
-    if (!a) {
-      //llvm::errs() << "Cant even get the optional\n";
-      continue;
-    }
+    
 
     auto depDefs = Tracker.getFirstPreviousDefOfAnyRegisterInMI(Copy, *TRI);
     if (!depDefs) {
-      llvm::errs() << "NO depDefs\n";
+      //llvm::errs() << "NO depDefs\n";
       continue;
     }
 
     if (depDefs->size() > 0) {
       Tracker.invalidateRegister(MODef.getReg(), *TRI, *TII, UseCopyInstr);
+      continue;
+    }
+
+    auto a = Tracker.getFirstPreviousUseOfAnyRegisterInMI(Copy, *TRI);
+    if (!a) {
+      //llvm::errs() << "Cant even get the optional\n";
       continue;
     }
 
@@ -1288,14 +1306,14 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (a->size() == 1) {
       //llvm::errs() << "YEAAAHHHH\n";
       if (!twoMIsHaveMutualOperandRegisters(MI, *(*a)[(*a).size() - 1]->MI, TRI)) {
-        llvm::errs() << "The number of dependencies: " << a->size() << "\n";
-        llvm::errs() << "The MI:\n";
-        MI.dump();
-        llvm::errs() << "The copy found:\n";
-        Copy->dump();
-        llvm::errs() << "The blocker:\n";
+        //llvm::errs() << "The number of dependencies: " << a->size() << "\n";
+        //llvm::errs() << "The MI:\n";
+        //MI.dump();
+        //llvm::errs() << "The copy found:\n";
+        //Copy->dump();
+        //llvm::errs() << "The blocker:\n";
         (*a)[(*a).size() - 1]->MI->dump();
-
+        //Tracker.dumpBlockers();
         moveBAfterA(&MI, (*a)[(*a).size() - 1]->MI);
       }
       else
@@ -1348,8 +1366,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
                     << "\n");
 
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
-    llvm::errs() << "### NEXT: ";
-    MI.dump();
+    //llvm::errs() << "### NEXT: ";
+    //MI.dump();
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
@@ -1386,7 +1404,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     Tracker.setUsesForMI(&MI, *TRI, *TII, UseCopyInstr);
     Tracker.setDefinesForMI(&MI, *TRI, *TII, UseCopyInstr);
     Tracker.setOtherDependencies(&MI, *TRI, *TII, UseCopyInstr);
-
+    //Tracker.dumpBlockers();
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;

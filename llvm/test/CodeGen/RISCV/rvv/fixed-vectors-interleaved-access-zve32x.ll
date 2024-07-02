@@ -40,9 +40,10 @@ define <4 x i1> @load_large_vector(ptr %p) {
 ; ZVE32X-NEXT:    vmv.s.x v8, a0
 ; ZVE32X-NEXT:    vsetivli zero, 1, e8, mf4, ta, ma
 ; ZVE32X-NEXT:    vand.vi v8, v8, 1
-; ZVE32X-NEXT:    vmsne.vi v0, v8, 0
+; ZVE32X-NEXT:    vmsne.vi v8, v8, 0
 ; ZVE32X-NEXT:    vsetivli zero, 4, e8, mf4, ta, ma
 ; ZVE32X-NEXT:    vmerge.vim v11, v10, 1, v0
+; ZVE32X-NEXT:    vmv1r.v v0, v8
 ; ZVE32X-NEXT:    vsetivli zero, 1, e8, mf4, ta, ma
 ; ZVE32X-NEXT:    vmerge.vim v8, v9, 1, v0
 ; ZVE32X-NEXT:    vsetivli zero, 3, e8, mf4, tu, ma
@@ -54,9 +55,10 @@ define <4 x i1> @load_large_vector(ptr %p) {
 ; ZVE32X-NEXT:    vmv.s.x v8, a0
 ; ZVE32X-NEXT:    vsetivli zero, 1, e8, mf4, ta, ma
 ; ZVE32X-NEXT:    vand.vi v8, v8, 1
-; ZVE32X-NEXT:    vmsne.vi v0, v8, 0
+; ZVE32X-NEXT:    vmsne.vi v8, v8, 0
 ; ZVE32X-NEXT:    vsetivli zero, 4, e8, mf4, ta, ma
 ; ZVE32X-NEXT:    vmerge.vim v10, v10, 1, v0
+; ZVE32X-NEXT:    vmv1r.v v0, v8
 ; ZVE32X-NEXT:    vsetivli zero, 1, e8, mf4, ta, ma
 ; ZVE32X-NEXT:    vmerge.vim v8, v9, 1, v0
 ; ZVE32X-NEXT:    vsetivli zero, 4, e8, mf4, ta, ma
