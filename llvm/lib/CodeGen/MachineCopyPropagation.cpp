@@ -1312,7 +1312,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
         //llvm::errs() << "The copy found:\n";
         //Copy->dump();
         //llvm::errs() << "The blocker:\n";
-        (*a)[(*a).size() - 1]->MI->dump();
+        //(*a)[(*a).size() - 1]->MI->dump();
         //Tracker.dumpBlockers();
         moveBAfterA(&MI, (*a)[(*a).size() - 1]->MI);
       }
