@@ -400,73 +400,56 @@ public:
       auto PrevUses = Blockers[MI].UsesSameRegisterBefore;
       if (std::all_of(PrevUses.begin() , PrevUses.end(), [&](auto OneUse) {
             if (!OneUse) {
-              llvm::errs() << "Cant get use\n";
+              // TODO set this to false
               return true;
             }
             return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
           })) {
-        llvm::errs() << "Returning good\n";
         return PrevUses;
       }
       return {};
     }
-    llvm::errs() << "Def constr\n";
     return {{}};
-    //for (auto OP : MI->operands()) {
-    //  if (!OP.isReg()) {
-    //    continue;
-    //  }
-    //  auto OpReg = OP.getReg();
-//
-    //  auto OpMCReg = OpReg.asMCReg();
-    //  if (!OpMCReg)
-    //    continue;
-//
-    //  llvm::SmallVector<Blocker *> Blockers2;
-    //  for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
-    //    auto CI = Copies.find(OpUnit);
-    //    if (CI != Copies.end()) {
-    //      for (Blocker *Blocker : CI->second.UsedBy) {
-    //        auto InBlockers = Blockers.find(Blocker->MI);
-    //        if (!InBlockers->second.UsedPreviously && !InBlockers->second.DefinedPreviously)
-    //          Blockers2.push_back(Blocker);
-    //        else
-    //          return {};
-    //      }
-    //    }
-    //  }
-//
-    //  return Blockers2;
-    //}
-    //return {};
   }
 
-  std::optional<llvm::SmallVector<Blocker *>>
+  std::optional<llvm::SmallVector<MachineInstr *>>
   getFirstPreviousDefOfAnyRegisterInMI(MachineInstr *MI,
                                        const TargetRegisterInfo &TRI) {
-    for (auto OP : MI->operands()) {
-      if (!OP.isReg())
-        continue;
-
-      auto OpReg = OP.getReg();
-
-      auto OpMCReg = OpReg.asMCReg();
-      if (!OpMCReg)
-        continue;
-
-      llvm::SmallVector<Blocker *> Blockers2;
-      for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
-        auto CI = Copies.find(OpUnit);
-        if (CI != Copies.end()) {
-          for (Blocker *Blocker : CI->second.DefinedBy) {
-            Blockers2.push_back(Blocker);
-          }
-        }
+    if (Blockers.contains(MI)) {
+      auto PrevDefs = Blockers[MI].DefinesBefore;
+      if (std::all_of(PrevDefs.begin() , PrevDefs.end(), [&](auto OneUse) {
+            if (!OneUse) {
+              return true;
+            }
+            return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
+          })) {
+        return PrevDefs;
       }
-
-      return Blockers2;
+      return {};
     }
-    return {};
+    return {{}};
+  }
+
+  std::optional<llvm::DenseSet<MachineInstr *>>
+  getFirstPreviousDependencies(MachineInstr *MI,
+                               const TargetRegisterInfo &TRI) {
+    auto PreviousDefinesWithoutDeps = getFirstPreviousDefOfAnyRegisterInMI(MI, TRI);
+    if (!PreviousDefinesWithoutDeps)
+      return {};
+
+    auto PreviousUsesWithoutDeps = getFirstPreviousUseOfAnyRegisterInMI(MI, TRI);
+    if (!PreviousUsesWithoutDeps)
+      return {};
+
+    llvm::DenseSet<MachineInstr *> Deps;
+    for (llvm::MachineInstr *I : *PreviousUsesWithoutDeps) {
+      Deps.insert(I);
+    }
+    for (llvm::MachineInstr *I : *PreviousDefinesWithoutDeps) {
+      Deps.insert(I);
+    }
+
+    return Deps;
   }
 
   /// Add this copy's registers into the tracker's copy maps.
@@ -1265,59 +1248,23 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (!Copy)
       continue;
 
+    // Let's see if we have any kind of previous dependencies for the copy,
+    // that have no other dependencies. (So the dependency tree is one level deep)
+    auto PreviousDependencies = Tracker.getFirstPreviousDependencies(Copy, *TRI);
+
     
-
-    auto depDefs = Tracker.getFirstPreviousDefOfAnyRegisterInMI(Copy, *TRI);
-    if (!depDefs) {
-      //llvm::errs() << "NO depDefs\n";
+    if (!PreviousDependencies)
+      // The dependency tree is more than one level deep
       continue;
-    }
 
-    if (depDefs->size() > 0) {
-      Tracker.invalidateRegister(MODef.getReg(), *TRI, *TII, UseCopyInstr);
+    bool NoDependencyWithMI = std::all_of(PreviousDependencies->begin(), PreviousDependencies->end(), [&](auto *MI1) {return !twoMIsHaveMutualOperandRegisters(*MI1, MI, TRI);});
+    if (!NoDependencyWithMI)
       continue;
-    }
-
-    auto a = Tracker.getFirstPreviousUseOfAnyRegisterInMI(Copy, *TRI);
-    if (!a) {
-      //llvm::errs() << "Cant even get the optional\n";
-      continue;
-    }
-
-    //llvm::errs() << "Got the optional: " << a->size() << "\n";
-    // TODO: dont just check the last one
     
-    // For now let's just deal with only one dependency
-    // TODO: It would be easy to extend it to top level dependencies
-    if (a->size() == 1) {
-      //llvm::errs() << "YEAAAHHHH\n";
-      if (!(*a)[(*a).size() - 1]) {
-        llvm::errs() << "What the fuck is ur problem?\n";
-      }
-      (*a)[(*a).size() - 1]->dump();
-      if (!twoMIsHaveMutualOperandRegisters(MI, *(*a)[(*a).size() - 1], TRI)) {
-        //llvm::errs() << "The number of dependencies: " << a->size() << "\n";
-        //llvm::errs() << "The MI:\n";
-        //MI.dump();
-        //llvm::errs() << "The copy found:\n";
-        //Copy->dump();
-        //llvm::errs() << "The blocker:\n";
-        //(*a)[(*a).size() - 1]->MI->dump();
-        //Tracker.dumpBlockers();
-        moveBAfterA(&MI, (*a)[(*a).size() - 1]);
-      }
-      else
-        continue;
-    } else if (a->size() > 1) {
-      continue;
+    
+    for (llvm::MachineInstr *I : *PreviousDependencies) {
+      moveBAfterA(&MI, I);
     }
-
-    //for (auto i : (*a)) {
-    //  if (i->MI) {
-    //    i->MI->dump();
-    //  }
-    //}
-
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
@@ -1355,6 +1302,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
 
+  int NumOfInstr = 0;
+  // Without tracking the numbers things fail because the order if instructions matter.
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
     llvm::errs() << "### NEXT: ";
     MI.dump();
