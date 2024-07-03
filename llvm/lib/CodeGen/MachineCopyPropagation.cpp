@@ -74,6 +74,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugCounter.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <iterator>
 
@@ -156,11 +157,12 @@ class CopyTracker {
   struct Blocker {
     MachineInstr *MI;
 
-    llvm::SmallVector<Blocker *>  UsesSameRegisterBefore;
-    llvm::SmallVector<Blocker *>  DefinesBefore;
+    llvm::SmallVector<MachineInstr *>  UsesSameRegisterBefore;
+    llvm::SmallVector<MachineInstr *>  DefinesBefore;
 
     bool DefinedPreviously = false;
     bool UsedPreviously = false;
+    bool Root = false;
   };
 
   struct CopyInfo {
@@ -331,13 +333,16 @@ public:
             Blocker NewBlocker{MI,{},{}};
             NewDependencies.insert({MI, NewBlocker});
           }  
-          Dep.second.UsesSameRegisterBefore.push_back(&NewDependencies[MI]);
+          Dep.second.UsesSameRegisterBefore.push_back(MI);
         }
       }
     }
 
-    for (auto &&D : NewDependencies)
+    for (auto &&D : NewDependencies) {
+      llvm::errs() << "Inserting use into Blockers:\n";
+      MI->dump();
       Blockers.insert(D);
+    }
   }
 
   void setDefinesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
@@ -370,13 +375,16 @@ public:
             Blocker NewBlocker{MI,{},{}};
             NewDependencies.insert({MI, NewBlocker});
           }  
-          Dep.second.DefinesBefore.push_back(&(NewDependencies[MI]));
+          Dep.second.DefinesBefore.push_back(MI);
         }
       }
     }
 
-    for (auto &&D : NewDependencies)
+    for (auto &&D : NewDependencies) {
+      llvm::errs() << "Inserting def into Blockers:\n";
+      MI->dump();
       Blockers.insert(D);
+    }
   }
 
   void setDependenciesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
@@ -385,36 +393,52 @@ public:
     setDefinesForMI(MI, TRI, TII, UseCopyInstr);
   }
 
-  std::optional<llvm::SmallVector<Blocker *>>
+  std::optional<llvm::SmallVector<MachineInstr *>>
   getFirstPreviousUseOfAnyRegisterInMI(MachineInstr *MI,
                                        const TargetRegisterInfo &TRI) {
-    for (auto OP : MI->operands()) {
-      if (!OP.isReg()) {
-        continue;
+    if (Blockers.contains(MI)) {
+      auto PrevUses = Blockers[MI].UsesSameRegisterBefore;
+      if (std::all_of(PrevUses.begin() , PrevUses.end(), [&](auto OneUse) {
+            if (!OneUse) {
+              llvm::errs() << "Cant get use\n";
+              return true;
+            }
+            return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
+          })) {
+        llvm::errs() << "Returning good\n";
+        return PrevUses;
       }
-      auto OpReg = OP.getReg();
-
-      auto OpMCReg = OpReg.asMCReg();
-      if (!OpMCReg)
-        continue;
-
-      llvm::SmallVector<Blocker *> Blockers2;
-      for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
-        auto CI = Copies.find(OpUnit);
-        if (CI != Copies.end()) {
-          for (Blocker *Blocker : CI->second.UsedBy) {
-            auto InBlockers = Blockers.find(Blocker->MI);
-            if (!InBlockers->second.UsedPreviously && !InBlockers->second.DefinedPreviously)
-              Blockers2.push_back(Blocker);
-            else
-              return {};
-          }
-        }
-      }
-
-      return Blockers2;
+      return {};
     }
-    return {};
+    llvm::errs() << "Def constr\n";
+    return {{}};
+    //for (auto OP : MI->operands()) {
+    //  if (!OP.isReg()) {
+    //    continue;
+    //  }
+    //  auto OpReg = OP.getReg();
+//
+    //  auto OpMCReg = OpReg.asMCReg();
+    //  if (!OpMCReg)
+    //    continue;
+//
+    //  llvm::SmallVector<Blocker *> Blockers2;
+    //  for (MCRegUnit OpUnit : TRI.regunits(OpMCReg)) {
+    //    auto CI = Copies.find(OpUnit);
+    //    if (CI != Copies.end()) {
+    //      for (Blocker *Blocker : CI->second.UsedBy) {
+    //        auto InBlockers = Blockers.find(Blocker->MI);
+    //        if (!InBlockers->second.UsedPreviously && !InBlockers->second.DefinedPreviously)
+    //          Blockers2.push_back(Blocker);
+    //        else
+    //          return {};
+    //      }
+    //    }
+    //  }
+//
+    //  return Blockers2;
+    //}
+    //return {};
   }
 
   std::optional<llvm::SmallVector<Blocker *>>
@@ -468,6 +492,9 @@ public:
         Copy.DefRegs.push_back(Def);
       Copy.LastSeenUseInCopy = MI;
     }
+    llvm::errs() << "Insert into blockers when track copy\n";
+    MI->dump();
+    Blockers.insert({MI, {MI,{}, {}, false, false, true}});
   }
 
   bool hasAnyCopies() {
@@ -1264,7 +1291,11 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     // TODO: It would be easy to extend it to top level dependencies
     if (a->size() == 1) {
       //llvm::errs() << "YEAAAHHHH\n";
-      if (!twoMIsHaveMutualOperandRegisters(MI, *(*a)[(*a).size() - 1]->MI, TRI)) {
+      if (!(*a)[(*a).size() - 1]) {
+        llvm::errs() << "What the fuck is ur problem?\n";
+      }
+      (*a)[(*a).size() - 1]->dump();
+      if (!twoMIsHaveMutualOperandRegisters(MI, *(*a)[(*a).size() - 1], TRI)) {
         //llvm::errs() << "The number of dependencies: " << a->size() << "\n";
         //llvm::errs() << "The MI:\n";
         //MI.dump();
@@ -1273,7 +1304,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
         //llvm::errs() << "The blocker:\n";
         //(*a)[(*a).size() - 1]->MI->dump();
         //Tracker.dumpBlockers();
-        moveBAfterA(&MI, (*a)[(*a).size() - 1]->MI);
+        moveBAfterA(&MI, (*a)[(*a).size() - 1]);
       }
       else
         continue;
@@ -1325,8 +1356,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
                     << "\n");
 
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
-    //llvm::errs() << "### NEXT: ";
-    //MI.dump();
+    llvm::errs() << "### NEXT: ";
+    MI.dump();
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
