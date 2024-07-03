@@ -332,8 +332,6 @@ public:
     }
 
     for (auto &&D : NewDependencies) {
-      llvm::errs() << "Inserting use into Blockers:\n";
-      MI->dump();
       Blockers.insert(D);
     }
   }
@@ -375,8 +373,6 @@ public:
     }
 
     for (auto &&D : NewDependencies) {
-      llvm::errs() << "Inserting def into Blockers:\n";
-      MI->dump();
       Blockers.insert(D);
     }
   }
@@ -395,9 +391,9 @@ public:
       if (std::all_of(PrevUses.begin() , PrevUses.end(), [&](auto OneUse) {
             if (!OneUse) {
               // TODO set this to false
-              return true;
+              return false;
             }
-            return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
+            return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously) && (Blockers[OneUse].DefinesBefore.size() == 0) && (Blockers[OneUse].UsesSameRegisterBefore.size() == 0);
           })) {
         llvm::SmallVector<std::pair<int, MachineInstr *>> Ret;
         Ret.reserve(PrevUses.size());
@@ -416,9 +412,9 @@ public:
       auto PrevDefs = Blockers[MI].DefinesBefore;
       if (std::all_of(PrevDefs.begin() , PrevDefs.end(), [&](auto OneUse) {
             if (!OneUse) {
-              return true;
+              return false;
             }
-            return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
+            return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously) && (Blockers[OneUse].DefinesBefore.size() == 0) && (Blockers[OneUse].UsesSameRegisterBefore.size() == 0);
           })) {
         llvm::SmallVector<std::pair<int, MachineInstr *>> Ret;
         Ret.reserve(PrevDefs.size());
@@ -444,12 +440,12 @@ public:
     if (!PreviousUsesWithoutDeps)
       return {};
 
-    auto UsesSize = PreviousUsesWithoutDeps->size();
-    auto DefsSize = PreviousDefinesWithoutDeps->size();
-    int DefIdx = 0;
-    int UseIdx = 0;
+    size_t UsesSize = PreviousUsesWithoutDeps->size();
+    size_t DefsSize = PreviousDefinesWithoutDeps->size();
+    unsigned int DefIdx = 0;
+    unsigned int UseIdx = 0;
 
-    auto SizeOfAllDeps = DefsSize + UsesSize;
+    unsigned int SizeOfAllDeps = DefsSize + UsesSize;
     llvm::SmallVector<MachineInstr *> Deps;
 
     if (UsesSize == 0) {
@@ -469,7 +465,7 @@ public:
     assert(DefsSize != 0 && UsesSize != 0 && "At this point either shouldn't be 0");
 
     // TODO algorithm could be made more efficient but then it would be less readable.
-    for(int ResIdx = 0; ResIdx < SizeOfAllDeps && DefIdx < DefsSize && UseIdx < UsesSize; ResIdx++) {
+    for(unsigned int ResIdx = 0; ResIdx < SizeOfAllDeps && DefIdx < DefsSize && UseIdx < UsesSize; ResIdx++) {
       std::pair<int, MachineInstr *> CurDef = (*PreviousDefinesWithoutDeps)[DefIdx];
       std::pair<int, MachineInstr *> CurUse = (*PreviousUsesWithoutDeps)[UseIdx];
 
@@ -484,8 +480,9 @@ public:
         Deps.push_back(CurUse.second);
         UseIdx++;
         DefIdx++;
+      } else {
+        llvm_unreachable("Some of the previous conditions must be met.");
       }
-      llvm_unreachable("Some of the previous conditions must be met.");
     }
 
     assert (DefIdx == DefsSize || UseIdx == UsesSize && "At least one of the array should be totally moved.");
@@ -527,12 +524,8 @@ public:
         Copy.DefRegs.push_back(Def);
       Copy.LastSeenUseInCopy = MI;
     }
-    llvm::errs() << "Insert into blockers when track copy\n";
-    MI->dump();
-    if (MIPosition != -1)
+    if (MIPosition != -1 && !Blockers.contains(MI))
       Blockers.insert({MI, {MI, MIPosition,{}, {}, false, false, true}});
-    else
-      llvm::errs() << "-1-1-1-1-1-1-1-1-1\n\n\n";
   }
 
   bool hasAnyCopies() {
@@ -1352,7 +1345,6 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     MaybeDeadCopies.insert(Copy);
     Changed = true;
     ++NumCopyBackwardPropagated;
-    MI.getParent()->dump();
   }
 }
 
@@ -1365,8 +1357,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   // Without tracking the numbers things fail because the order if instructions matter.
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
     PosOfInstr++;
-    llvm::errs() << "### NEXT: ";
-    MI.dump();
+    //llvm::errs() << "### NEXT: ";
+    //MI.dump();
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
