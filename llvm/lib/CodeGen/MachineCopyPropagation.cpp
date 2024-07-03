@@ -73,10 +73,12 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugCounter.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
 #include <iterator>
+#include <utility>
 
 using namespace llvm;
 
@@ -156,6 +158,7 @@ static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
 class CopyTracker {
   struct Blocker {
     MachineInstr *MI;
+    int MIPosition = -1;
 
     llvm::SmallVector<MachineInstr *>  UsesSameRegisterBefore;
     llvm::SmallVector<MachineInstr *>  DefinesBefore;
@@ -298,7 +301,7 @@ public:
   }
 
   // FIXME : llvm/test/CodeGen/RISCV/rvv/fixed-vectors-interleaved-access-zve32x.ll doesnt work
-  void setUsesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
+  void setUsesForMI(MachineInstr *MI, int MIPosition, const TargetRegisterInfo &TRI,
                     const TargetInstrInfo &TII, bool UseCopyInstr) {
     DenseMap<MachineInstr*, Blocker> NewDependencies;
     for (llvm::MachineOperand UsedOperand : MI->uses()) {
@@ -315,7 +318,7 @@ public:
         auto CopyThatDependsOnIt = Copies.find(UsedOPMcRegUnit);
         if (CopyThatDependsOnIt != Copies.end()) {
           if (!Blockers.contains(MI)) {
-            Blocker NewBlocker{MI,{},{}};
+            Blocker NewBlocker{MI, MIPosition, {}, {}};
             Blockers.insert({MI, NewBlocker});
           }  
           CopyThatDependsOnIt->second.UsedBy.push_back(&Blockers[MI]);
@@ -345,7 +348,7 @@ public:
     }
   }
 
-  void setDefinesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
+  void setDefinesForMI(MachineInstr *MI, int MIPosition, const TargetRegisterInfo &TRI,
                        const TargetInstrInfo &TII, bool UseCopyInstr) {
     // Maybe invalidate everything?
     DenseMap<MachineInstr*, Blocker> NewDependencies;
@@ -372,7 +375,7 @@ public:
           Dep.second.DefinedPreviously = true;
 
           if (Dep.first != MI && !Blockers.contains(MI) && !NewDependencies.contains(MI)) {
-            Blocker NewBlocker{MI,{},{}};
+            Blocker NewBlocker{MI, MIPosition, {}, {}};
             NewDependencies.insert({MI, NewBlocker});
           }  
           Dep.second.DefinesBefore.push_back(MI);
@@ -387,13 +390,13 @@ public:
     }
   }
 
-  void setDependenciesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
+  void setDependenciesForMI(MachineInstr *MI, int MIPosition, const TargetRegisterInfo &TRI,
                        const TargetInstrInfo &TII, bool UseCopyInstr) {
-    setUsesForMI(MI, TRI, TII, UseCopyInstr);
-    setDefinesForMI(MI, TRI, TII, UseCopyInstr);
+    setUsesForMI(MI, MIPosition, TRI, TII, UseCopyInstr);
+    setDefinesForMI(MI, MIPosition, TRI, TII, UseCopyInstr);
   }
 
-  std::optional<llvm::SmallVector<MachineInstr *>>
+  std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
   getFirstPreviousUseOfAnyRegisterInMI(MachineInstr *MI,
                                        const TargetRegisterInfo &TRI) {
     if (Blockers.contains(MI)) {
@@ -405,14 +408,17 @@ public:
             }
             return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
           })) {
-        return PrevUses;
+        llvm::SmallVector<std::pair<int, MachineInstr *>> Ret;
+        Ret.reserve(PrevUses.size());
+        std::transform(PrevUses.begin(), PrevUses.end(), std::back_inserter(Ret), [&](auto *MI) {return std::make_pair(Blockers[MI].MIPosition, MI);});
+        return Ret;
       }
       return {};
     }
     return {{}};
   }
 
-  std::optional<llvm::SmallVector<MachineInstr *>>
+  std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
   getFirstPreviousDefOfAnyRegisterInMI(MachineInstr *MI,
                                        const TargetRegisterInfo &TRI) {
     if (Blockers.contains(MI)) {
@@ -423,17 +429,23 @@ public:
             }
             return !(Blockers[OneUse].UsedPreviously) && !(Blockers[OneUse].DefinedPreviously);
           })) {
-        return PrevDefs;
+        llvm::SmallVector<std::pair<int, MachineInstr *>> Ret;
+        Ret.reserve(PrevDefs.size());
+        std::transform(PrevDefs.begin(), PrevDefs.end(), std::back_inserter(Ret), [&](auto *MI) {return std::make_pair(Blockers[MI].MIPosition, MI);});
+        return Ret;
       }
       return {};
     }
     return {{}};
   }
 
-  std::optional<llvm::DenseSet<MachineInstr *>>
+  // Mention rvv/no-reserved-frame.ll
+  std::optional<llvm::SmallVector<MachineInstr *>>
   getFirstPreviousDependencies(MachineInstr *MI,
                                const TargetRegisterInfo &TRI) {
-    auto PreviousDefinesWithoutDeps = getFirstPreviousDefOfAnyRegisterInMI(MI, TRI);
+    std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
+        PreviousDefinesWithoutDeps =
+            getFirstPreviousDefOfAnyRegisterInMI(MI, TRI);
     if (!PreviousDefinesWithoutDeps)
       return {};
 
@@ -441,20 +453,69 @@ public:
     if (!PreviousUsesWithoutDeps)
       return {};
 
-    llvm::DenseSet<MachineInstr *> Deps;
-    for (llvm::MachineInstr *I : *PreviousUsesWithoutDeps) {
-      Deps.insert(I);
+    auto UsesSize = PreviousUsesWithoutDeps->size();
+    auto DefsSize = PreviousDefinesWithoutDeps->size();
+    int DefIdx = 0;
+    int UseIdx = 0;
+
+    auto SizeOfAllDeps = DefsSize + UsesSize;
+    llvm::SmallVector<MachineInstr *> Deps;
+
+    if (UsesSize == 0) {
+      for (; DefIdx < DefsSize; DefIdx++) {
+        Deps.push_back((*PreviousDefinesWithoutDeps)[DefIdx].second);
+      }
+      return Deps;
     }
-    for (llvm::MachineInstr *I : *PreviousDefinesWithoutDeps) {
-      Deps.insert(I);
+
+    if (DefsSize == 0) {
+      for (; UseIdx < UsesSize; UseIdx++) {
+        Deps.push_back((*PreviousUsesWithoutDeps)[UseIdx].second);
+      }
+      return Deps;
     }
+
+    assert(DefsSize != 0 && UsesSize != 0 && "At this point either shouldn't be 0");
+
+    // TODO algorithm could be made more efficient but then it would be less readable.
+    for(int ResIdx = 0; ResIdx < SizeOfAllDeps && DefIdx < DefsSize && UseIdx < UsesSize; ResIdx++) {
+      std::pair<int, MachineInstr *> CurDef = (*PreviousDefinesWithoutDeps)[DefIdx];
+      std::pair<int, MachineInstr *> CurUse = (*PreviousUsesWithoutDeps)[UseIdx];
+
+      if (CurDef.first < CurUse.first) {
+        Deps.push_back(CurDef.second);
+        DefIdx++;
+      } else if (CurDef.first > CurUse.first) {
+        Deps.push_back(CurUse.second);
+        UseIdx++;
+      } else if (CurDef.first == CurUse.first) {
+        assert(CurDef.second == CurUse.second && "On the same position the same instruction should be.");
+        Deps.push_back(CurUse.second);
+        UseIdx++;
+        DefIdx++;
+      }
+      llvm_unreachable("Some of the previous conditions must be met.");
+    }
+
+    assert (DefIdx == DefsSize || UseIdx == UsesSize && "At least one of the array should be totally moved.");
+
+    for (; DefIdx < DefsSize; DefIdx++) {
+      Deps.push_back((*PreviousDefinesWithoutDeps)[DefIdx].second);
+    }
+
+    for (; UseIdx < UsesSize; UseIdx++) {
+      Deps.push_back((*PreviousUsesWithoutDeps)[UseIdx].second);
+    }
+
+    assert (DefIdx == DefsSize && UseIdx == UsesSize && Deps.size() == SizeOfAllDeps && "At this point everything should be moved.");
 
     return Deps;
   }
 
   /// Add this copy's registers into the tracker's copy maps.
+  // When switching MIs consider the line numbers switching must be member of tracker
   void trackCopy(MachineInstr *MI, const TargetRegisterInfo &TRI,
-                 const TargetInstrInfo &TII, bool UseCopyInstr) {
+                 const TargetInstrInfo &TII, bool UseCopyInstr, int MIPosition = -1) {
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*MI, TII, UseCopyInstr);
     assert(CopyOperands && "Tracking non-copy?");
@@ -477,7 +538,10 @@ public:
     }
     llvm::errs() << "Insert into blockers when track copy\n";
     MI->dump();
-    Blockers.insert({MI, {MI,{}, {}, false, false, true}});
+    if (MIPosition != -1)
+      Blockers.insert({MI, {MI, MIPosition,{}, {}, false, false, true}});
+    else
+      llvm::errs() << "-1-1-1-1-1-1-1-1-1\n\n\n";
   }
 
   bool hasAnyCopies() {
@@ -1262,7 +1326,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
       continue;
     
     
-    for (llvm::MachineInstr *I : *PreviousDependencies) {
+    for (llvm::MachineInstr *I : llvm::reverse(*PreviousDependencies)) {
       moveBAfterA(&MI, I);
     }
 
@@ -1302,9 +1366,10 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
 
-  int NumOfInstr = 0;
+  int PosOfInstr = 0;
   // Without tracking the numbers things fail because the order if instructions matter.
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
+    PosOfInstr++;
     llvm::errs() << "### NEXT: ";
     MI.dump();
     // Ignore non-trivial COPYs.
@@ -1318,8 +1383,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // Unlike forward cp, we don't invoke propagateDefs here,
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
-          Tracker.setDependenciesForMI(&MI, *TRI, *TII, UseCopyInstr);
-          Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
+          Tracker.setDependenciesForMI(&MI, PosOfInstr, *TRI, *TII, UseCopyInstr);
+          Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr, PosOfInstr);
           continue;
         }
       }
@@ -1335,7 +1400,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
       }
 
     propagateDefs(MI);
-    Tracker.setDependenciesForMI(&MI, *TRI, *TII, UseCopyInstr);
+    Tracker.setDependenciesForMI(&MI, PosOfInstr, *TRI, *TII, UseCopyInstr);
 
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
