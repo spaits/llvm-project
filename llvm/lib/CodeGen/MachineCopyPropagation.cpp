@@ -314,16 +314,6 @@ public:
         continue;
 
       // Set up the dependencies for the copies.
-      for (MCRegUnit UsedOPMcRegUnit : TRI.regunits(UsedOpMCReg)) {
-        auto CopyThatDependsOnIt = Copies.find(UsedOPMcRegUnit);
-        if (CopyThatDependsOnIt != Copies.end()) {
-          if (!Blockers.contains(MI)) {
-            Blocker NewBlocker{MI, MIPosition, {}, {}};
-            Blockers.insert({MI, NewBlocker});
-          }  
-          CopyThatDependsOnIt->second.UsedBy.push_back(&Blockers[MI]);
-        }
-      }
 
       // Set up the dependencies for the blockers.
       
@@ -360,8 +350,9 @@ public:
       Register DefinedOpReg = DefinedOperand.getReg();
       MCRegister DefinedOpMCReg = DefinedOpReg.asMCReg();
       if (!DefinedOpMCReg)
-        continue;
+        continue;      
 
+      // Shall stay?
       for (MCRegUnit DefinedOPMcRegUnit : TRI.regunits(DefinedOpMCReg)) {
         auto CopyThatDependsOnIt = Copies.find(DefinedOPMcRegUnit);
         if (CopyThatDependsOnIt != Copies.end()) {
@@ -1353,11 +1344,15 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
 
     MODef.setReg(Def);
     MODef.setIsRenamable(CopyOperands->Destination->isRenamable());
+    
+    Tracker.invalidateRegister(MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
+    Tracker.invalidateRegister(Def, *TRI, *TII, UseCopyInstr);
 
     LLVM_DEBUG(dbgs() << "MCP: After replacement: " << MI << "\n");
     MaybeDeadCopies.insert(Copy);
     Changed = true;
     ++NumCopyBackwardPropagated;
+    MI.getParent()->dump();
   }
 }
 
