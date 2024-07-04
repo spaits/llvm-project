@@ -214,6 +214,9 @@ public:
   }
 
   void addDependency(Blocker B) {
+    if (Blockers.contains(B.MI))
+      return;
+
     B.MIPosition = Time++;
     Blockers.insert({B.MI, B});
   }
@@ -352,7 +355,7 @@ public:
     }
 
     for (auto &&D : NewDependencies) {
-      Blockers.insert(D);
+      addDependency(D.second);
     }
   }
 
@@ -392,8 +395,8 @@ public:
       }
     }
 
-    for (auto &&D : NewDependencies) {
-      Blockers.insert(D);
+    for (auto D : NewDependencies) {
+      addDependency(D.second);
     }
   }
 
@@ -546,8 +549,10 @@ public:
         Copy.DefRegs.push_back(Def);
       Copy.LastSeenUseInCopy = MI;
     }
-    if (MIPosition != -1 && !Blockers.contains(MI))
-      Blockers.insert({MI, {MI, MIPosition,{}, {}, false, false, true}});
+    if (MIPosition != -1 && !Blockers.contains(MI)) {
+      Blocker b{MI, MIPosition,{}, {}, false, false, true};
+      addDependency(b);
+    }
   }
 
   bool hasAnyCopies() {
