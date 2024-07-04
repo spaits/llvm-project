@@ -48,6 +48,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+// ninja llc && bin/llc -O3 -debug -stop-before=machine-cp  -print-before=machine-cp -print-after=machine-cp -mtriple=aarch64  arm64repo.ll 2> a.txt
+// ninja llc &&   bin/llc -O3 -debug -start-before=machine-cp -stop-after=machine-cp -print-before=machine-cp -print-after=machine-cp -mtriple=riscv32  riscvRepo.mir 2> nok.txt
+
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -301,6 +304,7 @@ public:
   }
 
   // FIXME : llvm/test/CodeGen/RISCV/rvv/fixed-vectors-interleaved-access-zve32x.ll doesnt work
+  // TODO Create test case based on xmulo.ll
   void setUsesForMI(MachineInstr *MI, int MIPosition, const TargetRegisterInfo &TRI,
                     const TargetInstrInfo &TII, bool UseCopyInstr) {
     DenseMap<MachineInstr*, Blocker> NewDependencies;
@@ -312,9 +316,16 @@ public:
       MCRegister UsedOpMCReg = UsedOpReg.asMCReg();
       if (!UsedOpMCReg)
         continue;
+      
+      // TODO: Check if it can be replaced with invalidateRegister
+      for (MCRegUnit UsedOPMcRegUnit : TRI.regunits(UsedOpMCReg)) {
+        auto CopyThatDependsOnIt = Copies.find(UsedOPMcRegUnit);
+        if (CopyThatDependsOnIt != Copies.end()) {
+          Copies.erase(CopyThatDependsOnIt);
+        }
+      }
 
       // Set up the dependencies for the copies.
-
       // Set up the dependencies for the blockers.
       
       for (auto &&Dep : Blockers) {
@@ -544,14 +555,15 @@ public:
   }
 
   MachineInstr *findCopyDefViaUnit(MCRegister RegUnit,
-                                   const TargetRegisterInfo &TRI) {
+                                   const TargetRegisterInfo &TRI,
+                                   bool MustBeAvailable = true) {
     auto CI = Copies.find(RegUnit);
     if (CI == Copies.end())
       return nullptr;
     if (CI->second.DefRegs.size() != 1)
       return nullptr;
-    MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
-    return findCopyForUnit(RU, TRI, true);
+    //MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
+    return CI->second.LastSeenUseInCopy;
   }
 
   MachineInstr *findAvailBackwardCopy(MachineInstr &I, MCRegister Reg,
@@ -559,7 +571,7 @@ public:
                                       const TargetInstrInfo &TII,
                                       bool UseCopyInstr) {
     MCRegUnit RU = *TRI.regunits(Reg).begin();
-    MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI);
+    MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI, false);
 
     if (!AvailCopy)
       return nullptr;
@@ -1296,20 +1308,36 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (!Copy)
       continue;
 
+    llvm::errs() << "Backward copy was found\n";
+    Copy->dump();
+
     // Let's see if we have any kind of previous dependencies for the copy,
     // that have no other dependencies. (So the dependency tree is one level deep)
     auto PreviousDependencies = Tracker.getFirstPreviousDependencies(Copy, *TRI);
 
     
-    if (!PreviousDependencies)
+    if (!PreviousDependencies) {
+      llvm::errs() << "We cannot get dep tree info\n";
       // The dependency tree is more than one level deep
       continue;
-
-    bool NoDependencyWithMI = std::all_of(PreviousDependencies->begin(), PreviousDependencies->end(), [&](auto *MI1) {return !twoMIsHaveMutualOperandRegisters(*MI1, MI, TRI);});
-    if (!NoDependencyWithMI)
+    }
+    llvm::errs() << "Number of dependencies of the copy: " << PreviousDependencies->size() << "\n";
+    bool NoDependencyWithMI =
+        std::all_of(PreviousDependencies->begin(), PreviousDependencies->end(),
+                    [&](auto *MI1) {
+                      MI1->dump();
+                      if (!twoMIsHaveMutualOperandRegisters(*MI1, MI, TRI)) {
+                        llvm::errs() << "No dependency\n";
+                        return true;
+                      }
+                      llvm::errs() << "Dependency\n";
+                      return false;
+                    });
+    if (!NoDependencyWithMI) {
+      llvm::errs() << "Have collision with the current MI\n";
       continue;
-    
-    
+    }
+
     for (llvm::MachineInstr *I : llvm::reverse(*PreviousDependencies)) {
       moveBAfterA(&MI, I);
     }
@@ -1357,8 +1385,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   // Without tracking the numbers things fail because the order if instructions matter.
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
     PosOfInstr++;
-    //llvm::errs() << "### NEXT: ";
-    //MI.dump();
+    llvm::errs() << "### NEXT: ";
+    MI.dump();
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
