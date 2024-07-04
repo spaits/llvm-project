@@ -150,15 +150,10 @@ static bool twoMIsHaveMutualOperandRegisters(const MachineInstr &MI1, const Mach
   return false;
 }
 
-static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
-  llvm::MachineBasicBlock *MBB = A->getParent();
-  assert(MBB == B->getParent() && "Both instructions must be in the same MachineBasicBlock");
-  
-  MBB->remove(B);
-  MBB->insertAfter(--A->getIterator(), B);
-}
+
 
 class CopyTracker {
+  int Time = 0;
   struct Blocker {
     MachineInstr *MI;
     int MIPosition = -1;
@@ -207,6 +202,20 @@ public:
           CI->second.Avail = false;
       }
     }
+  }
+
+  void moveBAfterA(MachineInstr *A, MachineInstr *B, int APos) {
+    llvm::MachineBasicBlock *MBB = A->getParent();
+    assert(MBB == B->getParent() && "Both instructions must be in the same MachineBasicBlock");
+    assert(Blockers.contains(B) && "Shall contain the blocker");
+    Blockers[B].MIPosition = APos + 1; // Should know A's position
+    MBB->remove(B);
+    MBB->insertAfter(--A->getIterator(), B);
+  }
+
+  void addDependency(Blocker B) {
+    B.MIPosition = Time++;
+    Blockers.insert({B.MI, B});
   }
 
   /// Only called for backward propagation
@@ -487,6 +496,8 @@ public:
         Deps.push_back(CurUse.second);
         UseIdx++;
       } else if (CurDef.first == CurUse.first) {
+        CurDef.second->dump();
+        CurUse.second->dump();
         assert(CurDef.second == CurUse.second && "On the same position the same instruction should be.");
         Deps.push_back(CurUse.second);
         UseIdx++;
@@ -496,7 +507,7 @@ public:
       }
     }
 
-    assert (DefIdx == DefsSize || UseIdx == UsesSize && "At least one of the array should be totally moved.");
+    assert ((DefIdx == DefsSize || UseIdx == UsesSize) && "At least one of the array should be totally moved.");
 
     for (; DefIdx < DefsSize; DefIdx++) {
       Deps.push_back((*PreviousDefinesWithoutDeps)[DefIdx].second);
@@ -506,7 +517,7 @@ public:
       Deps.push_back((*PreviousUsesWithoutDeps)[UseIdx].second);
     }
 
-    assert (DefIdx == DefsSize && UseIdx == UsesSize && Deps.size() == SizeOfAllDeps && "At this point everything should be moved.");
+    assert (DefIdx == DefsSize && UseIdx == UsesSize && "At this point everything should be moved.");
 
     return Deps;
   }
@@ -711,7 +722,7 @@ private:
   void EliminateSpillageCopies(MachineBasicBlock &MBB);
   bool eraseIfRedundant(MachineInstr &Copy, MCRegister Src, MCRegister Def);
   void forwardUses(MachineInstr &MI);
-  void propagateDefs(MachineInstr &MI);
+  void propagateDefs(MachineInstr &MI,int &LatestPos);
   bool isForwardableRegClassCopy(const MachineInstr &Copy,
                                  const MachineInstr &UseI, unsigned UseIdx);
   bool isBackwardPropagatableRegClassCopy(const MachineInstr &Copy,
@@ -1279,7 +1290,7 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
 }
 
-void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
+void MachineCopyPropagation::propagateDefs(MachineInstr &MI, int &LatestPos) {
   if (!Tracker.hasAnyCopies()) {
     //llvm::errs() << "Can not prop because no Copy\n";
     return;
@@ -1339,7 +1350,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     }
 
     for (llvm::MachineInstr *I : llvm::reverse(*PreviousDependencies)) {
-      moveBAfterA(&MI, I);
+      Tracker.moveBAfterA(&MI, I, LatestPos++);
     }
 
     std::optional<DestSourcePair> CopyOperands =
@@ -1414,7 +1425,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
       }
 
-    propagateDefs(MI);
+    propagateDefs(MI, PosOfInstr);
     Tracker.setDependenciesForMI(&MI, PosOfInstr, *TRI, *TII, UseCopyInstr);
 
     for (const MachineOperand &MO : MI.operands()) {
