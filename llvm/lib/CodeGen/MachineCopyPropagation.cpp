@@ -122,6 +122,13 @@ static bool hasOverlapsWithDefs(const MachineInstr &MI, Register &Reg, const Tar
   return false;
 }
 
+static bool hasOverlapsWithUses(const MachineInstr &MI, Register &Reg, const TargetRegisterInfo *TRI) {
+  for (const MachineOperand &MI : MI.uses())
+    if (MI.isReg() && TRI->regsOverlap(Reg, MI.getReg()))
+      return true;
+  return false;
+}
+
 static bool hasOverlaps(const MachineInstr &MI, Register &Reg, const TargetRegisterInfo *TRI) {
   for (const MachineOperand &MI : MI.operands())
     if (MI.isReg() && TRI->regsOverlap(Reg, MI.getReg()))
@@ -155,6 +162,8 @@ static bool twoMIsHaveMutualOperandRegisters(const MachineInstr &MI1, const Mach
 class CopyTracker {
   int Time = 0;
   struct Blocker {
+    Blocker() = default;
+    Blocker(MachineInstr *MI) : MI(MI) {}
     MachineInstr *MI;
     int MIPosition = -1;
 
@@ -328,7 +337,15 @@ public:
   // TODO Create test case based on xmulo.ll
   void setUsesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
                     const TargetInstrInfo &TII, bool UseCopyInstr) {
-    DenseMap<MachineInstr*, Blocker> NewDependencies;
+    bool Blocks = !Blockers.contains(MI);
+    Blocker b{MI};
+    Blocker *CurrentBlocker = nullptr;
+    if (!Blocks) {
+      CurrentBlocker = &Blockers[MI];
+    } else {
+      CurrentBlocker = &b;
+    }
+
     for (llvm::MachineOperand UsedOperand : MI->uses()) {
       if (!UsedOperand.isReg())
         continue;
@@ -352,29 +369,37 @@ public:
       
       for (auto &&Dep : Blockers) {
         MachineInstr *MIOfDep = Dep.second.MI;
-        if (Dep.first != MI && Dep.second.MI != MI && hasOverlapsWithDefs(*MIOfDep, UsedOpReg, &TRI)) {
+        if (Dep.first != MI && Dep.second.MI != MI && hasOverlapsWithDefs(*MIOfDep, UsedOpReg, &TRI) && (CurrentBlocker->MIPosition == -1 || Dep.second.MIPosition < CurrentBlocker->MIPosition)) {
           Dep.second.UsedPreviously = true;
-
-          if (!Blockers.contains(MI) && !NewDependencies.contains(MI)) {
-            Blocker NewBlocker{MI,{},{}};
-            NewDependencies.insert({MI, NewBlocker});
-          }
+          Blocks &= true;
           Dep.second.UsesSameRegisterBefore.push_back(MI);
-          llvm::errs() << "Uses same register\n";
-          Dep.second.MI->dump();
+          
+          //Dep.second.MI->dump();
+        } else if (Dep.first != MI && hasOverlapsWithDefs(*MIOfDep, UsedOpReg, &TRI) && (CurrentBlocker->MIPosition != -1 || Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
+          
+          CurrentBlocker->DefinedPreviously = true;
+          CurrentBlocker->DefinesBefore.push_back(Dep.second.MI);
         }
       }
     }
 
-    for (auto &&D : NewDependencies) {
-      addDependency(D.second);
+    if (Blocks) {
+      addDependency(*CurrentBlocker);
     }
   }
 
   void setDefinesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
                        const TargetInstrInfo &TII, bool UseCopyInstr) {
     // Maybe invalidate everything?
-    DenseMap<MachineInstr*, Blocker> NewDependencies;
+    bool Blocks = !Blockers.contains(MI);
+    Blocker b{MI};
+    Blocker *CurrentBlocker = nullptr;
+    if (!Blocks) {
+      CurrentBlocker = &Blockers[MI];
+    } else {
+      CurrentBlocker = &b;
+    }
+
     for (llvm::MachineOperand DefinedOperand : MI->defs()) {
       // Erase the uses
       if (!DefinedOperand.isReg()) {
@@ -395,30 +420,33 @@ public:
 
       for (auto &&Dep : Blockers) {
         MachineInstr *MIOfDep = Dep.second.MI;
-        if (Dep.first != MI && hasOverlaps(*MIOfDep, DefinedOpReg, &TRI)) {
+        if (Dep.first != MI && hasOverlaps(*MIOfDep, DefinedOpReg, &TRI) && (CurrentBlocker->MIPosition == -1 || Dep.second.MIPosition < CurrentBlocker->MIPosition)) {
+          Blocks &= true;
           Dep.second.DefinedPreviously = true;
-
-          if (Dep.first != MI && Dep.second.MI != MI && !Blockers.contains(MI) && !NewDependencies.contains(MI)) {
-            Blocker NewBlocker{MI, -1, {}, {}};
-            NewDependencies.insert({MI, NewBlocker});
-          }
           Dep.second.DefinesBefore.push_back(MI);
-
-          llvm::errs() << "Defines same register\n";
-          Dep.second.MI->dump();
+          
+          //Dep.second.MI->dump();
+        } else if (Dep.first != MI && hasOverlapsWithUses(*MIOfDep, DefinedOpReg, &TRI) && (CurrentBlocker->MIPosition != -1 || Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
+          
+          CurrentBlocker->UsedPreviously = true;
+          CurrentBlocker->UsesSameRegisterBefore.push_back(Dep.second.MI);
+        } else if (Dep.first != MI && hasOverlapsWithDefs(*MIOfDep, DefinedOpReg, &TRI) && (CurrentBlocker->MIPosition != -1 || Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
+          
+          CurrentBlocker->DefinedPreviously = true;
+          CurrentBlocker->DefinesBefore.push_back(Dep.second.MI);
         }
       }
     }
 
-    for (auto D : NewDependencies) {
-      addDependency(D.second);
+    if (Blocks) {
+      addDependency(*CurrentBlocker);
     }
   }
 
   void setDependenciesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
                        const TargetInstrInfo &TII, bool UseCopyInstr) {
-    llvm::errs() << "See what depends on:\n";
-    MI->dump();
+    LLVM_DEBUG(dbgs()<< "See what depends on:\n");
+    LLVM_DEBUG( MI->dump());
 
     setUsesForMI(MI, TRI, TII, UseCopyInstr);
     setDefinesForMI(MI, TRI, TII, UseCopyInstr);
@@ -568,7 +596,7 @@ public:
       Copy.LastSeenUseInCopy = MI;
     }
     
-    Blocker b{MI, -1, {}, {}, false, false, true};
+    Blocker b{MI};
     addDependency(b);
   }
 
@@ -1358,8 +1386,8 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
     if (hasOverlappingMultipleDef(MI, MODef, Def))
       continue;
 
-    llvm::errs() << "Backward copy was found\n";
-    Copy->dump();
+    LLVM_DEBUG(dbgs() << "Backward copy was found\n");
+    LLVM_DEBUG(Copy->dump());
 
     // Let's see if we have any kind of previous dependencies for the copy,
     // that have no other dependencies. (So the dependency tree is one level deep)
@@ -1371,7 +1399,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
       // The dependency tree is more than one level deep
       continue;
     }
-    llvm::errs() << "Number of dependencies of the copy: " << PreviousDependencies->size() << "\n";
+    LLVM_DEBUG(dbgs() << "Number of dependencies of the copy: " << PreviousDependencies->size() << "\n");
     bool NoDependencyWithMI =
         std::all_of(PreviousDependencies->begin(), PreviousDependencies->end(),
                     [&](auto *MI1) {
@@ -1387,12 +1415,12 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
       //llvm::errs() << "Have collision with the current MI\n";
       continue;
     }
-
+    Tracker.addDependency({&MI});
     for (llvm::MachineInstr *I : llvm::reverse(*PreviousDependencies)) {
-      llvm::errs() << "Moving ";
-      I->dump();
-      llvm::errs() << "Before ";
-      MI.dump();
+      LLVM_DEBUG(dbgs() << "Moving ");
+      LLVM_DEBUG(I->dump());
+      LLVM_DEBUG(dbgs() << "Before ");
+      LLVM_DEBUG(MI.dump());
       Tracker.moveBAfterA(&MI, I);
     }
 
@@ -1400,17 +1428,17 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
                       << "\n     with " << printReg(Def, TRI) << "\n     in "
                       << MI << "     from " << *Copy);
 
-    Tracker.dumpBlockers();
+    //Tracker.dumpBlockers();
 
     MODef.setReg(Def);
     MODef.setIsRenamable(CopyOperands->Destination->isRenamable());
 
-    Tracker.dumpBlockers();
+    //Tracker.dumpBlockers();
     
     Tracker.invalidateRegister(MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
     Tracker.invalidateRegister(Def, *TRI, *TII, UseCopyInstr);
-    llvm::errs() << "After the moving\n";
-    MI.getParent()->dump();
+    //llvm::errs() << "After the moving\n";
+    //MI.getParent()->dump();
 
     LLVM_DEBUG(dbgs() << "MCP: After replacement: " << MI << "\n");
     MaybeDeadCopies.insert(Copy);
@@ -1428,8 +1456,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   // Without tracking the numbers things fail because the order if instructions matter.
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
     PosOfInstr++;
-    llvm::errs() << "### NEXT: ";
-    MI.dump();
+    LLVM_DEBUG(dbgs() << "### NEXT: ");
+    LLVM_DEBUG(MI.dump());
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
