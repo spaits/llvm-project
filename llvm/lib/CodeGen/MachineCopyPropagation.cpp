@@ -358,7 +358,8 @@ public:
       // TODO: Check if it can be replaced with invalidateRegister
       for (MCRegUnit UsedOPMcRegUnit : TRI.regunits(UsedOpMCReg)) {
         auto CopyThatDependsOnIt = Copies.find(UsedOPMcRegUnit);
-        if (CopyThatDependsOnIt != Copies.end()) {
+        // Do not take debug usages into account.
+        if (CopyThatDependsOnIt != Copies.end() && !UsedOperand.isDebug()) {
           //invalidateRegister(UsedOpMCReg, TRI, TII, UseCopyInstr);
           Copies.erase(CopyThatDependsOnIt);
         }
