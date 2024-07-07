@@ -503,7 +503,39 @@ public:
     std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
         PreviousDefinesWithoutDeps =
             getFirstPreviousDefOfAnyRegisterInMI(MI, TRI);
-    if (!PreviousDefinesWithoutDeps)
+    // For now just disable the moving of dependencies when there is a
+    // previous definition in the dependencies.
+    // Here is the following case:
+    //
+    // r1 = Copy r0
+    // Use r100
+    // r2, r100 = Some operation that defines both of these registers
+    // Use r2
+    // Use r0
+    // r2 = copy r1
+    //
+    // First we would track `r2 = copy r1`, it is added to the dependency tree
+    // as root. Then we would find out that Use r2 uses a regiszer that is defined
+    // in `r2 = copy r1` so it is added to the dependency tree. After that
+    // we found that r2, r100 is also defined so this instruction is added
+    // to the dependency tree. The problem happens here. r100 is also
+    // defined in this line, but the previos use, that depenend on this
+    // definition is not registered in the dependency tree, so this
+    // importand dependeny will not be recognized. If this check was not here
+    // later on we would think that there are no more dependencies with the
+    // tree and `r1 = Copy r0`, we would flatten the tree and move it befor
+    // the copy and end up with this:
+    //
+    // r2, r100 = Some operation that defines both of these registers
+    // Use r2
+    // r2 = Copy r0
+    // Use r100
+    // Use r0
+    //
+    // Now `Use r100` is preceeded by the re-definition.
+    // TODO: Remove the algorithm merging together the previous uses and
+    // defs. Also adjust the def handling.
+    if (!PreviousDefinesWithoutDeps || PreviousDefinesWithoutDeps->size() > 0)
       return {};
 
     auto PreviousUsesWithoutDeps = getFirstPreviousUseOfAnyRegisterInMI(MI, TRI);
