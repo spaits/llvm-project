@@ -171,16 +171,10 @@ class CopyTracker {
     // eachother.
     int MIPosition = -1;
 
-    // The instructions appearing before the MI that any of the same registers
-    // used or defined by the MI.
-    llvm::SmallVector<MachineInstr *> UsesSameRegisterBefore;
-    // The instructions appearing before the MI that defines any of the
-    // registers used or defined by the MI.
-    llvm::SmallVector<MachineInstr *> DefinesBefore;
-
-    bool DefinedPreviously = false;
-    bool UsedPreviously = false;
-    bool Root = false;
+    // The children in the dependency tree. These are the instructions
+    // that work with at least one common register with the current instruction.
+    llvm::SmallVector<MachineInstr *> MustPrecede;
+    bool AnythingMustPrecede = false;   
   };
 
   struct CopyInfo {
@@ -193,27 +187,6 @@ class CopyTracker {
   DenseMap<MachineInstr*, Dependency> Dependencies;
 
 public:
-  void dumpBlockers() {
-    llvm::errs() << "-- Dumping blockers BEGIN --\n";
-    for (auto i : Dependencies) {
-      llvm::errs() << "MI (Key):\n";
-      i.first->dump();
-      llvm::errs() << "The values:\nMI:\n";
-      i.second.MI->dump();
-      llvm::errs() << "Used before: " << i.second.UsesSameRegisterBefore.size() << " Defined Before: " << i.second.DefinesBefore.size() << " Is root: " << i.second.Root << "\n\n";
-      llvm::errs() << "Those who use:\n";
-      for (MachineInstr *I : i.second.UsesSameRegisterBefore) {
-        I->dump();
-      }
-      llvm::errs() << "Those who define:\n";
-      for (MachineInstr *I : i.second.DefinesBefore) {
-        I->dump();
-      }
-      llvm::errs() << "\n";
-    }
-    llvm::errs() << "-- Dumping blockers END --\n";
-
-  }
   /// Mark all of the given registers and their subregisters as unavailable for
   /// copying.
   void markRegsUnavailable(ArrayRef<MCRegister> Regs,
@@ -231,8 +204,8 @@ public:
   void moveBAfterA(MachineInstr *A, MachineInstr *B) {
     llvm::MachineBasicBlock *MBB = A->getParent();
     assert(MBB == B->getParent() && "Both instructions must be in the same MachineBasicBlock");
-    assert(Dependencies.contains(B) && "Shall contain the blocker");
-    Dependencies[B].MIPosition = Time++; // Should know A's position
+    assert(Dependencies.contains(B) && "Shall contain the instruction that blocks the optimization.");
+    Dependencies[B].MIPosition = Time++;
     MBB->remove(B);
     MBB->insertAfter(--A->getIterator(), B);
   }
@@ -360,15 +333,11 @@ public:
       if (!OpMCReg)
         continue;
 
-      // Invalidate those copies that are affected by the definition or usage of
-      // this register WARNING: MAYBE NOT GOOD HERE BECAUSE TRACK IS CALLED
-      // BEFORE
+      // Invalidate those copies that are affected by the definition or usage of the current MI.
       for (MCRegUnit UsedOPMcRegUnit : TRI.regunits(OpMCReg)) {
         auto CopyThatDependsOnIt = Copies.find(UsedOPMcRegUnit);
         // Do not take debug usages into account.
-        if (CopyThatDependsOnIt != Copies.end() &&
-            /*Maybe this is not neede*/ !Operand.isDebug()) {
-          // invalidateRegister(UsedOpMCReg, TRI, TII, UseCopyInstr);
+        if (CopyThatDependsOnIt != Copies.end() && !(Operand.isUse() && Operand.isDebug())) {
           Copies.erase(CopyThatDependsOnIt);
         }
       }
@@ -379,64 +348,25 @@ public:
         MachineInstr *DepMI = Dep.first;
         if (DepMI == MI)
           continue;
+        if (Operand.isUse() && Operand.isDebug())
+            continue;
         if (!hasOverlaps(*DepMI, OpReg, &TRI))
           continue;
-        if (Operand.isUse()) {
-          if (Operand.isDebug())
-            continue;
+        
 
-          if (hasOverlaps(*DepMI, OpReg, &TRI) &&
-              (CurrentBlocker->MIPosition == -1 ||
-               Dep.second.MIPosition < CurrentBlocker->MIPosition)) {
-            Dep.second.UsedPreviously = true;
-            Dep.second.UsesSameRegisterBefore.push_back(MI);
-            continue;
-          }
-
-          if (hasOverlapsWithDefs(*DepMI, OpReg, &TRI) &&
-              (CurrentBlocker->MIPosition != -1 &&
-               Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
-            CurrentBlocker->DefinedPreviously = true;
-            CurrentBlocker->DefinesBefore.push_back(Dep.second.MI);
-            continue;
-          }
-
-          if (hasOverlapsWithUses(*DepMI, OpReg, &TRI) &&
-              (CurrentBlocker->MIPosition != -1 &&
-               Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
-            CurrentBlocker->UsedPreviously = true;
-            CurrentBlocker->UsesSameRegisterBefore.push_back(Dep.second.MI);
-            continue;
-          }
-
-          llvm_unreachable("Inconsistent state: handling previous uses.");
+        // The current instruction precedes the instruction in the dependency tree.
+        if (CurrentBlocker->MIPosition == -1 || Dep.second.MIPosition < CurrentBlocker->MIPosition) {
+          Dep.second.MustPrecede.push_back(MI);
+          Dep.second.AnythingMustPrecede = true;
+          continue;
         }
 
-        if (Operand.isDef()) {
-          if (hasOverlaps(*DepMI, OpReg, &TRI) &&
-              (CurrentBlocker->MIPosition == -1 ||
-               Dep.second.MIPosition < CurrentBlocker->MIPosition)) {
-            Dep.second.DefinedPreviously = true;
-            Dep.second.DefinesBefore.push_back(MI);
-            continue;
-          }
-          if (hasOverlapsWithUses(*DepMI, OpReg, &TRI) &&
-              (CurrentBlocker->MIPosition != -1 &&
-               Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
-
-            CurrentBlocker->UsedPreviously = true;
-            CurrentBlocker->UsesSameRegisterBefore.push_back(Dep.second.MI);
-            continue;
-          }
-          if (hasOverlapsWithDefs(*DepMI, OpReg, &TRI) &&
-              (CurrentBlocker->MIPosition != -1 &&
-               Dep.second.MIPosition > CurrentBlocker->MIPosition)) {
-            CurrentBlocker->DefinedPreviously = true;
-            CurrentBlocker->DefinesBefore.push_back(Dep.second.MI);
-            continue;
-          }
-
-          llvm_unreachable("Inconsistent state: handling previous defs.");
+        // The current instruction is preceeded the instruction in the dependency tree.
+        // This can happen when other instruction are moved before the currently analyzed one to optimize data dependencies.
+        if (CurrentBlocker->MIPosition != -1 && Dep.second.MIPosition > CurrentBlocker->MIPosition) {
+          CurrentBlocker->MustPrecede.push_back(DepMI);
+          CurrentBlocker->AnythingMustPrecede = true;
+          continue;
         }
       }
     }
@@ -446,190 +376,25 @@ public:
     }
   }
 
-  // FIXME :
-  // llvm/test/CodeGen/RISCV/rvv/fixed-vectors-interleaved-access-zve32x.ll
-  // doesnt work
-  // TODO Create test case based on xmulo.ll
-
-  // void setDependenciesForMI(MachineInstr *MI, const TargetRegisterInfo &TRI,
-  //                           const TargetInstrInfo &TII, bool UseCopyInstr) {
-  //   LLVM_DEBUG(dbgs() << "See what depends on:\n");
-  //   LLVM_DEBUG(MI->dump());
-  //
-  //  setEverythingForMI(MI, TRI, TII, UseCopyInstr);
-  //}
-
-  std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
-  getFirstPreviousUseOfAnyRegisterInMI(MachineInstr *MI,
-                                       const TargetRegisterInfo &TRI) {
+  
+  std::optional<llvm::SmallVector<MachineInstr *>>
+  getFirstPreviousDependencies(MachineInstr *MI,
+                               const TargetRegisterInfo &TRI) {
     if (Dependencies.contains(MI)) {
-      auto PrevUses = Dependencies[MI].UsesSameRegisterBefore;
-      if (std::all_of(PrevUses.begin(), PrevUses.end(), [&](auto OneUse) {
-            if (!OneUse) {
-              // TODO set this to false
-              return false;
-            }
-            return !(Dependencies[OneUse].UsedPreviously) &&
-                   !(Dependencies[OneUse].DefinedPreviously) &&
-                   (Dependencies[OneUse].DefinesBefore.size() == 0) &&
-                   (Dependencies[OneUse].UsesSameRegisterBefore.size() == 0);
-          })) {
-        llvm::SmallVector<std::pair<int, MachineInstr *>> Ret;
-        Ret.reserve(PrevUses.size());
-        std::transform(PrevUses.begin(), PrevUses.end(),
-                       std::back_inserter(Ret), [&](auto *MI) {
-                         return std::make_pair(Dependencies[MI].MIPosition, MI);
-                       });
-        return Ret;
-      }
-      return {};
-    }
-    return {{}};
-  }
-
-  std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
-  getFirstPreviousDefOfAnyRegisterInMI(MachineInstr *MI,
-                                       const TargetRegisterInfo &TRI) {
-    if (Dependencies.contains(MI)) {
-      auto PrevDefs = Dependencies[MI].DefinesBefore;
+      auto PrevDefs = Dependencies[MI].MustPrecede;
       if (std::all_of(PrevDefs.begin(), PrevDefs.end(), [&](auto OneUse) {
             if (!OneUse) {
               return false;
             }
-            return !(Dependencies[OneUse].UsedPreviously) &&
-                   !(Dependencies[OneUse].DefinedPreviously) &&
-                   (Dependencies[OneUse].DefinesBefore.size() == 0) &&
-                   (Dependencies[OneUse].UsesSameRegisterBefore.size() == 0);
+            return !(Dependencies[OneUse].AnythingMustPreceed) &&
+                   (Dependencies[OneUse].MustPreceed.size() == 0);
           })) {
-        llvm::SmallVector<std::pair<int, MachineInstr *>> Ret;
-        Ret.reserve(PrevDefs.size());
-        std::transform(PrevDefs.begin(), PrevDefs.end(),
-                       std::back_inserter(Ret), [&](auto *MI) {
-                         return std::make_pair(Dependencies[MI].MIPosition, MI);
-                       });
-        return Ret;
+        
+        return Dependencies[MI].MustPrecede;
       }
       return {};
     }
     return {{}};
-  }
-
-  // Mention rvv/no-reserved-frame.ll
-  std::optional<llvm::SmallVector<MachineInstr *>>
-  getFirstPreviousDependencies(MachineInstr *MI,
-                               const TargetRegisterInfo &TRI) {
-    std::optional<llvm::SmallVector<std::pair<int, MachineInstr *>>>
-        PreviousDefinesWithoutDeps =
-            getFirstPreviousDefOfAnyRegisterInMI(MI, TRI);
-    // For now just disable the moving of dependencies when there is a
-    // previous definition in the dependencies.
-    // Here is the following case:
-    //
-    // r1 = Copy r0
-    // Use r100
-    // r2, r100 = Some operation that defines both of these registers
-    // Use r2
-    // Use r0
-    // r2 = copy r1
-    //
-    // First we would track `r2 = copy r1`, it is added to the dependency tree
-    // as root. Then we would find out that Use r2 uses a regiszer that is
-    // defined in `r2 = copy r1` so it is added to the dependency tree. After
-    // that we found that r2, r100 is also defined so this instruction is added
-    // to the dependency tree. The problem happens here. r100 is also
-    // defined in this line, but the previos use, that depenend on this
-    // definition is not registered in the dependency tree, so this
-    // importand dependeny will not be recognized. If this check was not here
-    // later on we would think that there are no more dependencies with the
-    // tree and `r1 = Copy r0`, we would flatten the tree and move it befor
-    // the copy and end up with this:
-    //
-    // r2, r100 = Some operation that defines both of these registers
-    // Use r2
-    // r2 = Copy r0
-    // Use r100
-    // Use r0
-    //
-    // Now `Use r100` is preceeded by the re-definition.
-    // TODO: Remove the algorithm merging together the previous uses and
-    // defs. Also adjust the def handling.
-    if (!PreviousDefinesWithoutDeps  /* || PreviousDefinesWithoutDeps->size() > 0*/)
-      return {};
-
-    auto PreviousUsesWithoutDeps =
-        getFirstPreviousUseOfAnyRegisterInMI(MI, TRI);
-    if (!PreviousUsesWithoutDeps)
-      return {};
-
-    size_t UsesSize = PreviousUsesWithoutDeps->size();
-    size_t DefsSize = PreviousDefinesWithoutDeps->size();
-    unsigned int DefIdx = 0;
-    unsigned int UseIdx = 0;
-
-    unsigned int SizeOfAllDeps = DefsSize + UsesSize;
-    llvm::SmallVector<MachineInstr *> Deps;
-
-    if (UsesSize == 0) {
-      for (; DefIdx < DefsSize; DefIdx++) {
-        Deps.push_back((*PreviousDefinesWithoutDeps)[DefIdx].second);
-      }
-      return Deps;
-    }
-
-    if (DefsSize == 0) {
-      for (; UseIdx < UsesSize; UseIdx++) {
-        Deps.push_back((*PreviousUsesWithoutDeps)[UseIdx].second);
-      }
-      return Deps;
-    }
-
-    assert(DefsSize != 0 && UsesSize != 0 &&
-           "At this point either shouldn't be 0");
-
-    // TODO algorithm could be made more efficient but then it would be less
-    // readable.
-    for (unsigned int ResIdx = 0;
-         ResIdx < SizeOfAllDeps && DefIdx < DefsSize && UseIdx < UsesSize;
-         ResIdx++) {
-      std::pair<int, MachineInstr *> CurDef =
-          (*PreviousDefinesWithoutDeps)[DefIdx];
-      std::pair<int, MachineInstr *> CurUse =
-          (*PreviousUsesWithoutDeps)[UseIdx];
-
-      if (CurDef.first < CurUse.first) {
-        Deps.push_back(CurDef.second);
-        DefIdx++;
-      } else if (CurDef.first > CurUse.first) {
-        Deps.push_back(CurUse.second);
-        UseIdx++;
-      } else if (CurDef.first == CurUse.first) {
-        // CurDef.second->dump();
-        // CurUse.second->dump();
-        assert(CurDef.second == CurUse.second &&
-               "On the same position the same instruction should be.");
-        Deps.push_back(CurUse.second);
-        UseIdx++;
-        DefIdx++;
-      } else {
-        llvm_unreachable("Some of the previous conditions must be met.");
-      }
-    }
-
-    assert((DefIdx == DefsSize || UseIdx == UsesSize) &&
-           "At least one of the array should be totally moved.");
-
-    for (; DefIdx < DefsSize; DefIdx++) {
-      Deps.push_back((*PreviousDefinesWithoutDeps)[DefIdx].second);
-    }
-
-    for (; UseIdx < UsesSize; UseIdx++) {
-      Deps.push_back((*PreviousUsesWithoutDeps)[UseIdx].second);
-    }
-
-    assert(DefIdx == DefsSize && UseIdx == UsesSize &&
-           "At this point everything should be moved.");
-
-    return Deps;
   }
 
   /// Add this copy's registers into the tracker's copy maps.
