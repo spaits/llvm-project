@@ -364,7 +364,8 @@ public:
 
       // Set up the dependencies for the copies.
       // Set up the dependencies for the blockers.
-
+      if (UsedOperand.isDebug())
+        continue;
       for (auto &&Dep : Blockers) {
         MachineInstr *MIOfDep = Dep.second.MI;
         if (Dep.first != MI && Dep.second.MI != MI &&
