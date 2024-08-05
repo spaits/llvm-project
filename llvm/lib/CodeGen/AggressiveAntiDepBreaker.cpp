@@ -606,6 +606,7 @@ bool AggressiveAntiDepBreaker::FindSuitableFreeRegisters(
   const TargetRegisterClass *SuperRC =
     TRI->getMinimalPhysRegClass(SuperReg, MVT::Other);
 
+  
   ArrayRef<MCPhysReg> Order = RegClassInfo.getOrder(SuperRC);
   if (Order.empty()) {
     LLVM_DEBUG(dbgs() << "\tEmpty Super Regclass!!\n");
@@ -732,6 +733,7 @@ unsigned AggressiveAntiDepBreaker::BreakAntiDependencies(
                               MachineBasicBlock::iterator End,
                               unsigned InsertPosIndex,
                               DbgValueVector &DbgValues) {
+  llvm::errs() << "Break antideps\n";
   std::vector<unsigned> &KillIndices = State->GetKillIndices();
   std::vector<unsigned> &DefIndices = State->GetDefIndices();
   std::multimap<unsigned, AggressiveAntiDepState::RegisterReference>&

@@ -87,9 +87,11 @@
 #include "llvm/CodeGen/ScheduleDAG.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/ScheduleDAGMutation.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/CodeGen/TargetSchedule.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/CodeGen/AntiDepBreaker.h"
 #include <algorithm>
 #include <cassert>
 #include <llvm/Support/raw_ostream.h>
@@ -292,6 +294,8 @@ protected:
   const SUnit *NextClusterPred = nullptr;
   const SUnit *NextClusterSucc = nullptr;
 
+  AntiDepBreaker *AntiDepBreak;
+
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
   /// The number of instructions scheduled so far. Used to cut off the
   /// scheduler at the point determined by misched-cutoff.
@@ -299,10 +303,16 @@ protected:
 #endif
 
 public:
+  bool IsPostRA = false;
   ScheduleDAGMI(MachineSchedContext *C, std::unique_ptr<MachineSchedStrategy> S,
                 bool RemoveKillFlags)
       : ScheduleDAGInstrs(*C->MF, C->MLI, RemoveKillFlags), AA(C->AA),
-        LIS(C->LIS), SchedImpl(std::move(S)) {}
+        LIS(C->LIS), SchedImpl(std::move(S)) {
+    SmallVector<const TargetRegisterClass*, 4> CriticalPathRCs;
+    C->MF->getSubtarget().getCriticalPathRCs(CriticalPathRCs);
+    if (C->RegClassInfo && C->MF)
+      AntiDepBreak = createAggressiveAntiDepBreaker(*(C->MF), *(C->RegClassInfo), CriticalPathRCs);
+  }
 
   // Provide a vtable anchor
   ~ScheduleDAGMI() override;
@@ -358,6 +368,8 @@ public:
 
   void viewGraph(const Twine &Name, const Twine &Title) override;
   void viewGraph() override;
+
+  virtual void observe(MachineInstr &MI, unsigned Count) override;
 
 protected:
   // Top-Level entry points for the schedule() driver...
@@ -495,6 +507,8 @@ public:
   unsigned computeCyclicCriticalPath();
 
   void dump() const override;
+
+  virtual void observe(MachineInstr &MI, unsigned Count) override;
 
 protected:
   // Top-Level entry points for the schedule() driver...

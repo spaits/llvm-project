@@ -367,6 +367,8 @@ namespace llvm {
     /// equivalent edge already existed (false indicates failure).
     bool addEdge(SUnit *SuccSU, const SDep &PredDep);
 
+    virtual void observe(MachineInstr &MI, unsigned Count) {} 
+
   protected:
     void initSUnits();
     void addPhysRegDataDeps(SUnit *SU, unsigned OperIdx);

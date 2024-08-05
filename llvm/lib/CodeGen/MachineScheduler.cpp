@@ -48,6 +48,7 @@
 #include "llvm/CodeGen/TargetSchedule.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/CodeGenTypes/MachineValueType.h"
+#include "llvm/CodeGen/AntiDepBreaker.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/MC/LaneBitmask.h"
@@ -631,6 +632,7 @@ void MachineSchedulerBase::scheduleRegions(ScheduleDAGInstrs &Scheduler,
 
     MBBRegionsVector MBBRegions;
     getSchedRegions(&*MBB, MBBRegions, Scheduler.doMBBSchedRegionsTopDown());
+    unsigned Count = MBB->size();
     for (const SchedRegion &R : MBBRegions) {
       MachineBasicBlock::iterator I = R.RegionBegin;
       MachineBasicBlock::iterator RegionEnd = R.RegionEnd;
@@ -663,6 +665,8 @@ void MachineSchedulerBase::scheduleRegions(ScheduleDAGInstrs &Scheduler,
       // Schedule a region: possibly reorder instructions.
       // This invalidates the original region iterators.
       Scheduler.schedule();
+      MachineInstr &MI = *std::prev(RegionEnd);
+      //Scheduler.observe(MI,0);
 
       // Close the current region.
       Scheduler.exitRegion();
@@ -776,9 +780,19 @@ void ScheduleDAGMI::releasePredecessors(SUnit *SU) {
 void ScheduleDAGMI::startBlock(MachineBasicBlock *bb) {
   ScheduleDAGInstrs::startBlock(bb);
   SchedImpl->enterMBB(bb);
+  if (AntiDepBreak)
+    AntiDepBreak->StartBlock(BB);
+}
+
+void ScheduleDAGMI::observe(MachineInstr &MI, unsigned Count) {
+  if (AntiDepBreak)
+        AntiDepBreak->Observe(MI, Count, begin()->getParent()->size());
 }
 
 void ScheduleDAGMI::finishBlock() {
+  if (AntiDepBreak)
+    AntiDepBreak->FinishBlock();
+
   SchedImpl->leaveMBB();
   ScheduleDAGInstrs::finishBlock();
 }
@@ -833,13 +847,35 @@ bool ScheduleDAGMI::checkSchedLimit() {
 /// that does not consider liveness or register pressure. It is useful for
 /// PostRA scheduling and potentially other custom schedulers.
 void ScheduleDAGMI::schedule() {
+  llvm::errs() << "Schedule " << this << " " << IsPostRA << "\n";
   LLVM_DEBUG(dbgs() << "ScheduleDAGMI::schedule starting\n");
   LLVM_DEBUG(SchedImpl->dumpPolicy());
 
   // Build the DAG.
   buildSchedGraph(AA);
-
   postProcessDAG();
+
+
+  //if (!IsPostRA) {
+  //  AntiDepBreak = nullptr;
+  //}
+  if (AntiDepBreak && IsPostRA) {
+    llvm::errs() << "Break anti deps\n";
+    unsigned Broken = AntiDepBreak->BreakAntiDependencies(
+        SUnits, RegionBegin, RegionEnd, begin()->getParent()->size(), DbgValues);
+    if (Broken != 0) {
+      // We made changes. Update the dependency graph.
+      // Theoretically we could update the graph in place:
+      // When a live range is changed to use a different register, remove
+      // the def's anti-dependence *and* output-dependence edges due to
+      // that register, and add new anti-dependence and output-dependence
+      // edges based on the next live range of the register.
+      ScheduleDAG::clearDAG();
+      buildSchedGraph(AA);
+      postProcessDAG();
+    }
+  }
+
 
   SmallVector<SUnit*, 8> TopRoots, BotRoots;
   findRootsAndBiasEdges(TopRoots, BotRoots);
@@ -1353,6 +1389,11 @@ updateScheduledPressure(const SUnit *SU,
                         << " livethru)\n");
     }
   }
+}
+
+void ScheduleDAGMILive::observe(MachineInstr &MI, unsigned Count) {
+  if (AntiDepBreak)
+      AntiDepBreak->Observe(MI, Count, begin()->getParent()->size());
 }
 
 /// Update the PressureDiff array for liveness after scheduling this
@@ -3251,7 +3292,7 @@ void GenericScheduler::initialize(ScheduleDAGMI *dag) {
   DAG = static_cast<ScheduleDAGMILive*>(dag);
   SchedModel = DAG->getSchedModel();
   TRI = DAG->TRI;
-
+  DAG->IsPostRA = false;
   if (RegionPolicy.ComputeDFSResult)
     DAG->computeDFSResult();
 
@@ -3881,6 +3922,8 @@ GenericSchedRegistry("converge", "Standard converging scheduler.",
 
 void PostGenericScheduler::initialize(ScheduleDAGMI *Dag) {
   DAG = Dag;
+  // Specify if postRA
+  DAG->IsPostRA = true;
   SchedModel = DAG->getSchedModel();
   TRI = DAG->TRI;
 
