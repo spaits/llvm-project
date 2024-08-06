@@ -387,6 +387,7 @@ nextIfDebug(MachineBasicBlock::iterator I,
 
 /// Instantiate a ScheduleDAGInstrs that will be owned by the caller.
 ScheduleDAGInstrs *MachineScheduler::createMachineScheduler() {
+  
   // Select the scheduler, or set the default.
   MachineSchedRegistry::ScheduleDAGCtor Ctor = MachineSchedOpt;
   if (Ctor != useDefaultMachineSched)
