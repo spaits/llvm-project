@@ -51,6 +51,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include <cassert>
@@ -9504,7 +9505,7 @@ void AArch64InstrInfo::buildClearRegister(Register Reg, MachineBasicBlock &MBB,
 
 std::optional<DestSourcePair>
 AArch64InstrInfo::isCopyInstrImpl(const MachineInstr &MI) const {
-
+  llvm::errs() << "--In the aarch implementation--\n";
   // AArch64::ORRWrs and AArch64::ORRXrs with WZR/XZR reg
   // and zero immediate operands used as an alias for mov instruction.
   if (MI.getOpcode() == AArch64::ORRWrs &&
@@ -9517,13 +9518,20 @@ AArch64InstrInfo::isCopyInstrImpl(const MachineInstr &MI) const {
        MI.findRegisterDefOperandIdx(MI.getOperand(0).getReg() - AArch64::W0 +
                                         AArch64::X0,
                                     /*TRI=*/nullptr) == -1))
-    return DestSourcePair{MI.getOperand(0), MI.getOperand(2)};
+  {
+    llvm::errs() << "This MI is a copy: ";
+    MI.dump();
+    return DestSourcePair{MI.getOperand(0), MI.getOperand(2)};    
+  }
 
   if (MI.getOpcode() == AArch64::ORRXrs &&
       MI.getOperand(1).getReg() == AArch64::XZR &&
       MI.getOperand(3).getImm() == 0x0)
     return DestSourcePair{MI.getOperand(0), MI.getOperand(2)};
 
+  llvm::errs() << "This MI: ";
+  MI.dump();
+  llvm::errs() << "Is not a copy\n";
   return std::nullopt;
 }
 

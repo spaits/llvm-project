@@ -96,8 +96,10 @@ namespace llvm {
 std::optional<DestSourcePair> isCopyInstr(const MachineInstr &MI,
                                                  const TargetInstrInfo &TII,
                                                  bool UseCopyInstr) {
-  if (UseCopyInstr)
+  if (UseCopyInstr) {
+    llvm::errs() << "Using copy innstr\n";
     return TII.isCopyInstr(MI);
+  }
 
   if (MI.isCopy())
     return std::optional<DestSourcePair>(
@@ -116,8 +118,113 @@ bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
 
   if (MRI.isReserved(Def) || MRI.isReserved(Src))
     return false;
-
+  CopyOperands.Source->dump();
+  llvm::errs() << CopyOperands.Source->isRenamable() << "&&" << CopyOperands.Source->isKill() << "\n";
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
+}
+
+CopyTracker BackwardPropagationCL::backwardCopyPropagateBlockRanges(MachineBasicBlock::iterator RegionBegin, MachineBasicBlock::iterator RegionEnd, bool Analysis) {
+
+  if (RegionBegin == RegionEnd) {
+    return Tracker;
+  }
+  for (MachineBasicBlock::iterator I = RegionBegin; I != RegionEnd; I++) {
+    MachineInstr &MI = *I;
+    MI.dump();
+  }
+  llvm::errs() << "-------------\n";
+  for (auto &MI : llvm::reverse(llvm::make_range(RegionBegin, RegionEnd))) {
+    MI.dump();
+  }
+  for (auto &MI : llvm::reverse(llvm::make_range(RegionBegin, RegionEnd))) {
+    // Ignore non-trivial COPYs.
+    llvm::errs() << "MI: ";
+    MI.dump();
+    std::optional<DestSourcePair> CopyOperands =
+        isCopyInstr(MI, *TII, UseCopyInstr);
+    llvm::errs() << "is copy instr: " << CopyOperands.has_value() << " " << MI.getNumOperands() << "\n";
+    if (CopyOperands /*&& MI.getNumOperands() == 2 */) {
+      llvm::errs() << "Copy was found\n";
+      Register DefReg = CopyOperands->Destination->getReg();
+      Register SrcReg = CopyOperands->Source->getReg();
+
+      if (!TRI->regsOverlap(DefReg, SrcReg)) {
+        // Unlike forward cp, we don't invoke propagateDefs here,
+        // just let forward cp do COPY-to-COPY propagation.
+        if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
+          Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
+                                     UseCopyInstr, &(MI));
+          Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
+                                     UseCopyInstr, &(MI));
+          llvm::errs() << "Tracking a copy\n";
+          Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
+          continue;
+        } else {
+          llvm::errs() << "Not backward propagable\n";
+        }
+      } else {
+        llvm::errs() << "Has overlaps\n";
+      }
+    } else {
+      llvm::errs() << "Not even a copy\n";
+    }
+
+    // Invalidate any earlyclobber regs first.
+    for (const MachineOperand &MO : MI.operands())
+      if (MO.isReg() && MO.isEarlyClobber()) {
+        MCRegister Reg = MO.getReg().asMCReg();
+        if (!Reg)
+          continue;
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, &MI);
+      }
+
+    propagateDefs(MI);
+    for (const MachineOperand &MO : MI.operands()) {
+      if (!MO.isReg())
+        continue;
+
+      if (!MO.getReg())
+        continue;
+
+      if (MO.isDef())
+        Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
+                                   UseCopyInstr, &MI);
+
+      if (MO.readsReg()) {
+        if (MO.isDebug()) {
+          //  Check if the register in the debug instruction is utilized
+          // in a copy instruction, so we can update the debug info if the
+          // register is changed.
+          for (MCRegUnit Unit : TRI->regunits(MO.getReg().asMCReg())) {
+            if (auto *Copy = Tracker.findCopyDefViaUnit(Unit, *TRI)) {
+              CopyDbgUsers[Copy].insert(&MI);
+            }
+          }
+        } else {
+          Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
+                                     UseCopyInstr, &MI);
+        }
+      }
+    }
+  }
+
+  for (auto *Copy : MaybeDeadCopies) {
+    std::optional<DestSourcePair> CopyOperands =
+        isCopyInstr(*Copy, *TII, UseCopyInstr);
+    Register Src = CopyOperands->Source->getReg();
+    Register Def = CopyOperands->Destination->getReg();
+    SmallVector<MachineInstr *> MaybeDeadDbgUsers(CopyDbgUsers[Copy].begin(),
+                                                  CopyDbgUsers[Copy].end());
+
+    MRI->updateDbgUsersToReg(Src.asMCReg(), Def.asMCReg(), MaybeDeadDbgUsers);
+    Copy->eraseFromParent();
+    ++NumDeletes;
+  }
+
+  MaybeDeadCopies.clear();
+  CopyDbgUsers.clear();
+  //Tracker.clear();
+  return Tracker;
 }
 
 CopyTracker BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB, bool Analysis) {
@@ -128,6 +235,9 @@ CopyTracker BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock 
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
+    llvm::errs() << "[MCP] is copy instr: ";
+    MI.dump();
+    llvm::errs() << " " << CopyOperands.has_value() << " " << MI.getNumOperands() << "\n";
     if (CopyOperands && MI.getNumOperands() == 2) {
       Register DefReg = CopyOperands->Destination->getReg();
       Register SrcReg = CopyOperands->Source->getReg();

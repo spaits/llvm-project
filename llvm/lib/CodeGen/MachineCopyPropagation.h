@@ -65,6 +65,14 @@ class CopyTracker {
 
 public:
 
+  llvm::SmallVector<InvalidCopyInfo> getInvalidCopies() const {
+    return InvalidCopies;
+  }
+
+  llvm::SmallVector<SuccessfulCopyPropagationInfo> getSuccessfullyPropagatedCopies() const {
+    return SuccessfullyPropagatedCopies;
+  }
+
   void addSuccessfullyPropagatedCopy(MCRegUnit KeyRegister, MachineInstr *Source, MachineInstr *Dest) {
     SuccessfullyPropagatedCopies.push_back(SuccessfulCopyPropagationInfo{KeyRegister, Source, Dest});
   }
@@ -360,15 +368,21 @@ private:
   SmallSetVector<MachineInstr *, 8> MaybeDeadCopies;
   DenseMap<MachineInstr *, SmallSet<MachineInstr *, 2>> CopyDbgUsers;
   bool &Changed;
+
 public:
-  BackwardPropagationCL(const TargetRegisterInfo *TRI, const TargetInstrInfo *TII, const MachineRegisterInfo *MRI, bool UseCopyInstr, bool &Changed) : Changed(Changed) {
+  BackwardPropagationCL(const TargetRegisterInfo *TRI,
+                        const TargetInstrInfo *TII,
+                        const MachineRegisterInfo *MRI, bool UseCopyInstr,
+                        bool &Changed)
+      : Changed(Changed) {
     this->TRI = TRI;
     this->TII = TII;
     this->MRI = MRI;
     this->UseCopyInstr = UseCopyInstr;
   }
 
-  CopyTracker backwardCopyPropagateBlock(MachineBasicBlock &MBB, bool Analysis = false);
+  CopyTracker backwardCopyPropagateBlock(MachineBasicBlock &MBB,
+                                         bool Analysis = false);
   void propagateDefs(MachineInstr &MI, bool Analysis = false);
   bool isBackwardPropagatableRegClassCopy(const MachineInstr &Copy,
                                           const MachineInstr &UseI,
@@ -376,6 +390,7 @@ public:
   bool hasImplicitOverlap(const MachineInstr &MI, const MachineOperand &Use);
   bool hasOverlappingMultipleDef(const MachineInstr &MI,
                                  const MachineOperand &MODef, Register Def);
+  CopyTracker backwardCopyPropagateBlockRanges(MachineBasicBlock::iterator RegionBegin, MachineBasicBlock::iterator RegionEnd, bool Analysis);
 };
 
 } // end of namespace llvm

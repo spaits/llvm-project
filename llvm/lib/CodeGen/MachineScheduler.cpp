@@ -837,7 +837,11 @@ bool ScheduleDAGMI::checkSchedLimit() {
 void ScheduleDAGMI::schedule() {
   llvm::errs() << "In the scheduler Is it postRA? " << SchedImpl->isPostRA() << "\n";
   bool changed = false;
-  BackwardPropagationCL Bplc{TRI,TII,&MRI,false, changed};
+  BackwardPropagationCL Bplc{TRI,TII,&MRI,true, changed};
+  auto Res = Bplc.backwardCopyPropagateBlockRanges(RegionBegin, RegionEnd, true);
+
+  llvm::errs() << "Invalid copies: " << Res.getInvalidCopies().size() << "\n";
+
   LLVM_DEBUG(dbgs() << "ScheduleDAGMI::schedule starting\n");
   LLVM_DEBUG(SchedImpl->dumpPolicy());
 
@@ -900,6 +904,7 @@ void ScheduleDAGMI::schedule() {
   }
   assert(CurrentTop == CurrentBottom && "Nonempty unscheduled zone.");
 
+  
   placeDebugValues();
 
   LLVM_DEBUG({
