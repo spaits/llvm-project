@@ -55,12 +55,15 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -70,6 +73,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugCounter.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <iterator>
@@ -92,6 +96,14 @@ static cl::opt<cl::boolOrDefault>
     EnableSpillageCopyElimination("enable-spill-copy-elim", cl::Hidden);
 
 namespace {
+
+class ScheduleDAGMCP : public ScheduleDAGInstrs {
+public:
+  void schedule() override { llvm_unreachable("This schedule dag is only used as a dependency graph\n"); }
+  ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI, bool RemoveKillFlags= false) : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags) {
+    CanHandleTerminators = true;
+  }
+};
 
 static std::optional<DestSourcePair> isCopyInstr(const MachineInstr &MI,
                                                  const TargetInstrInfo &TII,
@@ -384,6 +396,7 @@ class MachineCopyPropagation : public MachineFunctionPass {
   const TargetRegisterInfo *TRI = nullptr;
   const TargetInstrInfo *TII = nullptr;
   const MachineRegisterInfo *MRI = nullptr;
+  AAResults *AA = nullptr;
 
   // Return true if this is a copy instruction and false otherwise.
   bool UseCopyInstr;
@@ -399,6 +412,7 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
     MachineFunctionPass::getAnalysisUsage(AU);
+    AU.addRequired<AAResultsWrapperPass>();
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -1046,6 +1060,16 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
 
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
     MachineBasicBlock &MBB) {
+  //ScheduleDAGMCP DG{};
+  ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
+
+  DG.startBlock(&MBB);
+  DG.enterRegion(&MBB, MBB.begin(), MBB.end(),MBB.size());
+  DG.buildSchedGraph(nullptr);
+  //DG.viewGraph();
+  DG.exitRegion();
+  DG.finishBlock();
+
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
 
@@ -1472,6 +1496,7 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   TRI = MF.getSubtarget().getRegisterInfo();
   TII = MF.getSubtarget().getInstrInfo();
   MRI = &MF.getRegInfo();
+  AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
 
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
