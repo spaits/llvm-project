@@ -120,7 +120,7 @@ bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
 }
 
-void BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB) {
+CopyTracker BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB, bool Analysis) {
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
 
@@ -137,9 +137,9 @@ void BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB) {
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
           Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
           continue;
         }
@@ -152,7 +152,7 @@ void BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB) {
         MCRegister Reg = MO.getReg().asMCReg();
         if (!Reg)
           continue;
-        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, &MI);
       }
 
     propagateDefs(MI);
@@ -165,7 +165,7 @@ void BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB) {
 
       if (MO.isDef())
         Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                   UseCopyInstr);
+                                   UseCopyInstr, &MI);
 
       if (MO.readsReg()) {
         if (MO.isDebug()) {
@@ -179,7 +179,7 @@ void BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB) {
           }
         } else {
           Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
         }
       }
     }
@@ -200,10 +200,11 @@ void BackwardPropagationCL::backwardCopyPropagateBlock(MachineBasicBlock &MBB) {
 
   MaybeDeadCopies.clear();
   CopyDbgUsers.clear();
-  Tracker.clear();
+  //Tracker.clear();
+  return Tracker;
 }
 
-void BackwardPropagationCL::propagateDefs(MachineInstr &MI) {
+void BackwardPropagationCL::propagateDefs(MachineInstr &MI, bool Analysis) {
   if (!Tracker.hasAnyCopies())
     return;
 
@@ -247,6 +248,10 @@ void BackwardPropagationCL::propagateDefs(MachineInstr &MI) {
     if (hasOverlappingMultipleDef(MI, MODef, Def))
       continue;
 
+    if (Analysis) {
+      Tracker.addSuccessfullyPropagatedCopy(Def, Copy, &MI);
+      continue;
+    }
     LLVM_DEBUG(dbgs() << "MCP: Replacing " << printReg(MODef.getReg(), TRI)
                       << "\n     with " << printReg(Def, TRI) << "\n     in "
                       << MI << "     from " << *Copy);

@@ -53,10 +53,30 @@ class CopyTracker {
     }
   };
 
+  struct SuccessfulCopyPropagationInfo {
+    MachineInstr *Source, *Dest;
+    MCRegUnit KeyRegister;
+    SuccessfulCopyPropagationInfo(MCRegUnit KeyRegister, MachineInstr *Source, MachineInstr *Dest) : Source(Source), Dest(Dest), KeyRegister(KeyRegister) {}
+  };
+
   DenseMap<MCRegUnit, CopyInfo> Copies;
   llvm::SmallVector<InvalidCopyInfo> InvalidCopies;
+  llvm::SmallVector<SuccessfulCopyPropagationInfo> SuccessfullyPropagatedCopies;
 
 public:
+
+  void addSuccessfullyPropagatedCopy(MCRegUnit KeyRegister, MachineInstr *Source, MachineInstr *Dest) {
+    SuccessfullyPropagatedCopies.push_back(SuccessfulCopyPropagationInfo{KeyRegister, Source, Dest});
+  }
+
+  bool hasSuccessfulPropagationHappenedWithIt(Register Reg, MachineInstr *MI) {
+    for (auto SuccessfulCopyProp : SuccessfullyPropagatedCopies) {
+      if (SuccessfulCopyProp.KeyRegister == Reg && SuccessfulCopyProp.Dest == MI)
+        return true;
+    }
+    return false;
+  }
+  
   /// Mark all of the given registers and their subregisters as unavailable for
   /// copying.
   void markRegsUnavailable(ArrayRef<MCRegister> Regs,
@@ -100,9 +120,14 @@ public:
           InvalidateCopy(MI);
       }
     }
+
+    bool HasSuccessfulPropagationHappenedWithIt = this->hasSuccessfulPropagationHappenedWithIt(Reg, InvalidatedBy);
+
     for (MCRegUnit Unit : RegUnitsToInvalidate) {
+      if (Copies.contains(Unit) && !HasSuccessfulPropagationHappenedWithIt) {
+        InvalidCopies.push_back(InvalidCopyInfo{Unit, Copies[Unit],InvalidatedBy});
+      }
       Copies.erase(Unit);
-      InvalidCopies.push_back(InvalidCopyInfo{Unit, Copies[Unit],InvalidatedBy});
     }
   }
 
@@ -343,8 +368,8 @@ public:
     this->UseCopyInstr = UseCopyInstr;
   }
 
-  void backwardCopyPropagateBlock(MachineBasicBlock &MBB);
-  void propagateDefs(MachineInstr &MI);
+  CopyTracker backwardCopyPropagateBlock(MachineBasicBlock &MBB, bool Analysis = false);
+  void propagateDefs(MachineInstr &MI, bool Analysis = false);
   bool isBackwardPropagatableRegClassCopy(const MachineInstr &Copy,
                                           const MachineInstr &UseI,
                                           unsigned UseIdx);

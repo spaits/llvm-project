@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/MachineScheduler.h"
+#include "MachineCopyPropagation.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
@@ -834,6 +835,9 @@ bool ScheduleDAGMI::checkSchedLimit() {
 /// that does not consider liveness or register pressure. It is useful for
 /// PostRA scheduling and potentially other custom schedulers.
 void ScheduleDAGMI::schedule() {
+  llvm::errs() << "In the scheduler Is it postRA? " << SchedImpl->isPostRA() << "\n";
+  bool changed = false;
+  BackwardPropagationCL Bplc{TRI,TII,&MRI,false, changed};
   LLVM_DEBUG(dbgs() << "ScheduleDAGMI::schedule starting\n");
   LLVM_DEBUG(SchedImpl->dumpPolicy());
 

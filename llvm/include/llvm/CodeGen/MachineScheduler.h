@@ -212,12 +212,16 @@ class MachineSchedStrategy {
   virtual void anchor();
 
 public:
+  
+
   virtual ~MachineSchedStrategy() = default;
 
   /// Optionally override the per-region scheduling policy.
   virtual void initPolicy(MachineBasicBlock::iterator Begin,
                           MachineBasicBlock::iterator End,
                           unsigned NumRegionInstrs) {}
+
+  virtual bool isPostRA() { return false; }
 
   virtual void dumpPolicy() const {}
 
@@ -1314,6 +1318,8 @@ public:
 
   /// PostRA scheduling does not track pressure.
   bool shouldTrackPressure() const override { return false; }
+
+  bool isPostRA() override { return true; }
 
   void initialize(ScheduleDAGMI *Dag) override;
 
