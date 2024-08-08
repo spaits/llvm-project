@@ -123,9 +123,11 @@ class CopyTracker {
     MachineInstr *MI, *LastSeenUseInCopy;
     SmallVector<MCRegister, 4> DefRegs;
     bool Avail;
+    MachineInstr *InvalidatedBy;
   };
 
   DenseMap<MCRegUnit, CopyInfo> Copies;
+  DenseMap<MCRegUnit, CopyInfo> InvalidCopies;
 
 public:
   /// Mark all of the given registers and their subregisters as unavailable for
@@ -142,9 +144,13 @@ public:
     }
   }
 
+  int getInvalidCopiesSize() {
+    return InvalidCopies.size();
+  }
+
   /// Remove register from copy maps.
   void invalidateRegister(MCRegister Reg, const TargetRegisterInfo &TRI,
-                          const TargetInstrInfo &TII, bool UseCopyInstr) {
+                          const TargetInstrInfo &TII, bool UseCopyInstr, MachineInstr *InvalidatedBy = nullptr) {
     // Since Reg might be a subreg of some registers, only invalidate Reg is not
     // enough. We have to find the COPY defines Reg or registers defined by Reg
     // and invalidate all of them. Similarly, we must invalidate all of the
@@ -170,8 +176,24 @@ public:
           InvalidateCopy(MI);
       }
     }
-    for (MCRegUnit Unit : RegUnitsToInvalidate)
+    for (MCRegUnit Unit : RegUnitsToInvalidate) {
+      if (Copies.contains(Unit)) {
+        InvalidCopies[Unit] = Copies[Unit];
+        InvalidCopies[Unit].InvalidatedBy = InvalidatedBy;
+        llvm::errs() << "Adding to invalids:\n";
+        llvm::errs() << printRegUnit(Unit, &TRI) << "\n";
+        if (InvalidCopies[Unit].MI) {
+          llvm::errs() << "MI:\n";
+          InvalidCopies[Unit].MI->dump();
+        }
+        if (InvalidCopies[Unit].LastSeenUseInCopy) {
+          llvm::errs() << "LSIU:\n";
+          InvalidCopies[Unit].LastSeenUseInCopy->dump();
+        }
+      }
+
       Copies.erase(Unit);
+    }
   }
 
   /// Clobber a single register, removing it from the tracker's copy maps.
@@ -264,11 +286,26 @@ public:
     return !Copies.empty();
   }
 
+  bool hasAnyInvalidCopies() {
+    return !InvalidCopies.empty();
+  }
+
   MachineInstr *findCopyForUnit(MCRegUnit RegUnit,
                                 const TargetRegisterInfo &TRI,
                                 bool MustBeAvailable = false) {
     auto CI = Copies.find(RegUnit);
     if (CI == Copies.end())
+      return nullptr;
+    if (MustBeAvailable && !CI->second.Avail)
+      return nullptr;
+    return CI->second.MI;
+  }
+
+  MachineInstr *findInvalidCopyForUnit(MCRegUnit RegUnit,
+                                const TargetRegisterInfo &TRI,
+                                bool MustBeAvailable = false) {
+    auto CI = InvalidCopies.find(RegUnit);
+    if (CI == InvalidCopies.end())
       return nullptr;
     if (MustBeAvailable && !CI->second.Avail)
       return nullptr;
@@ -286,12 +323,27 @@ public:
     return findCopyForUnit(RU, TRI, true);
   }
 
+  MachineInstr *findInvalidCopyDefViaUnit(MCRegUnit RegUnit,
+                                   const TargetRegisterInfo &TRI) {
+    auto CI = InvalidCopies.find(RegUnit);
+    if (CI == InvalidCopies.end())
+      return nullptr;
+    if (CI->second.DefRegs.size() != 1)
+      return nullptr;
+    MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
+    return findInvalidCopyForUnit(RU, TRI, false);
+  }
+
   MachineInstr *findAvailBackwardCopy(MachineInstr &I, MCRegister Reg,
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII,
-                                      bool UseCopyInstr) {
+                                      bool UseCopyInstr, bool SearchInvalid = false) {
     MCRegUnit RU = *TRI.regunits(Reg).begin();
     MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI);
+
+    if (SearchInvalid && !AvailCopy) {
+      AvailCopy = findInvalidCopyDefViaUnit(RU, TRI);
+    }
 
     if (!AvailCopy)
       return nullptr;
@@ -389,6 +441,7 @@ public:
 
   void clear() {
     Copies.clear();
+    InvalidCopies.clear();
   }
 };
 
@@ -432,7 +485,7 @@ private:
   void EliminateSpillageCopies(MachineBasicBlock &MBB);
   bool eraseIfRedundant(MachineInstr &Copy, MCRegister Src, MCRegister Def);
   void forwardUses(MachineInstr &MI);
-  void propagateDefs(MachineInstr &MI);
+  void propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG);
   bool isForwardableRegClassCopy(const MachineInstr &Copy,
                                  const MachineInstr &UseI, unsigned UseIdx);
   bool isBackwardPropagatableRegClassCopy(const MachineInstr &Copy,
@@ -1000,9 +1053,16 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
 }
 
-void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
-  if (!Tracker.hasAnyCopies())
+void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG) {
+  if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies())
     return;
+
+  auto *SU = DG.getSUnit(&MI);
+  MI.dump();
+  for (auto Pred : SU->Preds) {
+    Pred.dump();
+    llvm::errs() << "\n";
+  }
 
   for (unsigned OpIdx = 0, OpEnd = MI.getNumOperands(); OpIdx != OpEnd;
        ++OpIdx) {
@@ -1024,8 +1084,17 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
 
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
-    if (!Copy)
-      continue;
+    if (!Copy) {
+      llvm::errs() << "Couldn't find for the first try!\n";
+      Copy = Tracker.findAvailBackwardCopy(
+        MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr,true);
+      if (!Copy)
+        continue;
+      llvm::errs() << "Backward copy was found at second attempt.\n";
+      MI.dump();
+      Copy->dump();
+      llvm::errs() << "----------------\n";
+    }
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
@@ -1074,6 +1143,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
                     << "\n");
 
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
+    //llvm::errs() << "Next MI: ";
+    //MI.dump();
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
@@ -1086,9 +1157,9 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
           Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
           continue;
         }
@@ -1101,10 +1172,10 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         MCRegister Reg = MO.getReg().asMCReg();
         if (!Reg)
           continue;
-        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, &MI);
       }
 
-    propagateDefs(MI);
+    propagateDefs(MI, DG);
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;
@@ -1128,7 +1199,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           }
         } else {
           Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, &MI);
         }
       }
     }
