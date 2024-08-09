@@ -63,7 +63,9 @@
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/ScheduleDAG.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -75,8 +77,13 @@
 #include "llvm/Support/DebugCounter.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <iterator>
+#include <optional>
+#include <queue>
+#include <utility>
+#include <variant>
 
 using namespace llvm;
 
@@ -96,6 +103,8 @@ static cl::opt<cl::boolOrDefault>
     EnableSpillageCopyElimination("enable-spill-copy-elim", cl::Hidden);
 
 namespace {
+
+ 
 
 class ScheduleDAGMCP : public ScheduleDAGInstrs {
 public:
@@ -445,6 +454,10 @@ public:
   }
 };
 
+using Copy = MachineInstr*;
+using InvalidCopy = std::pair<Copy, MachineInstr *>;
+using CopyLookupResult = std::variant<std::monostate, Copy, InvalidCopy>;
+
 class MachineCopyPropagation : public MachineFunctionPass {
   const TargetRegisterInfo *TRI = nullptr;
   const TargetInstrInfo *TII = nullptr;
@@ -494,6 +507,51 @@ private:
   bool hasImplicitOverlap(const MachineInstr &MI, const MachineOperand &Use);
   bool hasOverlappingMultipleDef(const MachineInstr &MI,
                                  const MachineOperand &MODef, Register Def);
+  bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst, const SUnit *Src, ScheduleDAGMCP &DG) {
+    llvm::errs() << "-- moveInstructionsOutOfTheWayIfWeCan --\n";
+    MachineInstr *DstInstr = Dst->getInstr();
+    MachineInstr *SrcInstr = Src->getInstr();
+    if (DstInstr == nullptr || SrcInstr == nullptr)
+      return false;
+    assert("This function only operates on a basic block level." && DstInstr->getParent() == SrcInstr->getParent());
+    llvm::errs() << "The copy destination: ";
+    DstInstr->dump();
+    llvm::errs() << "The source destination: ";
+    SrcInstr->dump();
+    const MachineInstr &A = *(SrcInstr->getIterator());
+
+    std::queue<const SUnit *> Edges;
+    // Edge case when the two instructions are basically the same.
+    auto EnqueueSNodeChildren = [SrcInstr, DstInstr](std::queue<const SUnit *> &Queue, const SUnit *Node, bool IsRoot) -> bool {
+      for (llvm::SDep I : Node->Preds) {
+        SUnit *SU = I.getSUnit();
+         MachineInstr  &MI  = *(SU->getInstr());
+        if (!IsRoot && &MI == SrcInstr) {
+          llvm::errs() << "Non Root Elemnt in the dependency tree depends on the source. Returning false.\n";
+          return false;
+        }
+        if (std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(), [&MI](auto &MIInSec) { return &MIInSec == &MI; }) != DstInstr->getIterator()) {
+          llvm::errs() << "Instruction is not at the end. Appending it\n";
+          MI.dump();
+          Queue.push(SU);
+        } else {
+          llvm::errs() << "Instruction is out of the range. Not Appending it\n";
+          MI.dump();
+        }
+      }
+      return true;
+    };
+
+    EnqueueSNodeChildren(Edges, Dst, true);
+    while (!Edges.empty()) {
+      const auto *Current = Edges.front();
+      Edges.pop();
+      if (!EnqueueSNodeChildren(Edges, Current, false))
+        return false;
+    }
+    llvm::errs() << "Returning true\n";
+    return true;
+  }
 
   /// Candidates for deletion.
   SmallSetVector<MachineInstr *, 8> MaybeDeadCopies;
@@ -1090,6 +1148,16 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr,true);
       if (!Copy)
         continue;
+      SUnit *CopySUnit = DG.getSUnit(Copy);
+      llvm::errs() << "The preds of the copy:\n";
+      for (auto Suc : CopySUnit->Preds) {
+        Suc.dump(TRI);
+        Suc.getLatency();
+        Suc.getSUnit()->getInstr()->dump();
+        llvm::errs() << "\n";
+      }
+      moveInstructionsOutOfTheWayIfWeCan(CopySUnit, SU, DG);
+      llvm::errs() << "The order of the copy:  \n";
       llvm::errs() << "Backward copy was found at second attempt.\n";
       MI.dump();
       Copy->dump();
