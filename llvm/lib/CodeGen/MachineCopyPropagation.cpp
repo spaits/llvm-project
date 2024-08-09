@@ -1184,7 +1184,8 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
       const SUnit *DstSUnit = DG.getSUnit(Copy);
       const SUnit *SrcSUnit = DG.getSUnit(&MI);
 
-      moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG);
+      if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG));
+        continue;
     }
 
     std::optional<DestSourcePair> CopyOperands =
