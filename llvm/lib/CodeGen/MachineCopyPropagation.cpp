@@ -507,13 +507,15 @@ private:
   bool hasImplicitOverlap(const MachineInstr &MI, const MachineOperand &Use);
   bool hasOverlappingMultipleDef(const MachineInstr &MI,
                                  const MachineOperand &MODef, Register Def);
-  bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst, const SUnit *Src, ScheduleDAGMCP &DG) {
+  bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst, const SUnit *Src,
+                                          ScheduleDAGMCP &DG) {
     llvm::errs() << "-- moveInstructionsOutOfTheWayIfWeCan --\n";
     MachineInstr *DstInstr = Dst->getInstr();
     MachineInstr *SrcInstr = Src->getInstr();
     if (DstInstr == nullptr || SrcInstr == nullptr)
       return false;
-    assert("This function only operates on a basic block level." && DstInstr->getParent() == SrcInstr->getParent());
+    assert("This function only operates on a basic block level." &&
+           DstInstr->getParent() == SrcInstr->getParent());
     llvm::errs() << "The copy destination: ";
     DstInstr->dump();
     llvm::errs() << "The source destination: ";
@@ -521,19 +523,30 @@ private:
     const MachineInstr &A = *(SrcInstr->getIterator());
 
     std::queue<const SUnit *> Edges;
+    std::priority_queue<std::pair<unsigned, MachineInstr *>> InstructionsToInsert;
     // Edge case when the two instructions are basically the same.
-    auto EnqueueSNodeChildren = [SrcInstr, DstInstr](std::queue<const SUnit *> &Queue, const SUnit *Node, bool IsRoot) -> bool {
+    auto EnqueueSNodeChildren =
+        [SrcInstr, DstInstr, &InstructionsToInsert](std::queue<const SUnit *> &Queue,
+                             const SUnit *Node, bool IsRoot) -> bool {
       for (llvm::SDep I : Node->Preds) {
         SUnit *SU = I.getSUnit();
-         MachineInstr  &MI  = *(SU->getInstr());
+        MachineInstr &MI = *(SU->getInstr());
         if (!IsRoot && &MI == SrcInstr) {
-          llvm::errs() << "Non Root Elemnt in the dependency tree depends on the source. Returning false.\n";
+          llvm::errs() << "Non Root Elemnt in the dependency tree depends on "
+                          "the source. Returning false.\n";
           return false;
         }
-        if (std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(), [&MI](auto &MIInSec) { return &MIInSec == &MI; }) != DstInstr->getIterator()) {
+        // It seems to be working. It doesn't add the source to the dependencies
+        // even if the source is there. It says that the source is out of the
+        // range which is interesting to me. I am comparing based on pointers
+        // that may be the problem here.
+        auto Pos = std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
+                         [&MI](auto &MIInSec) { return &MIInSec == &MI; });
+        if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
           llvm::errs() << "Instruction is not at the end. Appending it\n";
           MI.dump();
           Queue.push(SU);
+          InstructionsToInsert.push(std::pair<unsigned, MachineInstr *>{std::distance(SrcInstr->getIterator(), Pos), &MI});
         } else {
           llvm::errs() << "Instruction is out of the range. Not Appending it\n";
           MI.dump();
@@ -548,6 +561,14 @@ private:
       Edges.pop();
       if (!EnqueueSNodeChildren(Edges, Current, false))
         return false;
+    }
+
+    llvm::errs() << "The dependencies\n";
+    while (!InstructionsToInsert.empty()) {
+      std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
+      llvm::errs() << p.first << " : ";
+      p.second->dump();
+      InstructionsToInsert.pop();
     }
     llvm::errs() << "Returning true\n";
     return true;
