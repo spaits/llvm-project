@@ -265,19 +265,8 @@ public:
       if (Copies.contains(Unit)) {
         InvalidCopies[Unit] = Copies[Unit];
         InvalidCopies[Unit].InvalidatedBy = InvalidatedBy;
-        llvm::errs() << "Adding to invalids:\n";
-        llvm::errs() << printRegUnit(Unit, &TRI) << "\n";
-        if (InvalidCopies[Unit].MI) {
-          llvm::errs() << "MI:\n";
-          InvalidCopies[Unit].MI->dump();
-        }
-        if (InvalidCopies[Unit].LastSeenUseInCopy) {
-          llvm::errs() << "LSIU:\n";
-          InvalidCopies[Unit].LastSeenUseInCopy->dump();
-        }
+        Copies.erase(Unit);
       }
-
-      Copies.erase(Unit);
     }
   }
 
