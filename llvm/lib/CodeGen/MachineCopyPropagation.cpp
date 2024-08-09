@@ -104,7 +104,13 @@ static cl::opt<cl::boolOrDefault>
 
 namespace {
 
- 
+  void moveBAfterA(MachineInstr *A, MachineInstr *B) {
+    llvm::MachineBasicBlock *MBB = A->getParent();
+    assert(MBB == B->getParent() &&
+           "Both instructions must be in the same MachineBasicBlock");
+    MBB->remove(B);
+    MBB->insertAfter(--A->getIterator(), B);
+  }
 
 class ScheduleDAGMCP : public ScheduleDAGInstrs {
 public:
@@ -568,6 +574,7 @@ private:
       std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
       llvm::errs() << p.first << " : ";
       p.second->dump();
+      moveBAfterA(SrcInstr, p.second);
       InstructionsToInsert.pop();
     }
     llvm::errs() << "Returning true\n";
