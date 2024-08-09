@@ -103,14 +103,84 @@ static cl::opt<cl::boolOrDefault>
     EnableSpillageCopyElimination("enable-spill-copy-elim", cl::Hidden);
 
 namespace {
+class ScheduleDAGMCP;
+// TODO: Check if there is a better way than this.
+static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
+  llvm::MachineBasicBlock *MBB = A->getParent();
+  assert(MBB == B->getParent() &&
+         "Both instructions must be in the same MachineBasicBlock");
+  MBB->remove(B);
+  MBB->insertAfter(--A->getIterator(), B);
+}
 
-  void moveBAfterA(MachineInstr *A, MachineInstr *B) {
-    llvm::MachineBasicBlock *MBB = A->getParent();
-    assert(MBB == B->getParent() &&
-           "Both instructions must be in the same MachineBasicBlock");
-    MBB->remove(B);
-    MBB->insertAfter(--A->getIterator(), B);
+static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
+                                               const SUnit *Src,
+                                               const ScheduleDAGMCP &DG) {
+  MachineInstr *DstInstr = Dst->getInstr();
+  MachineInstr *SrcInstr = Src->getInstr();
+  if (DstInstr == nullptr || SrcInstr == nullptr)
+    return false;
+  assert("This function only operates on a basic block level." &&
+         DstInstr->getParent() == SrcInstr->getParent());
+
+  // The queue for the breadth first search.
+  std::queue<const SUnit *> Edges;
+  // The priority queue to get the instructions that needs to be moved in
+  // the order in which they were in the basic block.
+  std::priority_queue<std::pair<unsigned, MachineInstr *>> InstructionsToInsert;
+
+  // Process the children of a node.
+  // Basically every node are checked before it is being put into the queue.
+  // A node is enqueued if it has no dependencies on the source of the copy
+  // (only if we are not talking about the destination node which is a special
+  // case indicated by a flag) and is located between the source of the copy and
+  // the destination of the copy.
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert](
+                                  std::queue<const SUnit *> &Queue,
+                                  const SUnit *Node, bool IsRoot) -> bool {
+    for (llvm::SDep I : Node->Preds) {
+      SUnit *SU = I.getSUnit();
+      MachineInstr &MI = *(SU->getInstr());
+      if (!IsRoot && &MI == SrcInstr)
+        return false;
+
+      auto Pos =
+          std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
+                       [&MI](const auto &MIInSec) { return &MIInSec == &MI; });
+      if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
+        Queue.push(SU);
+        InstructionsToInsert.push(std::pair<unsigned, MachineInstr *>{
+            std::distance(SrcInstr->getIterator(), Pos), &MI});
+      }
+    }
+    return true;
+  };
+
+  // Basically the BFS happens here.
+  ProcessSNodeChildren(Edges, Dst, true);
+  while (!Edges.empty()) {
+    const auto *Current = Edges.front();
+    Edges.pop();
+    if (!ProcessSNodeChildren(Edges, Current, false))
+      return false;
   }
+
+  // If all of the dependencies were deemed valid during the BFS then we
+  // are moving them before the copy source here keeping their relative
+  // order to each other.
+
+  // TODO: 1. Find the nearest immediate successor to source with a true dependency on source.
+  // TODO: 2. Check if the size of instructions to move is greater than that.
+  // TODO: 3. Disable this logic with Osize.
+
+  while (!InstructionsToInsert.empty()) {
+    std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
+    // TODO: Take latencies into account.
+    moveBAfterA(SrcInstr, p.second);
+    InstructionsToInsert.pop();
+  }
+  return true;
+}
 
 class ScheduleDAGMCP : public ScheduleDAGInstrs {
 public:
@@ -513,74 +583,7 @@ private:
   bool hasImplicitOverlap(const MachineInstr &MI, const MachineOperand &Use);
   bool hasOverlappingMultipleDef(const MachineInstr &MI,
                                  const MachineOperand &MODef, Register Def);
-  bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst, const SUnit *Src,
-                                          ScheduleDAGMCP &DG) {
-    llvm::errs() << "-- moveInstructionsOutOfTheWayIfWeCan --\n";
-    MachineInstr *DstInstr = Dst->getInstr();
-    MachineInstr *SrcInstr = Src->getInstr();
-    if (DstInstr == nullptr || SrcInstr == nullptr)
-      return false;
-    assert("This function only operates on a basic block level." &&
-           DstInstr->getParent() == SrcInstr->getParent());
-    llvm::errs() << "The copy destination: ";
-    DstInstr->dump();
-    llvm::errs() << "The source destination: ";
-    SrcInstr->dump();
-    const MachineInstr &A = *(SrcInstr->getIterator());
-
-    std::queue<const SUnit *> Edges;
-    std::priority_queue<std::pair<unsigned, MachineInstr *>> InstructionsToInsert;
-    // Edge case when the two instructions are basically the same.
-    auto EnqueueSNodeChildren =
-        [SrcInstr, DstInstr, &InstructionsToInsert](std::queue<const SUnit *> &Queue,
-                             const SUnit *Node, bool IsRoot) -> bool {
-      for (llvm::SDep I : Node->Preds) {
-        SUnit *SU = I.getSUnit();
-        MachineInstr &MI = *(SU->getInstr());
-        if (!IsRoot && &MI == SrcInstr) {
-          llvm::errs() << "Non Root Elemnt in the dependency tree depends on "
-                          "the source. Returning false.\n";
-          return false;
-        }
-        // It seems to be working. It doesn't add the source to the dependencies
-        // even if the source is there. It says that the source is out of the
-        // range which is interesting to me. I am comparing based on pointers
-        // that may be the problem here.
-        auto Pos = std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
-                         [&MI](auto &MIInSec) { return &MIInSec == &MI; });
-        if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
-          llvm::errs() << "Instruction is not at the end. Appending it\n";
-          MI.dump();
-          Queue.push(SU);
-          InstructionsToInsert.push(std::pair<unsigned, MachineInstr *>{std::distance(SrcInstr->getIterator(), Pos), &MI});
-        } else {
-          llvm::errs() << "Instruction is out of the range. Not Appending it\n";
-          MI.dump();
-        }
-      }
-      return true;
-    };
-
-    EnqueueSNodeChildren(Edges, Dst, true);
-    while (!Edges.empty()) {
-      const auto *Current = Edges.front();
-      Edges.pop();
-      if (!EnqueueSNodeChildren(Edges, Current, false))
-        return false;
-    }
-
-    llvm::errs() << "The dependencies\n";
-    while (!InstructionsToInsert.empty()) {
-      std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
-      llvm::errs() << p.first << " : ";
-      p.second->dump();
-      moveBAfterA(SrcInstr, p.second);
-      InstructionsToInsert.pop();
-    }
-    llvm::errs() << "Returning true\n";
-    return true;
-  }
-
+  
   /// Candidates for deletion.
   SmallSetVector<MachineInstr *, 8> MaybeDeadCopies;
 
@@ -1143,13 +1146,6 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
   if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies())
     return;
 
-  auto *SU = DG.getSUnit(&MI);
-  MI.dump();
-  for (auto Pred : SU->Preds) {
-    Pred.dump();
-    llvm::errs() << "\n";
-  }
-
   for (unsigned OpIdx = 0, OpEnd = MI.getNumOperands(); OpIdx != OpEnd;
        ++OpIdx) {
     MachineOperand &MODef = MI.getOperand(OpIdx);
@@ -1171,25 +1167,24 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
     if (!Copy) {
-      llvm::errs() << "Couldn't find for the first try!\n";
-      Copy = Tracker.findAvailBackwardCopy(
-        MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr,true);
-      if (!Copy)
+      LLVM_DEBUG(
+          dbgs()
+          << "MCP: Couldn't find any backward copy that has no dependency.\n");
+      Copy = Tracker.findAvailBackwardCopy(MI, MODef.getReg().asMCReg(), *TRI,
+                                           *TII, UseCopyInstr, true);
+      if (!Copy) {
+        LLVM_DEBUG(
+            dbgs()
+            << "MCP: Couldn't find any backward copy that has dependency.\n");
         continue;
-      SUnit *CopySUnit = DG.getSUnit(Copy);
-      llvm::errs() << "The preds of the copy:\n";
-      for (auto Suc : CopySUnit->Preds) {
-        Suc.dump(TRI);
-        Suc.getLatency();
-        Suc.getSUnit()->getInstr()->dump();
-        llvm::errs() << "\n";
       }
-      moveInstructionsOutOfTheWayIfWeCan(CopySUnit, SU, DG);
-      llvm::errs() << "The order of the copy:  \n";
-      llvm::errs() << "Backward copy was found at second attempt.\n";
-      MI.dump();
-      Copy->dump();
-      llvm::errs() << "----------------\n";
+      LLVM_DEBUG(
+          dbgs()
+          << "MCP: Found potential backward copy that has dependency.\n");
+      const SUnit *DstSUnit = DG.getSUnit(Copy);
+      const SUnit *SrcSUnit = DG.getSUnit(&MI);
+
+      moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG);
     }
 
     std::optional<DestSourcePair> CopyOperands =
