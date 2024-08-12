@@ -129,7 +129,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert](
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &MBB](
                                   std::queue<const SUnit *> &Queue,
                                   const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
@@ -144,7 +144,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
       if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
         Queue.push(SU);
         InstructionsToInsert.push(std::pair<unsigned, MachineInstr *>{
-            std::distance(SrcInstr->getIterator(), Pos), &MI});
+            MBB->size() - std::distance(SrcInstr->getIterator(), Pos), &MI});
       }
     }
     return true;
