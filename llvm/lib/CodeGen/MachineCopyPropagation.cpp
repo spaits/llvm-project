@@ -567,8 +567,8 @@ public:
     AU.setPreservesCFG();
     MachineFunctionPass::getAnalysisUsage(AU);
     AU.addRequired<AAResultsWrapperPass>();
-    AU.addRequired<LiveIntervalsWrapperPass>();
-    AU.addPreserved<LiveIntervalsWrapperPass>();
+    //AU.addRequired<LiveIntervalsWrapperPass>();
+    //AU.addPreserved<LiveIntervalsWrapperPass>(); /* Do we really preserve? */
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -617,7 +617,7 @@ char &llvm::MachineCopyPropagationID = MachineCopyPropagation::ID;
 INITIALIZE_PASS_BEGIN(MachineCopyPropagation, DEBUG_TYPE,
                 "Machine Copy Propagation Pass", false, false)
 
-INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
+//INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
 INITIALIZE_PASS_END(MachineCopyPropagation, DEBUG_TYPE,
                 "Machine Copy Propagation Pass", false, false)
 
@@ -1677,7 +1677,9 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   TII = MF.getSubtarget().getInstrInfo();
   MRI = &MF.getRegInfo();
   AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
-  LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
+  //LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
+  auto *LISWrapper = getAnalysisIfAvailable<LiveIntervalsWrapperPass>();
+  LIS = LISWrapper ? &LISWrapper->getLIS() : nullptr;
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
