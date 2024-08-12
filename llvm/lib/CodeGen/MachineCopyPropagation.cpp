@@ -56,6 +56,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -537,8 +538,9 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
-    MachineFunctionPass::getAnalysisUsage(AU);
     AU.addRequired<AAResultsWrapperPass>();
+    //AU.addRequired<LiveIntervalsWrapperPass>();
+    MachineFunctionPass::getAnalysisUsage(AU);
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -1168,7 +1170,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
       const SUnit *DstSUnit = DG.getSUnit(Copy);
       const SUnit *SrcSUnit = DG.getSUnit(&MI);
 
-      if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG));
+      if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG))
         continue;
     }
 
