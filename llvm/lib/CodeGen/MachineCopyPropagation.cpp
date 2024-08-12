@@ -56,6 +56,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -103,7 +104,33 @@ static cl::opt<cl::boolOrDefault>
     EnableSpillageCopyElimination("enable-spill-copy-elim", cl::Hidden);
 
 namespace {
-class ScheduleDAGMCP;
+class ScheduleDAGMCP : public ScheduleDAGInstrs {
+LiveIntervals *LIS = nullptr;
+public:
+  void schedule() override { llvm_unreachable("This schedule dag is only used as a dependency graph\n"); }
+  ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI, bool RemoveKillFlags= false, LiveIntervals *LIS = nullptr) : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags), LIS(LIS) {
+    CanHandleTerminators = true;
+  }
+  void moveInstruction(
+    MachineInstr *MI, MachineBasicBlock::iterator InsertPos) {
+    // Advance RegionBegin if the first instruction moves down.
+    if (&*RegionBegin == MI)
+      ++RegionBegin;
+
+    // Update the instruction stream.
+    BB->splice(InsertPos, BB, MI);
+
+    // Update LiveIntervals
+    if (LIS)
+      LIS->handleMove(*MI, /*UpdateFlags=*/true);
+
+    // Recede RegionBegin if an instruction moves above the first.
+    if (RegionBegin == InsertPos)
+      RegionBegin = MI;
+  }
+};
+
+
 // TODO: Check if there is a better way than this.
 static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
   llvm::MachineBasicBlock *MBB = A->getParent();
@@ -115,7 +142,7 @@ static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
 
 static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
                                                const SUnit *Src,
-                                               const ScheduleDAGMCP &DG) {
+                                              ScheduleDAGMCP &DG) {
   MachineInstr *DstInstr = Dst->getInstr();
   MachineInstr *SrcInstr = Src->getInstr();
   if (DstInstr == nullptr || SrcInstr == nullptr)
@@ -138,6 +165,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert](
                                   std::queue<const SUnit *> &Queue,
                                   const SUnit *Node, bool IsRoot) -> bool {
+    // TODO: Verify if there is ONLY data dependency between src and dst.
     for (llvm::SDep I : Node->Preds) {
       SUnit *SU = I.getSUnit();
       MachineInstr &MI = *(SU->getInstr());
@@ -177,18 +205,12 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
     std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
     // TODO: Take latencies into account.
     moveBAfterA(SrcInstr, p.second);
+    DG.moveInstruction(p.second, SrcInstr->getIterator());
     InstructionsToInsert.pop();
   }
   return true;
 }
 
-class ScheduleDAGMCP : public ScheduleDAGInstrs {
-public:
-  void schedule() override { llvm_unreachable("This schedule dag is only used as a dependency graph\n"); }
-  ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI, bool RemoveKillFlags= false) : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags) {
-    CanHandleTerminators = true;
-  }
-};
 
 static std::optional<DestSourcePair> isCopyInstr(const MachineInstr &MI,
                                                  const TargetInstrInfo &TII,
@@ -528,6 +550,7 @@ class MachineCopyPropagation : public MachineFunctionPass {
   const TargetInstrInfo *TII = nullptr;
   const MachineRegisterInfo *MRI = nullptr;
   AAResults *AA = nullptr;
+  LiveIntervals *LIS = nullptr;
 
   // Return true if this is a copy instruction and false otherwise.
   bool UseCopyInstr;
@@ -544,6 +567,8 @@ public:
     AU.setPreservesCFG();
     MachineFunctionPass::getAnalysisUsage(AU);
     AU.addRequired<AAResultsWrapperPass>();
+    AU.addRequired<LiveIntervalsWrapperPass>();
+    AU.addPreserved<LiveIntervalsWrapperPass>();
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -587,10 +612,13 @@ private:
 } // end anonymous namespace
 
 char MachineCopyPropagation::ID = 0;
-
 char &llvm::MachineCopyPropagationID = MachineCopyPropagation::ID;
 
-INITIALIZE_PASS(MachineCopyPropagation, DEBUG_TYPE,
+INITIALIZE_PASS_BEGIN(MachineCopyPropagation, DEBUG_TYPE,
+                "Machine Copy Propagation Pass", false, false)
+
+INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
+INITIALIZE_PASS_END(MachineCopyPropagation, DEBUG_TYPE,
                 "Machine Copy Propagation Pass", false, false)
 
 void MachineCopyPropagation::ReadRegister(MCRegister Reg, MachineInstr &Reader,
@@ -1173,7 +1201,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
       const SUnit *DstSUnit = DG.getSUnit(Copy);
       const SUnit *SrcSUnit = DG.getSUnit(&MI);
 
-      if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG));
+      if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG))
         continue;
     }
 
@@ -1649,7 +1677,7 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   TII = MF.getSubtarget().getInstrInfo();
   MRI = &MF.getRegInfo();
   AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
-
+  LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);

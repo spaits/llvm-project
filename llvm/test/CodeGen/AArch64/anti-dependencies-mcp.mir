@@ -21,8 +21,7 @@
 ---
 name:            fun2
 alignment:       4
-failsVerification: false
-tracksDebugUserValues: true
+tracksRegLiveness: true
 registers:       []
 liveins:
   - { reg: '$x0', virtual-reg: '' }
@@ -68,8 +67,6 @@ body:             |
 ---
 name:            blocking_dependency
 alignment:       4
-failsVerification: false
-tracksDebugUserValues: true
 registers:       []
 liveins:
   - { reg: '$x0', virtual-reg: '' }
