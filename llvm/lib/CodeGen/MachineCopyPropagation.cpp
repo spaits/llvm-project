@@ -118,11 +118,15 @@ public:
       ++RegionBegin;
 
     // Update the instruction stream.
+    BB = MI->getParent();
+    BB->dump();
     BB->splice(InsertPos, BB, MI);
-
+    BB->dump();
     // Update LiveIntervals
     if (LIS)
       LIS->handleMove(*MI, /*UpdateFlags=*/true);
+    else
+     llvm::errs() << "[[DEPS]] NO LINE INTERVAL INFO\n";
 
     // Recede RegionBegin if an instruction moves above the first.
     if (RegionBegin == InsertPos)
@@ -204,8 +208,9 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   while (!InstructionsToInsert.empty()) {
     std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
     // TODO: Take latencies into account.
-    moveBAfterA(SrcInstr, p.second);
-    DG.moveInstruction(p.second, SrcInstr->getIterator());
+    //moveBAfterA(SrcInstr, p.second);
+    auto IBEF = SrcInstr->getIterator();
+    DG.moveInstruction(p.second, IBEF);
     InstructionsToInsert.pop();
   }
   return true;
@@ -565,10 +570,13 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
-    MachineFunctionPass::getAnalysisUsage(AU);
     AU.addRequired<AAResultsWrapperPass>();
-    //AU.addRequired<LiveIntervalsWrapperPass>();
+    AU.addRequired<LiveIntervalsWrapperPass>();
     //AU.addPreserved<LiveIntervalsWrapperPass>(); /* Do we really preserve? */
+    //AU.addUsedIfAvailable<LiveIntervalsWrapperPass>();
+    //AU.addPreserved<LiveIntervalsWrapperPass>();
+    MachineFunctionPass::getAnalysisUsage(AU);
+
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -617,7 +625,7 @@ char &llvm::MachineCopyPropagationID = MachineCopyPropagation::ID;
 INITIALIZE_PASS_BEGIN(MachineCopyPropagation, DEBUG_TYPE,
                 "Machine Copy Propagation Pass", false, false)
 
-//INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
 INITIALIZE_PASS_END(MachineCopyPropagation, DEBUG_TYPE,
                 "Machine Copy Propagation Pass", false, false)
 
@@ -1239,11 +1247,11 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
     MachineBasicBlock &MBB) {
   //ScheduleDAGMCP DG{};
-  ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
+  ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false, LIS};
 
   DG.startBlock(&MBB);
   DG.enterRegion(&MBB, MBB.begin(), MBB.end(),MBB.size());
-  DG.buildSchedGraph(nullptr);
+  DG.buildSchedGraph(AA);
   //DG.viewGraph();
   DG.exitRegion();
   DG.finishBlock();
@@ -1679,7 +1687,10 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
   //LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
   auto *LISWrapper = getAnalysisIfAvailable<LiveIntervalsWrapperPass>();
+  assert(LISWrapper && "This must exist since it is required\n");
   LIS = LISWrapper ? &LISWrapper->getLIS() : nullptr;
+  assert(LIS && "This also must exist since it is required\n");
+  llvm::errs() << "[[DEPS]] Everything seems to fine at this point\n";
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
