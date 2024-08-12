@@ -104,24 +104,18 @@ static cl::opt<cl::boolOrDefault>
 
 namespace {
 class ScheduleDAGMCP;
-// TODO: Check if there is a better way than this.
-static void moveBAfterA(MachineInstr *A, MachineInstr *B) {
-  llvm::MachineBasicBlock *MBB = A->getParent();
-  assert(MBB == B->getParent() &&
-         "Both instructions must be in the same MachineBasicBlock");
-  MBB->remove(B);
-  MBB->insertAfter(--A->getIterator(), B);
-}
 
 static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
                                                const SUnit *Src,
                                                const ScheduleDAGMCP &DG) {
   MachineInstr *DstInstr = Dst->getInstr();
   MachineInstr *SrcInstr = Src->getInstr();
+  MachineBasicBlock *MBB = SrcInstr->getParent();
+
   if (DstInstr == nullptr || SrcInstr == nullptr)
     return false;
   assert("This function only operates on a basic block level." &&
-         DstInstr->getParent() == SrcInstr->getParent());
+         MBB == SrcInstr->getParent());
 
   // The queue for the breadth first search.
   std::queue<const SUnit *> Edges;
@@ -176,7 +170,8 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   while (!InstructionsToInsert.empty()) {
     std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
     // TODO: Take latencies into account.
-    moveBAfterA(SrcInstr, p.second);
+    MBB->splice(SrcInstr->getIterator(), MBB, p.second->getIterator());
+
     InstructionsToInsert.pop();
   }
   return true;
