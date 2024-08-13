@@ -1254,6 +1254,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   //ScheduleDAGMCP DG{};
   
   ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, LIS, false};
+  //DG.fixupKills(MBB);
 
   DG.startBlock(&MBB);
   DG.enterRegion(&MBB, MBB.begin(), MBB.end(),MBB.size());
