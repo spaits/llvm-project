@@ -114,8 +114,8 @@ public:
   ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI, LiveIntervals *LIS, bool RemoveKillFlags= false) : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags), LIS(LIS) {
     CanHandleTerminators = true;
   }
-  /// This is normally called from the main scheduler loop but may also be invoked
-  /// by the scheduling strategy to perform additional code motion.
+  // TODO: Make this function virtual and do an override. To do this
+  //       first scheduleDAGInstrs must be extended.
   void moveInstruction(
     MachineInstr *MI, MachineBasicBlock::iterator InsertPos) {
     // Advance RegionBegin if the first instruction moves down.
@@ -140,6 +140,7 @@ public:
 
 };
 
+// TODO: Make this a member of the new scheduleDAG.
 static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
                                                const SUnit *Src,
                                                ScheduleDAGMCP &DG) {
@@ -164,13 +165,17 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert,
-                               &MBB](std::queue<const SUnit *> &Queue,
-                                     const SUnit *Node, bool IsRoot) -> bool {
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &MBB,
+                               &DG](std::queue<const SUnit *> &Queue,
+                                    const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
       SUnit *SU = I.getSUnit();
       MachineInstr &MI = *(SU->getInstr());
-      if (!IsRoot && &MI == SrcInstr)
+      if (!IsRoot &&
+          (&MI == SrcInstr ||
+           (!DG.isLIS() &&
+            std::any_of(MI.operands_begin(), MI.operands_begin(),
+                        [](const MachineOperand &MO) { return MO.isKill(); }))))
         return false;
 
       auto Pos =
@@ -256,9 +261,12 @@ public:
   int getInvalidCopiesSize() {
     return InvalidCopies.size();
   }
-
+// c/c++ - clang -> LLVM IR - optimizations in llc -> LLVM IR -> GlobalISEl -> MIR (Target dependent) -> assembly/machine code
+//__int128 a, b;
+//c = a + b
   /// Remove register from copy maps.
   void invalidateRegister(MCRegister Reg, const TargetRegisterInfo &TRI,
+                                                                        /*TODO: This may be redundant since there is lastUsed member in CopyTracker.*/
                           const TargetInstrInfo &TII, bool UseCopyInstr, MachineInstr *InvalidatedBy = nullptr) {
     // Since Reg might be a subreg of some registers, only invalidate Reg is not
     // enough. We have to find the COPY defines Reg or registers defined by Reg
@@ -432,6 +440,9 @@ public:
     return findInvalidCopyForUnit(RU, TRI, false);
   }
 
+  // TODO: This is ugly there shall be a more elegant solution to invalid
+  //       copy searching. Create a variant that either returns a valid an invalid
+  //       copy or no copy at all (std::monotype).
   MachineInstr *findAvailBackwardCopy(MachineInstr &I, MCRegister Reg,
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII,
@@ -1681,7 +1692,7 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
   auto *LISWrapper = getAnalysisIfAvailable<LiveIntervalsWrapperPass>();
   LIS = LISWrapper ? &LISWrapper->getLIS() : nullptr;
-  assert(LIS && "NO LIS\n");
+  //assert(LIS && "NO LIS\n");
 
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)

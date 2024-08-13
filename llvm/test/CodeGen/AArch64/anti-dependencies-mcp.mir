@@ -84,8 +84,8 @@ body:             |
     ; CHECK: liveins: $x0, $x1
     ; CHECK-NEXT: {{  $}}
     ; CHECK-NEXT: ADJCALLSTACKDOWN 0, 0, implicit-def dead $sp, implicit $sp
-    ; CHECK-NEXT: $w0 = KILL renamable $w0, implicit $x0
-    ; CHECK-NEXT: $w1 = KILL renamable $w1, implicit $x1
+    ; CHECK-NEXT: $w0 = KILL renamable $w0, implicit killed $x0
+    ; CHECK-NEXT: $w1 = KILL renamable $w1, implicit killed $x1
     ; CHECK-NEXT: BL @chain, csr_aarch64_aapcs, implicit-def dead $lr, implicit $sp, implicit $w0, implicit $w1, implicit-def $sp, implicit-def $w0
     ; CHECK-NEXT: ADJCALLSTACKUP 0, 0, implicit-def dead $sp, implicit $sp
     ; CHECK-NEXT: renamable $w1 = COPY $w0
@@ -173,8 +173,8 @@ body:             |
     ; CHECK: liveins: $x0, $x1
     ; CHECK-NEXT: {{  $}}
     ; CHECK-NEXT: ADJCALLSTACKDOWN 0, 0, implicit-def dead $sp, implicit $sp
-    ; CHECK-NEXT: $w0 = KILL renamable $w0, implicit $x0
-    ; CHECK-NEXT: $w1 = KILL renamable $w1, implicit $x1
+    ; CHECK-NEXT: $w0 = KILL renamable $w0, implicit killed $x0
+    ; CHECK-NEXT: $w1 = KILL renamable $w1, implicit killed $x1
     ; CHECK-NEXT: BL @chain, csr_aarch64_aapcs, implicit-def dead $lr, implicit $sp, implicit $w0, implicit $w1, implicit-def $sp, implicit-def $w0
     ; CHECK-NEXT: ADJCALLSTACKUP 0, 0, implicit-def dead $sp, implicit $sp
     ; CHECK-NEXT: renamable $w8 = LDRWui %stack.0.c, 0 :: (dereferenceable load (s32) from %ir.c)
