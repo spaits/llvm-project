@@ -582,8 +582,8 @@ public:
     // AU.addRequired<SlotIndexesWrapperPass>();
     // AU.addRequired<LiveIntervalsWrapperPass>();
     // Maybe require these.
-    AU.addPreserved<SlotIndexesWrapperPass>();
-    AU.addPreserved<LiveIntervalsWrapperPass>();
+    //AU.addPreserved<SlotIndexesWrapperPass>();
+    //AU.addPreserved<LiveIntervalsWrapperPass>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
