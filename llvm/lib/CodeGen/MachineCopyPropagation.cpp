@@ -294,11 +294,11 @@ public:
       }
     }
     for (MCRegUnit Unit : RegUnitsToInvalidate) {
-      if (Copies.contains(Unit)) {
+      if (Copies.contains(Unit) && InvalidatedBy) {
         InvalidCopies[Unit] = Copies[Unit];
         InvalidCopies[Unit].InvalidatedBy = InvalidatedBy;
-        Copies.erase(Unit);
       }
+      Copies.erase(Unit);
     }
   }
 
@@ -1295,7 +1295,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         MCRegister Reg = MO.getReg().asMCReg();
         if (!Reg)
           continue;
-        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, &MI);
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, nullptr);
       }
 
     propagateDefs(MI, DG);
