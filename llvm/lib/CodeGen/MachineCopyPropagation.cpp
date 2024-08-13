@@ -109,6 +109,7 @@ class ScheduleDAGMCP;
 class ScheduleDAGMCP : public ScheduleDAGInstrs {
   LiveIntervals *LIS;
 public:
+  bool isLIS() const { return LIS != nullptr; }
   void schedule() override { llvm_unreachable("This schedule dag is only used as a dependency graph\n"); }
   ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI, LiveIntervals *LIS, bool RemoveKillFlags= false) : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags), LIS(LIS) {
     CanHandleTerminators = true;
@@ -566,9 +567,12 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
-    AU.addRequired<AAResultsWrapperPass>();
-    AU.addRequired<LiveIntervalsWrapperPass>();
-    //AU.addPreserved<LiveIntervalsWrapperPass>();
+    AU.addUsedIfAvailable<LiveIntervalsWrapperPass>();
+    // AU.addRequired<SlotIndexesWrapperPass>();
+    // AU.addRequired<LiveIntervalsWrapperPass>();
+    // Maybe require these.
+    AU.addPreserved<SlotIndexesWrapperPass>();
+    AU.addPreserved<LiveIntervalsWrapperPass>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
@@ -1675,8 +1679,8 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   TRI = MF.getSubtarget().getRegisterInfo();
   TII = MF.getSubtarget().getInstrInfo();
   MRI = &MF.getRegInfo();
-  AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
-  LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
+  auto *LISWrapper = getAnalysisIfAvailable<LiveIntervalsWrapperPass>();
+  LIS = LISWrapper ? &LISWrapper->getLIS() : nullptr;
   assert(LIS && "NO LIS\n");
 
   for (MachineBasicBlock &MBB : MF) {
