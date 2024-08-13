@@ -165,17 +165,13 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &MBB,
-                               &DG](std::queue<const SUnit *> &Queue,
-                                    const SUnit *Node, bool IsRoot) -> bool {
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &MBB](
+                                  std::queue<const SUnit *> &Queue,
+                                  const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
       SUnit *SU = I.getSUnit();
       MachineInstr &MI = *(SU->getInstr());
-      if (!IsRoot &&
-          (&MI == SrcInstr ||
-           (!DG.isLIS() &&
-            std::any_of(MI.operands_begin(), MI.operands_begin(),
-                        [](const MachineOperand &MO) { return MO.isKill(); }))))
+      if (!IsRoot && &MI == SrcInstr)
         return false;
 
       auto Pos =
@@ -212,7 +208,8 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
     std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
     // TODO: Take latencies into account.
     // MBB->splice(SrcInstr->getIterator(), MBB, p.second->getIterator());
-    DG.moveInstruction(p.second, SrcInstr->getIterator());
+    //DG.moveInstruction(p.second, SrcInstr->getIterator());
+    MBB->splice(SrcInstr->getIterator(), MBB, p.second->getIterator());
 
     InstructionsToInsert.pop();
   }
@@ -1254,14 +1251,13 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
   //ScheduleDAGMCP DG{};
   
   ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, LIS, false};
-  //DG.fixupKills(MBB);
+  
 
   DG.startBlock(&MBB);
   DG.enterRegion(&MBB, MBB.begin(), MBB.end(),MBB.size());
   DG.buildSchedGraph(nullptr);
   //DG.viewGraph();
-  DG.exitRegion();
-  DG.finishBlock();
+  
 
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
@@ -1341,6 +1337,10 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     Copy->eraseFromParent();
     ++NumDeletes;
   }
+
+  DG.exitRegion();
+  DG.finishBlock();
+  DG.fixupKills(MBB);
 
   MaybeDeadCopies.clear();
   CopyDbgUsers.clear();
