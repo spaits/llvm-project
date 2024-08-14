@@ -132,6 +132,10 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
          MBB == SrcInstr->getParent());
 
   // The queue for the breadth first search.
+  // TODO: Use a priority queue instead of this to?
+  //       Ot would be a greedy DFS. I would always go for the instruction that
+  //       is the closest to the top.
+  // TODO: Just use std::map. It is sorted.
   std::queue<const SUnit *> Edges;
   // The priority queue to get the instructions that needs to be moved in
   // the order in which they were in the basic block.
@@ -156,6 +160,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
           std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
                        [&MI](const auto &MIInSec) { return &MIInSec == &MI; });
       if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
+        // TODO: Duplications ar not taken into account here. They should be!
         Queue.push(SU);
         InstructionsToInsert.push(std::pair<unsigned, MachineInstr *>{
             MBB->size() - std::distance(SrcInstr->getIterator(), Pos), &MI});
@@ -163,7 +168,10 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
     }
     return true;
   };
-
+  // TODO maybe do DFS?
+  //      It would may yield faster results if we were to do Depth first search
+  //      since it would be beneficiary if we could cancel this search as early as
+  //      possible if no moving is possible.
   // Basically the BFS happens here.
   ProcessSNodeChildren(Edges, Dst, true);
   while (!Edges.empty()) {
@@ -1248,7 +1256,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
                                      UseCopyInstr, true);
           Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, true);
+                                     UseCopyInstr);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
           continue;
         }
