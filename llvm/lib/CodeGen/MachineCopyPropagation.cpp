@@ -139,7 +139,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   std::queue<const SUnit *> Edges;
   // The priority queue to get the instructions that needs to be moved in
   // the order in which they were in the basic block.
-  std::priority_queue<std::pair<unsigned, MachineInstr *>> InstructionsToInsert;
+  std::map<unsigned, MachineInstr *> InstructionsToInsert;
 
   // Process the children of a node.
   // Basically every node are checked before it is being put into the queue.
@@ -162,8 +162,8 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
       if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
         // TODO: Duplications ar not taken into account here. They should be!
         Queue.push(SU);
-        InstructionsToInsert.push(std::pair<unsigned, MachineInstr *>{
-            MBB->size() - std::distance(SrcInstr->getIterator(), Pos), &MI});
+        InstructionsToInsert.insert(std::pair<unsigned, MachineInstr *>{
+            std::distance(SrcInstr->getIterator(), Pos), &MI});
       }
     }
     return true;
@@ -193,8 +193,8 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   while (!InstructionsToInsert.empty()) {
     // TODO: Take latencies into account.
     MBB->splice(SrcInstr->getIterator(), MBB,
-                InstructionsToInsert.top().second->getIterator());
-    InstructionsToInsert.pop();
+                InstructionsToInsert.begin()->second->getIterator());
+    InstructionsToInsert.erase(InstructionsToInsert.begin());
   }
   return true;
 }
