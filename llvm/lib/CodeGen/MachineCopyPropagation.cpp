@@ -104,43 +104,20 @@ static cl::opt<cl::boolOrDefault>
     EnableSpillageCopyElimination("enable-spill-copy-elim", cl::Hidden);
 
 namespace {
-class ScheduleDAGMCP;
-
+// A ScheduleDAG subclass that is used as a dependency graph.
 class ScheduleDAGMCP : public ScheduleDAGInstrs {
-  LiveIntervals *LIS;
 public:
-  bool isLIS() const { return LIS != nullptr; }
-  void schedule() override { llvm_unreachable("This schedule dag is only used as a dependency graph\n"); }
-  ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI, LiveIntervals *LIS, bool RemoveKillFlags= false) : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags), LIS(LIS) {
+  void schedule() override {
+    llvm_unreachable("This schedule dag is only used as a dependency graph\n");
+  }
+
+  ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI,
+                 bool RemoveKillFlags = false)
+      : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags) {
     CanHandleTerminators = true;
   }
-  // TODO: Make this function virtual and do an override. To do this
-  //       first scheduleDAGInstrs must be extended.
-  void moveInstruction(
-    MachineInstr *MI, MachineBasicBlock::iterator InsertPos) {
-    // Advance RegionBegin if the first instruction moves down.
-    if (&*RegionBegin == MI)
-      ++RegionBegin;
-  
-    // Update the instruction stream.
-
-    // FIXME
-    BB = MI->getParent();
-    // FIXME
-
-    BB->splice(InsertPos, BB, MI);
-    // Update LiveIntervals
-    if (LIS)
-      LIS->handleMove(*MI, /*UpdateFlags=*/false);
-  
-    // Recede RegionBegin if an instruction moves above the first.
-    if (RegionBegin == InsertPos)
-      RegionBegin = MI;
-  }
-
 };
 
-// TODO: Make this a member of the new scheduleDAG.
 static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
                                                const SUnit *Src,
                                                ScheduleDAGMCP &DG) {
@@ -207,8 +184,6 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   while (!InstructionsToInsert.empty()) {
     std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
     // TODO: Take latencies into account.
-    // MBB->splice(SrcInstr->getIterator(), MBB, p.second->getIterator());
-    //DG.moveInstruction(p.second, SrcInstr->getIterator());
     MBB->splice(SrcInstr->getIterator(), MBB, p.second->getIterator());
 
     InstructionsToInsert.pop();
@@ -1248,9 +1223,8 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
 
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
     MachineBasicBlock &MBB) {
-  //ScheduleDAGMCP DG{};
   
-  ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, LIS, false};
+  ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
   
 
   DG.startBlock(&MBB);
