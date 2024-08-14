@@ -183,10 +183,9 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   // TODO: 3. Disable this logic with Osize.
 
   while (!InstructionsToInsert.empty()) {
-    std::pair<unsigned, MachineInstr *> p = InstructionsToInsert.top();
     // TODO: Take latencies into account.
-    MBB->splice(SrcInstr->getIterator(), MBB, p.second->getIterator());
-
+    MBB->splice(SrcInstr->getIterator(), MBB,
+                InstructionsToInsert.top().second->getIterator());
     InstructionsToInsert.pop();
   }
   return true;
