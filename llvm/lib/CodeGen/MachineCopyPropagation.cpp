@@ -108,7 +108,8 @@ namespace {
 class ScheduleDAGMCP : public ScheduleDAGInstrs {
 public:
   void schedule() override {
-    llvm_unreachable("This schedule dag is only used as a dependency graph\n");
+    llvm_unreachable("This schedule dag is only used as a dependency graph for "
+                     "Machine Copy Propagation\n");
   }
 
   ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI,
@@ -209,7 +210,6 @@ class CopyTracker {
     MachineInstr *MI, *LastSeenUseInCopy;
     SmallVector<MCRegister, 4> DefRegs;
     bool Avail;
-    MachineInstr *InvalidatedBy;
   };
 
   DenseMap<MCRegUnit, CopyInfo> Copies;
@@ -233,13 +233,11 @@ public:
   int getInvalidCopiesSize() {
     return InvalidCopies.size();
   }
-// c/c++ - clang -> LLVM IR - optimizations in llc -> LLVM IR -> GlobalISEl -> MIR (Target dependent) -> assembly/machine code
-//__int128 a, b;
-//c = a + b
+
   /// Remove register from copy maps.
   void invalidateRegister(MCRegister Reg, const TargetRegisterInfo &TRI,
-                                                                        /*TODO: This may be redundant since there is lastUsed member in CopyTracker.*/
-                          const TargetInstrInfo &TII, bool UseCopyInstr, MachineInstr *InvalidatedBy = nullptr) {
+                          const TargetInstrInfo &TII, bool UseCopyInstr,
+                          bool MayStillBePropagated = false) {
     // Since Reg might be a subreg of some registers, only invalidate Reg is not
     // enough. We have to find the COPY defines Reg or registers defined by Reg
     // and invalidate all of them. Similarly, we must invalidate all of the
@@ -266,10 +264,8 @@ public:
       }
     }
     for (MCRegUnit Unit : RegUnitsToInvalidate) {
-      if (Copies.contains(Unit) && InvalidatedBy) {
+      if (Copies.contains(Unit) && MayStillBePropagated)
         InvalidCopies[Unit] = Copies[Unit];
-        InvalidCopies[Unit].InvalidatedBy = InvalidatedBy;
-      }
       Copies.erase(Unit);
     }
   }
@@ -1251,9 +1247,9 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, &MI);
+                                     UseCopyInstr, true);
           Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, &MI);
+                                     UseCopyInstr, true);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
           continue;
         }
@@ -1266,7 +1262,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         MCRegister Reg = MO.getReg().asMCReg();
         if (!Reg)
           continue;
-        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, nullptr);
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, false);
       }
 
     propagateDefs(MI, DG);
@@ -1293,7 +1289,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           }
         } else {
           Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, &MI);
+                                     UseCopyInstr, true);
         }
       }
     }
