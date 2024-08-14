@@ -388,10 +388,9 @@ define void @masked_store_v32f64(<32 x double>* %val_ptr, <32 x double>* %a, <32
 ; RV32-NEXT:    add a0, sp, a0
 ; RV32-NEXT:    addi a0, a0, 16
 ; RV32-NEXT:    vl8r.v v16, (a0) # Unknown-size Folded Reload
-; RV32-NEXT:    vmfeq.vf v8, v16, fa5
 ; RV32-NEXT:    vse64.v v24, (a1), v0.t
+; RV32-NEXT:    vmfeq.vf v0, v16, fa5
 ; RV32-NEXT:    addi a0, a1, 128
-; RV32-NEXT:    vmv1r.v v0, v8
 ; RV32-NEXT:    addi a1, sp, 16
 ; RV32-NEXT:    vl8r.v v8, (a1) # Unknown-size Folded Reload
 ; RV32-NEXT:    vse64.v v8, (a0), v0.t
@@ -428,10 +427,9 @@ define void @masked_store_v32f64(<32 x double>* %val_ptr, <32 x double>* %a, <32
 ; RV64-NEXT:    add a0, sp, a0
 ; RV64-NEXT:    addi a0, a0, 16
 ; RV64-NEXT:    vl8r.v v16, (a0) # Unknown-size Folded Reload
-; RV64-NEXT:    vmfeq.vf v8, v16, fa5
 ; RV64-NEXT:    vse64.v v24, (a1), v0.t
+; RV64-NEXT:    vmfeq.vf v0, v16, fa5
 ; RV64-NEXT:    addi a0, a1, 128
-; RV64-NEXT:    vmv1r.v v0, v8
 ; RV64-NEXT:    addi a1, sp, 16
 ; RV64-NEXT:    vl8r.v v8, (a1) # Unknown-size Folded Reload
 ; RV64-NEXT:    vse64.v v8, (a0), v0.t
@@ -496,10 +494,9 @@ define void @masked_store_v64f32(<64 x float>* %val_ptr, <64 x float>* %a, <64 x
 ; CHECK-NEXT:    add a0, sp, a0
 ; CHECK-NEXT:    addi a0, a0, 16
 ; CHECK-NEXT:    vl8r.v v16, (a0) # Unknown-size Folded Reload
-; CHECK-NEXT:    vmfeq.vf v8, v16, fa5
 ; CHECK-NEXT:    vse32.v v24, (a1), v0.t
+; CHECK-NEXT:    vmfeq.vf v0, v16, fa5
 ; CHECK-NEXT:    addi a0, a1, 128
-; CHECK-NEXT:    vmv1r.v v0, v8
 ; CHECK-NEXT:    addi a1, sp, 16
 ; CHECK-NEXT:    vl8r.v v8, (a1) # Unknown-size Folded Reload
 ; CHECK-NEXT:    vse32.v v8, (a0), v0.t
@@ -545,10 +542,9 @@ define void @masked_store_v128f16(<128 x half>* %val_ptr, <128 x half>* %a, <128
 ; CHECK-NEXT:    add a0, sp, a0
 ; CHECK-NEXT:    addi a0, a0, 16
 ; CHECK-NEXT:    vl8r.v v16, (a0) # Unknown-size Folded Reload
-; CHECK-NEXT:    vmfeq.vf v8, v16, fa5
 ; CHECK-NEXT:    vse16.v v24, (a1), v0.t
+; CHECK-NEXT:    vmfeq.vf v0, v16, fa5
 ; CHECK-NEXT:    addi a0, a1, 128
-; CHECK-NEXT:    vmv1r.v v0, v8
 ; CHECK-NEXT:    addi a1, sp, 16
 ; CHECK-NEXT:    vl8r.v v8, (a1) # Unknown-size Folded Reload
 ; CHECK-NEXT:    vse16.v v8, (a0), v0.t

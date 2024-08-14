@@ -882,28 +882,25 @@ define zeroext i1 @umulo.i64(i64 %v1, i64 %v2, ptr %res) {
 ; RV64-LABEL: umulo.i64:
 ; RV64:       # %bb.0: # %entry
 ; RV64-NEXT:    mulhu a3, a0, a1
-; RV64-NEXT:    snez a3, a3
 ; RV64-NEXT:    mul a0, a0, a1
 ; RV64-NEXT:    sd a0, 0(a2)
-; RV64-NEXT:    mv a0, a3
+; RV64-NEXT:    snez a0, a3
 ; RV64-NEXT:    ret
 ;
 ; RV64ZBA-LABEL: umulo.i64:
 ; RV64ZBA:       # %bb.0: # %entry
 ; RV64ZBA-NEXT:    mulhu a3, a0, a1
-; RV64ZBA-NEXT:    snez a3, a3
 ; RV64ZBA-NEXT:    mul a0, a0, a1
 ; RV64ZBA-NEXT:    sd a0, 0(a2)
-; RV64ZBA-NEXT:    mv a0, a3
+; RV64ZBA-NEXT:    snez a0, a3
 ; RV64ZBA-NEXT:    ret
 ;
 ; RV64ZICOND-LABEL: umulo.i64:
 ; RV64ZICOND:       # %bb.0: # %entry
 ; RV64ZICOND-NEXT:    mulhu a3, a0, a1
-; RV64ZICOND-NEXT:    snez a3, a3
 ; RV64ZICOND-NEXT:    mul a0, a0, a1
 ; RV64ZICOND-NEXT:    sd a0, 0(a2)
-; RV64ZICOND-NEXT:    mv a0, a3
+; RV64ZICOND-NEXT:    snez a0, a3
 ; RV64ZICOND-NEXT:    ret
 entry:
   %t = call {i64, i1} @llvm.umul.with.overflow.i64(i64 %v1, i64 %v2)
@@ -918,31 +915,28 @@ define zeroext i1 @umulo2.i64(i64 %v1, ptr %res) {
 ; RV64:       # %bb.0: # %entry
 ; RV64-NEXT:    li a3, 13
 ; RV64-NEXT:    mulhu a2, a0, a3
-; RV64-NEXT:    snez a2, a2
 ; RV64-NEXT:    mul a0, a0, a3
 ; RV64-NEXT:    sd a0, 0(a1)
-; RV64-NEXT:    mv a0, a2
+; RV64-NEXT:    snez a0, a2
 ; RV64-NEXT:    ret
 ;
 ; RV64ZBA-LABEL: umulo2.i64:
 ; RV64ZBA:       # %bb.0: # %entry
 ; RV64ZBA-NEXT:    li a2, 13
 ; RV64ZBA-NEXT:    mulhu a2, a0, a2
-; RV64ZBA-NEXT:    snez a2, a2
 ; RV64ZBA-NEXT:    sh1add a3, a0, a0
 ; RV64ZBA-NEXT:    sh2add a0, a3, a0
 ; RV64ZBA-NEXT:    sd a0, 0(a1)
-; RV64ZBA-NEXT:    mv a0, a2
+; RV64ZBA-NEXT:    snez a0, a2
 ; RV64ZBA-NEXT:    ret
 ;
 ; RV64ZICOND-LABEL: umulo2.i64:
 ; RV64ZICOND:       # %bb.0: # %entry
 ; RV64ZICOND-NEXT:    li a3, 13
 ; RV64ZICOND-NEXT:    mulhu a2, a0, a3
-; RV64ZICOND-NEXT:    snez a2, a2
 ; RV64ZICOND-NEXT:    mul a0, a0, a3
 ; RV64ZICOND-NEXT:    sd a0, 0(a1)
-; RV64ZICOND-NEXT:    mv a0, a2
+; RV64ZICOND-NEXT:    snez a0, a2
 ; RV64ZICOND-NEXT:    ret
 entry:
   %t = call {i64, i1} @llvm.umul.with.overflow.i64(i64 %v1, i64 13)
