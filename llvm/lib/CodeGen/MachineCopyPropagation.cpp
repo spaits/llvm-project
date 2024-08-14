@@ -1309,6 +1309,8 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
 
   DG.exitRegion();
   DG.finishBlock();
+  // TODO: Does it makes sense to keep the kill flags here?
+  //       On the other parts of this pass we juts throw out the kill flags.
   DG.fixupKills(MBB);
 
   MaybeDeadCopies.clear();
