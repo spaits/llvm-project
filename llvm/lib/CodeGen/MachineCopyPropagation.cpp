@@ -137,8 +137,8 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   //       is the closest to the top.
   // TODO: Just use std::map. It is sorted.
   std::queue<const SUnit *> Edges;
-  // The priority queue to get the instructions that needs to be moved in
-  // the order in which they were in the basic block.
+  // std::map can be conveniently be used as a priority queue since the standard
+  // requires the element of std::map to be sorted by the keys. TODO: elaborate further on this.
   std::map<unsigned, MachineInstr *> InstructionsToInsert;
 
   // Process the children of a node.
@@ -147,7 +147,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &MBB](
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert](
                                   std::queue<const SUnit *> &Queue,
                                   const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
@@ -160,18 +160,28 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
           std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
                        [&MI](const auto &MIInSec) { return &MIInSec == &MI; });
       if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
-        // TODO: Duplications ar not taken into account here. They should be!
-        Queue.push(SU);
-        InstructionsToInsert.insert(std::pair<unsigned, MachineInstr *>{
-            std::distance(SrcInstr->getIterator(), Pos), &MI});
+        // The instruction ID shall be a number that is:
+        // 1) Unique to each instruction.
+        // 2) If we have instruction A and instruction B, and A proceeds B then
+        //    the ID of A shall be smaller that the ID of B. TODO: Sure? Not greater?
+        int InstrID = std::distance(SrcInstr->getIterator(), Pos);
+
+        // If an instruction is already in the Instructions to move map, than
+        // that means that it has already been processes with all of their
+        // dependence. We do not need to do anything with it again.
+        if (InstructionsToInsert.find(InstrID) == InstructionsToInsert.end()) {
+          Queue.push(SU);
+          InstructionsToInsert.insert(
+              std::pair<unsigned, MachineInstr *>{InstrID, &MI});
+        }
       }
     }
     return true;
   };
   // TODO maybe do DFS?
   //      It would may yield faster results if we were to do Depth first search
-  //      since it would be beneficiary if we could cancel this search as early as
-  //      possible if no moving is possible.
+  //      since it would be beneficiary if we could cancel this search as early
+  //      as possible if no moving is possible.
   // Basically the BFS happens here.
   ProcessSNodeChildren(Edges, Dst, true);
   while (!Edges.empty()) {
@@ -189,9 +199,10 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   // dependency on source.
   // TODO: 2. Check if the size of instructions to move is greater than that.
   // TODO: 3. Disable this logic with Osize.
-
   while (!InstructionsToInsert.empty()) {
     // TODO: Take latencies into account.
+    // TODO: Just call this and don't do anything with kills?
+    //        InstructionsToInsert.begin()->second->clearKillInfo();
     MBB->splice(SrcInstr->getIterator(), MBB,
                 InstructionsToInsert.begin()->second->getIterator());
     InstructionsToInsert.erase(InstructionsToInsert.begin());
@@ -554,11 +565,6 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
     AU.addUsedIfAvailable<LiveIntervalsWrapperPass>();
-    // AU.addRequired<SlotIndexesWrapperPass>();
-    // AU.addRequired<LiveIntervalsWrapperPass>();
-    // Maybe require these.
-    //AU.addPreserved<SlotIndexesWrapperPass>();
-    //AU.addPreserved<LiveIntervalsWrapperPass>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
