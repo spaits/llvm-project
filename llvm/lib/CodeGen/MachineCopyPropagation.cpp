@@ -48,7 +48,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallSet.h"
@@ -118,9 +120,9 @@ public:
     CanHandleTerminators = true;
   }
 };
-
-static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
-                                               const SUnit *Src,
+// TODO: Constant correctness check before opening PR.
+static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
+                                               SUnit *Src,
                                                ScheduleDAGMCP &DG) {
   MachineInstr *DstInstr = Dst->getInstr();
   MachineInstr *SrcInstr = Src->getInstr();
@@ -183,6 +185,24 @@ static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
   //      since it would be beneficiary if we could cancel this search as early
   //      as possible if no moving is possible.
   // Basically the BFS happens here.
+  //
+  // Could not use the ADT implementation of BFS here.
+  // In ADT graph traversals we don't have the chance to select exactly which
+  // children are being put into the "nodes to traverse" queue or stack.
+  //
+  // We couldn't work around this by checking the need for the node in the
+  // processing stage. In some context it does matter what the parent of the
+  // instruction was: Namely when we are starting the traversal with the source
+  // of the copy propagation. This instruction must have the destination as a
+  // dependency. In case of other instruction than the destination this
+  // dependency would mean the end of the traversal, but in this scenario this
+  // must be ignored. Let's say that we can not control what nodes to process
+  // and we come across the copy source. How do I know what node has that copy
+  // source as their dependency? We can check of which node is the copy source
+  // the dependency of. This list will alway contain the source. To decide if we
+  // have it as dependency of another instruction, we must check in the already
+  // traversed list if any of the instructions that is depended on the source is
+  // contained. This would introduce extra costs.
   ProcessSNodeChildren(Edges, Dst, true);
   while (!Edges.empty()) {
     const auto *Current = Edges.front();
@@ -1192,8 +1212,8 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
       LLVM_DEBUG(
           dbgs()
           << "MCP: Found potential backward copy that has dependency.\n");
-      const SUnit *DstSUnit = DG.getSUnit(Copy);
-      const SUnit *SrcSUnit = DG.getSUnit(&MI);
+      SUnit *DstSUnit = DG.getSUnit(Copy);
+      SUnit *SrcSUnit = DG.getSUnit(&MI);
 
       if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG))
         continue;
