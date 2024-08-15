@@ -452,13 +452,11 @@ public:
   MachineInstr *findAvailBackwardCopy(MachineInstr &I, MCRegister Reg,
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII,
-                                      bool UseCopyInstr, bool SearchInvalid = false) {
+                                      bool UseCopyInstr,
+                                      bool SearchInvalid = false) {
     MCRegUnit RU = *TRI.regunits(Reg).begin();
-    MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI);
-
-    if (SearchInvalid && !AvailCopy) {
-      AvailCopy = findInvalidCopyDefViaUnit(RU, TRI);
-    }
+    MachineInstr *AvailCopy = SearchInvalid ? findInvalidCopyDefViaUnit(RU, TRI)
+                                            : findCopyDefViaUnit(RU, TRI);
 
     if (!AvailCopy)
       return nullptr;
@@ -1173,7 +1171,8 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
 }
 
-void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG) {
+void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
+                                           ScheduleDAGMCP &DG) {
   if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies())
     return;
 
@@ -1252,15 +1251,12 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG)
 
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
     MachineBasicBlock &MBB) {
-  
   ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
-  
 
   DG.startBlock(&MBB);
-  DG.enterRegion(&MBB, MBB.begin(), MBB.end(),MBB.size());
+  DG.enterRegion(&MBB, MBB.begin(), MBB.end(), MBB.size());
   DG.buildSchedGraph(nullptr);
-  //DG.viewGraph();
-  
+  // DG.viewGraph();
 
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
