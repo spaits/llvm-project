@@ -2198,8 +2198,8 @@ define i32 @test_udot_v48i8(ptr %p1, ptr %p2) {
 ; CHECK-GI-BASE-NEXT:    umull2 v0.4s, v7.8h, v6.8h
 ; CHECK-GI-BASE-NEXT:    add w8, w8, w9
 ; CHECK-GI-BASE-NEXT:    addv s1, v1.4s
-; CHECK-GI-BASE-NEXT:    add w9, w11, w12
 ; CHECK-GI-BASE-NEXT:    add w8, w8, w10
+; CHECK-GI-BASE-NEXT:    add w9, w11, w12
 ; CHECK-GI-BASE-NEXT:    fmov w10, s4
 ; CHECK-GI-BASE-NEXT:    fmov w11, s5
 ; CHECK-GI-BASE-NEXT:    fmov w12, s2
@@ -2526,8 +2526,8 @@ define i32 @test_sdot_v48i8(ptr %p1, ptr %p2) {
 ; CHECK-GI-BASE-NEXT:    smull2 v0.4s, v7.8h, v6.8h
 ; CHECK-GI-BASE-NEXT:    add w8, w8, w9
 ; CHECK-GI-BASE-NEXT:    addv s1, v1.4s
-; CHECK-GI-BASE-NEXT:    add w9, w11, w12
 ; CHECK-GI-BASE-NEXT:    add w8, w8, w10
+; CHECK-GI-BASE-NEXT:    add w9, w11, w12
 ; CHECK-GI-BASE-NEXT:    fmov w10, s4
 ; CHECK-GI-BASE-NEXT:    fmov w11, s5
 ; CHECK-GI-BASE-NEXT:    fmov w12, s2
@@ -4755,16 +4755,16 @@ define i32 @full(ptr %p1, i32 noundef %s1, ptr %p2, i32 noundef %s2) {
 ; CHECK-GI-NEXT:    abs v5.4s, v5.4s
 ; CHECK-GI-NEXT:    fmov w8, s1
 ; CHECK-GI-NEXT:    add v6.4s, v17.4s, v6.4s
-; CHECK-GI-NEXT:    addv s2, v2.4s
 ; CHECK-GI-NEXT:    fmov w9, s0
-; CHECK-GI-NEXT:    addv s4, v4.4s
+; CHECK-GI-NEXT:    addv s2, v2.4s
 ; CHECK-GI-NEXT:    fmov w10, s3
+; CHECK-GI-NEXT:    addv s4, v4.4s
 ; CHECK-GI-NEXT:    abs v18.4s, v18.4s
 ; CHECK-GI-NEXT:    abs v7.4s, v7.4s
 ; CHECK-GI-NEXT:    add v1.4s, v16.4s, v5.4s
 ; CHECK-GI-NEXT:    add w8, w8, w9
-; CHECK-GI-NEXT:    addv s3, v6.4s
 ; CHECK-GI-NEXT:    fmov w9, s2
+; CHECK-GI-NEXT:    addv s3, v6.4s
 ; CHECK-GI-NEXT:    add w8, w10, w8
 ; CHECK-GI-NEXT:    fmov w10, s4
 ; CHECK-GI-NEXT:    add v0.4s, v18.4s, v7.4s

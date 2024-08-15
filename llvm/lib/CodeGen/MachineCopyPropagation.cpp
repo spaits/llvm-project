@@ -55,12 +55,18 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/ScheduleDAG.h"
+#include "llvm/CodeGen/ScheduleDAGInstrs.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -70,9 +76,15 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugCounter.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <iterator>
+#include <optional>
+#include <queue>
+#include <utility>
+#include <variant>
 
 using namespace llvm;
 
@@ -92,6 +104,100 @@ static cl::opt<cl::boolOrDefault>
     EnableSpillageCopyElimination("enable-spill-copy-elim", cl::Hidden);
 
 namespace {
+// A ScheduleDAG subclass that is used as a dependency graph.
+class ScheduleDAGMCP : public ScheduleDAGInstrs {
+public:
+  void schedule() override {
+    llvm_unreachable("This schedule dag is only used as a dependency graph for "
+                     "Machine Copy Propagation\n");
+  }
+
+  ScheduleDAGMCP(MachineFunction &MF, const MachineLoopInfo *MLI,
+                 bool RemoveKillFlags = false)
+      : ScheduleDAGInstrs(MF, MLI, RemoveKillFlags) {
+    CanHandleTerminators = true;
+  }
+};
+
+static bool moveInstructionsOutOfTheWayIfWeCan(const SUnit *Dst,
+                                               const SUnit *Src,
+                                               ScheduleDAGMCP &DG) {
+  MachineInstr *DstInstr = Dst->getInstr();
+  MachineInstr *SrcInstr = Src->getInstr();
+  MachineBasicBlock *MBB = SrcInstr->getParent();
+
+  if (DstInstr == nullptr || SrcInstr == nullptr)
+    return false;
+  assert("This function only operates on a basic block level." &&
+         MBB == SrcInstr->getParent());
+
+  // The queue for the breadth first search.
+  // TODO: Use a priority queue instead of this to?
+  //       Ot would be a greedy DFS. I would always go for the instruction that
+  //       is the closest to the top.
+  // TODO: Just use std::map. It is sorted.
+  std::queue<const SUnit *> Edges;
+  // The priority queue to get the instructions that needs to be moved in
+  // the order in which they were in the basic block.
+  std::map<unsigned, MachineInstr *> InstructionsToInsert;
+
+  // Process the children of a node.
+  // Basically every node are checked before it is being put into the queue.
+  // A node is enqueued if it has no dependencies on the source of the copy
+  // (only if we are not talking about the destination node which is a special
+  // case indicated by a flag) and is located between the source of the copy and
+  // the destination of the copy.
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &MBB](
+                                  std::queue<const SUnit *> &Queue,
+                                  const SUnit *Node, bool IsRoot) -> bool {
+    for (llvm::SDep I : Node->Preds) {
+      SUnit *SU = I.getSUnit();
+      MachineInstr &MI = *(SU->getInstr());
+      if (!IsRoot && &MI == SrcInstr)
+        return false;
+
+      auto Pos =
+          std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
+                       [&MI](const auto &MIInSec) { return &MIInSec == &MI; });
+      if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
+        // TODO: Duplications ar not taken into account here. They should be!
+        Queue.push(SU);
+        InstructionsToInsert.insert(std::pair<unsigned, MachineInstr *>{
+            std::distance(SrcInstr->getIterator(), Pos), &MI});
+      }
+    }
+    return true;
+  };
+  // TODO maybe do DFS?
+  //      It would may yield faster results if we were to do Depth first search
+  //      since it would be beneficiary if we could cancel this search as early as
+  //      possible if no moving is possible.
+  // Basically the BFS happens here.
+  ProcessSNodeChildren(Edges, Dst, true);
+  while (!Edges.empty()) {
+    const auto *Current = Edges.front();
+    Edges.pop();
+    if (!ProcessSNodeChildren(Edges, Current, false))
+      return false;
+  }
+
+  // If all of the dependencies were deemed valid during the BFS then we
+  // are moving them before the copy source here keeping their relative
+  // order to each other.
+
+  // TODO: 1. Find the nearest immediate successor to source with a true
+  // dependency on source.
+  // TODO: 2. Check if the size of instructions to move is greater than that.
+  // TODO: 3. Disable this logic with Osize.
+
+  while (!InstructionsToInsert.empty()) {
+    // TODO: Take latencies into account.
+    MBB->splice(SrcInstr->getIterator(), MBB,
+                InstructionsToInsert.begin()->second->getIterator());
+    InstructionsToInsert.erase(InstructionsToInsert.begin());
+  }
+  return true;
+}
 
 static std::optional<DestSourcePair> isCopyInstr(const MachineInstr &MI,
                                                  const TargetInstrInfo &TII,
@@ -114,6 +220,7 @@ class CopyTracker {
   };
 
   DenseMap<MCRegUnit, CopyInfo> Copies;
+  DenseMap<MCRegUnit, CopyInfo> InvalidCopies;
 
 public:
   /// Mark all of the given registers and their subregisters as unavailable for
@@ -130,9 +237,14 @@ public:
     }
   }
 
+  int getInvalidCopiesSize() {
+    return InvalidCopies.size();
+  }
+
   /// Remove register from copy maps.
   void invalidateRegister(MCRegister Reg, const TargetRegisterInfo &TRI,
-                          const TargetInstrInfo &TII, bool UseCopyInstr) {
+                          const TargetInstrInfo &TII, bool UseCopyInstr,
+                          bool MayStillBePropagated = false) {
     // Since Reg might be a subreg of some registers, only invalidate Reg is not
     // enough. We have to find the COPY defines Reg or registers defined by Reg
     // and invalidate all of them. Similarly, we must invalidate all of the
@@ -158,8 +270,11 @@ public:
           InvalidateCopy(MI);
       }
     }
-    for (MCRegUnit Unit : RegUnitsToInvalidate)
+    for (MCRegUnit Unit : RegUnitsToInvalidate) {
+      if (Copies.contains(Unit) && MayStillBePropagated)
+        InvalidCopies[Unit] = Copies[Unit];
       Copies.erase(Unit);
+    }
   }
 
   /// Clobber a single register, removing it from the tracker's copy maps.
@@ -252,11 +367,26 @@ public:
     return !Copies.empty();
   }
 
+  bool hasAnyInvalidCopies() {
+    return !InvalidCopies.empty();
+  }
+
   MachineInstr *findCopyForUnit(MCRegUnit RegUnit,
                                 const TargetRegisterInfo &TRI,
                                 bool MustBeAvailable = false) {
     auto CI = Copies.find(RegUnit);
     if (CI == Copies.end())
+      return nullptr;
+    if (MustBeAvailable && !CI->second.Avail)
+      return nullptr;
+    return CI->second.MI;
+  }
+
+  MachineInstr *findInvalidCopyForUnit(MCRegUnit RegUnit,
+                                const TargetRegisterInfo &TRI,
+                                bool MustBeAvailable = false) {
+    auto CI = InvalidCopies.find(RegUnit);
+    if (CI == InvalidCopies.end())
       return nullptr;
     if (MustBeAvailable && !CI->second.Avail)
       return nullptr;
@@ -274,12 +404,30 @@ public:
     return findCopyForUnit(RU, TRI, true);
   }
 
+  MachineInstr *findInvalidCopyDefViaUnit(MCRegUnit RegUnit,
+                                   const TargetRegisterInfo &TRI) {
+    auto CI = InvalidCopies.find(RegUnit);
+    if (CI == InvalidCopies.end())
+      return nullptr;
+    if (CI->second.DefRegs.size() != 1)
+      return nullptr;
+    MCRegUnit RU = *TRI.regunits(CI->second.DefRegs[0]).begin();
+    return findInvalidCopyForUnit(RU, TRI, false);
+  }
+
+  // TODO: This is ugly there shall be a more elegant solution to invalid
+  //       copy searching. Create a variant that either returns a valid an invalid
+  //       copy or no copy at all (std::monotype).
   MachineInstr *findAvailBackwardCopy(MachineInstr &I, MCRegister Reg,
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII,
-                                      bool UseCopyInstr) {
+                                      bool UseCopyInstr, bool SearchInvalid = false) {
     MCRegUnit RU = *TRI.regunits(Reg).begin();
     MachineInstr *AvailCopy = findCopyDefViaUnit(RU, TRI);
+
+    if (SearchInvalid && !AvailCopy) {
+      AvailCopy = findInvalidCopyDefViaUnit(RU, TRI);
+    }
 
     if (!AvailCopy)
       return nullptr;
@@ -377,13 +525,20 @@ public:
 
   void clear() {
     Copies.clear();
+    InvalidCopies.clear();
   }
 };
 
+using Copy = MachineInstr*;
+using InvalidCopy = std::pair<Copy, MachineInstr *>;
+using CopyLookupResult = std::variant<std::monostate, Copy, InvalidCopy>;
+
 class MachineCopyPropagation : public MachineFunctionPass {
+  LiveIntervals *LIS = nullptr;
   const TargetRegisterInfo *TRI = nullptr;
   const TargetInstrInfo *TII = nullptr;
   const MachineRegisterInfo *MRI = nullptr;
+  AAResults *AA = nullptr;
 
   // Return true if this is a copy instruction and false otherwise.
   bool UseCopyInstr;
@@ -398,6 +553,12 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
+    AU.addUsedIfAvailable<LiveIntervalsWrapperPass>();
+    // AU.addRequired<SlotIndexesWrapperPass>();
+    // AU.addRequired<LiveIntervalsWrapperPass>();
+    // Maybe require these.
+    //AU.addPreserved<SlotIndexesWrapperPass>();
+    //AU.addPreserved<LiveIntervalsWrapperPass>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
@@ -418,7 +579,7 @@ private:
   void EliminateSpillageCopies(MachineBasicBlock &MBB);
   bool eraseIfRedundant(MachineInstr &Copy, MCRegister Src, MCRegister Def);
   void forwardUses(MachineInstr &MI);
-  void propagateDefs(MachineInstr &MI);
+  void propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG);
   bool isForwardableRegClassCopy(const MachineInstr &Copy,
                                  const MachineInstr &UseI, unsigned UseIdx);
   bool isBackwardPropagatableRegClassCopy(const MachineInstr &Copy,
@@ -427,7 +588,7 @@ private:
   bool hasImplicitOverlap(const MachineInstr &MI, const MachineOperand &Use);
   bool hasOverlappingMultipleDef(const MachineInstr &MI,
                                  const MachineOperand &MODef, Register Def);
-
+  
   /// Candidates for deletion.
   SmallSetVector<MachineInstr *, 8> MaybeDeadCopies;
 
@@ -986,8 +1147,8 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
   return CopyOperands.Source->isRenamable() && CopyOperands.Source->isKill();
 }
 
-void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
-  if (!Tracker.hasAnyCopies())
+void MachineCopyPropagation::propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG) {
+  if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies())
     return;
 
   for (unsigned OpIdx = 0, OpEnd = MI.getNumOperands(); OpIdx != OpEnd;
@@ -1010,8 +1171,27 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
 
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
-    if (!Copy)
-      continue;
+    if (!Copy) {
+      LLVM_DEBUG(
+          dbgs()
+          << "MCP: Couldn't find any backward copy that has no dependency.\n");
+      Copy = Tracker.findAvailBackwardCopy(MI, MODef.getReg().asMCReg(), *TRI,
+                                           *TII, UseCopyInstr, true);
+      if (!Copy) {
+        LLVM_DEBUG(
+            dbgs()
+            << "MCP: Couldn't find any backward copy that has dependency.\n");
+        continue;
+      }
+      LLVM_DEBUG(
+          dbgs()
+          << "MCP: Found potential backward copy that has dependency.\n");
+      const SUnit *DstSUnit = DG.getSUnit(Copy);
+      const SUnit *SrcSUnit = DG.getSUnit(&MI);
+
+      if (!moveInstructionsOutOfTheWayIfWeCan(DstSUnit, SrcSUnit, DG))
+        continue;
+    }
 
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(*Copy, *TII, UseCopyInstr);
@@ -1046,10 +1226,22 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI) {
 
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
     MachineBasicBlock &MBB) {
+  
+  ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
+  
+
+  DG.startBlock(&MBB);
+  DG.enterRegion(&MBB, MBB.begin(), MBB.end(),MBB.size());
+  DG.buildSchedGraph(nullptr);
+  //DG.viewGraph();
+  
+
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
 
   for (MachineInstr &MI : llvm::make_early_inc_range(llvm::reverse(MBB))) {
+    //llvm::errs() << "Next MI: ";
+    //MI.dump();
     // Ignore non-trivial COPYs.
     std::optional<DestSourcePair> CopyOperands =
         isCopyInstr(MI, *TII, UseCopyInstr);
@@ -1062,7 +1254,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, true);
           Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
                                      UseCopyInstr);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
@@ -1077,10 +1269,10 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         MCRegister Reg = MO.getReg().asMCReg();
         if (!Reg)
           continue;
-        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr);
+        Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, false);
       }
 
-    propagateDefs(MI);
+    propagateDefs(MI, DG);
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;
@@ -1104,7 +1296,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           }
         } else {
           Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr);
+                                     UseCopyInstr, true);
         }
       }
     }
@@ -1122,6 +1314,12 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     Copy->eraseFromParent();
     ++NumDeletes;
   }
+
+  DG.exitRegion();
+  DG.finishBlock();
+  // TODO: Does it makes sense to keep the kill flags here?
+  //       On the other parts of this pass we juts throw out the kill flags.
+  DG.fixupKills(MBB);
 
   MaybeDeadCopies.clear();
   CopyDbgUsers.clear();
@@ -1472,6 +1670,9 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   TRI = MF.getSubtarget().getRegisterInfo();
   TII = MF.getSubtarget().getInstrInfo();
   MRI = &MF.getRegInfo();
+  auto *LISWrapper = getAnalysisIfAvailable<LiveIntervalsWrapperPass>();
+  LIS = LISWrapper ? &LISWrapper->getLIS() : nullptr;
+  //assert(LIS && "NO LIS\n");
 
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
