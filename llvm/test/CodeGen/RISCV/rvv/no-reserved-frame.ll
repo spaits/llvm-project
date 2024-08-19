@@ -21,7 +21,6 @@ define signext i32 @foo(i32 signext %aa) #0 {
 ; CHECK-NEXT:    andi sp, sp, -16
 ; CHECK-NEXT:    mv s1, sp
 ; CHECK-NEXT:    sw a0, 52(s1)
-; CHECK-NEXT:    sw a0, 48(s1)
 ; CHECK-NEXT:    lw a0, 44(s1)
 ; CHECK-NEXT:    lw a2, 40(s1)
 ; CHECK-NEXT:    lw a3, 36(s1)
@@ -32,6 +31,7 @@ define signext i32 @foo(i32 signext %aa) #0 {
 ; CHECK-NEXT:    lw t1, 16(s1)
 ; CHECK-NEXT:    lw a1, 12(s1)
 ; CHECK-NEXT:    lw t2, 8(s1)
+; CHECK-NEXT:    sw a0, 48(s1)
 ; CHECK-NEXT:    addi sp, sp, -32
 ; CHECK-NEXT:    sd t2, 16(sp)
 ; CHECK-NEXT:    sd a1, 8(sp)

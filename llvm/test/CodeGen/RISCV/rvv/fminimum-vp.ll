@@ -1175,8 +1175,8 @@ define <vscale x 16 x double> @vfmin_vv_nxv16f64_unmasked(<vscale x 16 x double>
 ; CHECK-NEXT:    add a0, sp, a0
 ; CHECK-NEXT:    addi a0, a0, 16
 ; CHECK-NEXT:    vs8r.v v8, (a0) # Unknown-size Folded Spill
-; CHECK-NEXT:    vmerge.vvm v8, v16, v24, v0
 ; CHECK-NEXT:    vmfeq.vv v0, v24, v24
+; CHECK-NEXT:    vmerge.vvm v8, v16, v24, v0
 ; CHECK-NEXT:    vmerge.vvm v16, v24, v16, v0
 ; CHECK-NEXT:    vfmin.vv v8, v16, v8
 ; CHECK-NEXT:    addi a0, sp, 16

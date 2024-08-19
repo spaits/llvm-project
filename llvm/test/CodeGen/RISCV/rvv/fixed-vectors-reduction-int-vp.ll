@@ -1757,8 +1757,8 @@ define signext i8 @vpreduce_mul_v64i8(i8 signext %s, <64 x i8> %v, <64 x i1> %m,
 ; RV32-NEXT:    vid.v v16
 ; RV32-NEXT:    vmsltu.vx v14, v16, a1
 ; RV32-NEXT:    vsext.vf4 v16, v12
-; RV32-NEXT:    vmsltu.vx v12, v16, a1
 ; RV32-NEXT:    mv a2, a0
+; RV32-NEXT:    vmsltu.vx v12, v16, a1
 ; RV32-NEXT:    vsetivli zero, 8, e8, mf2, ta, ma
 ; RV32-NEXT:    vslideup.vi v14, v12, 4
 ; RV32-NEXT:    li a0, 64
@@ -1801,8 +1801,8 @@ define signext i8 @vpreduce_mul_v64i8(i8 signext %s, <64 x i8> %v, <64 x i1> %m,
 ; RV64-NEXT:    vid.v v16
 ; RV64-NEXT:    vmsltu.vx v14, v16, a1
 ; RV64-NEXT:    vsext.vf4 v16, v12
-; RV64-NEXT:    vmsltu.vx v12, v16, a1
 ; RV64-NEXT:    mv a2, a0
+; RV64-NEXT:    vmsltu.vx v12, v16, a1
 ; RV64-NEXT:    vsetivli zero, 8, e8, mf2, ta, ma
 ; RV64-NEXT:    vslideup.vi v14, v12, 4
 ; RV64-NEXT:    li a0, 64

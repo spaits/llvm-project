@@ -133,6 +133,14 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
   assert("This function only operates on a basic block level." &&
          MBB == SrcInstr->getParent());
 
+  int SrcDistance =
+      std::distance(MBB->begin()->getIterator(), SrcInstr->getIterator());
+  int SectionSize =
+      std::distance(SrcInstr->getIterator(), DstInstr->getIterator());
+  //llvm::errs() << "Prints: " << SrcDistance << " " << SectionSize << "\n";
+  // The bit vector representing the instructions in the section.
+  BitVector SectionInstr(SectionSize,false);
+
   // The queue for the breadth first search.
   // TODO: Use a priority queue instead of this to?
   //       Ot would be a greedy DFS. I would always go for the instruction that
@@ -149,7 +157,8 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert](
+
+  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &SectionSize, &SectionInstr](
                                   std::queue<const SUnit *> &Queue,
                                   const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
@@ -161,17 +170,19 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
       auto Pos =
           std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
                        [&MI](const auto &MIInSec) { return &MIInSec == &MI; });
-      if (&MI != SrcInstr && Pos != DstInstr->getIterator()) {
-        // The instruction ID shall be a number that is:
-        // 1) Unique to each instruction.
-        // 2) If we have instruction A and instruction B, and A proceeds B then
-        //    the ID of A shall be smaller that the ID of B. TODO: Sure? Not greater?
+      int DestinationFromSource =
+          std::distance(SrcInstr->getIterator(), MI.getIterator());
+
+      if (&MI != SrcInstr && DestinationFromSource > 0 &&
+          DestinationFromSource < SectionSize) {
         int InstrID = std::distance(SrcInstr->getIterator(), Pos);
+        assert(InstrID == DestinationFromSource);
 
         // If an instruction is already in the Instructions to move map, than
         // that means that it has already been processes with all of their
         // dependence. We do not need to do anything with it again.
-        if (InstructionsToInsert.find(InstrID) == InstructionsToInsert.end()) {
+        if (!SectionInstr[DestinationFromSource]) {
+          SectionInstr[DestinationFromSource] = true;
           Queue.push(SU);
           InstructionsToInsert.insert(
               std::pair<unsigned, MachineInstr *>{InstrID, &MI});
@@ -219,13 +230,21 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
   // dependency on source.
   // TODO: 2. Check if the size of instructions to move is greater than that.
   // TODO: 3. Disable this logic with Osize.
-  while (!InstructionsToInsert.empty()) {
-    // TODO: Take latencies into account.
-    // TODO: Just call this and don't do anything with kills?
-    //        InstructionsToInsert.begin()->second->clearKillInfo();
-    MBB->splice(SrcInstr->getIterator(), MBB,
-                InstructionsToInsert.begin()->second->getIterator());
-    InstructionsToInsert.erase(InstructionsToInsert.begin());
+  // while (!InstructionsToInsert.empty()) {
+  //   // TODO: Take latencies into account.
+  //   // TODO: Just call this and don't do anything with kills?
+  //   //        InstructionsToInsert.begin()->second->clearKillInfo();
+  //   MBB->splice(SrcInstr->getIterator(), MBB,
+  //               InstructionsToInsert.begin()->second->getIterator());
+  //   InstructionsToInsert.erase(InstructionsToInsert.begin());
+  // }
+
+  auto CurrentInst = SrcInstr->getIterator();
+  for (int I = 0; I < SectionSize; I++) {
+    if (SectionInstr[I]) {
+      MBB->splice(SrcInstr->getIterator(), MBB, CurrentInst->getIterator());
+    }
+    ++CurrentInst;
   }
   return true;
 }
