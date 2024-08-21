@@ -120,7 +120,7 @@ public:
     CanHandleTerminators = true;
   }
 };
-// TODO: Constant correctness check before opening PR.
+
 static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
                                                SUnit *Src,
                                                ScheduleDAGMCP &DG) {
@@ -1688,14 +1688,25 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
   auto *LISWrapper = getAnalysisIfAvailable<LiveIntervalsWrapperPass>();
   LIS = LISWrapper ? &LISWrapper->getLIS() : nullptr;
-  //assert(LIS && "NO LIS\n");
 
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
-    // A first analysis step.
+
+    // BackwardCopyPropagateBlock happens in two stages.
+    // First we move those unnecessary dependencies out of the way
+    // that may block copy propagations.
+    //
+    // The reason for this two stage approach is that the ScheduleDAG can not
+    // handle register renaming.
+    // QUESTION: I think these two stages could be merged together, if I were to change
+    // the renaming mechanism.
+    //
+    // The renaming wouldn't happen instantly 
     BackwardCopyPropagateBlock(MBB, true);
+    // Then we do the actual copy propagation.
     BackwardCopyPropagateBlock(MBB);
+
     ForwardCopyPropagateBlock(MBB);
   }
 
