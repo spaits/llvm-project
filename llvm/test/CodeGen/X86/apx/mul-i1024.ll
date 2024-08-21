@@ -19,14 +19,14 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    movq 24(%rdi), %r29
 ; EGPR-NEXT:    movq 16(%rdi), %r17
 ; EGPR-NEXT:    movq %rsi, {{[-0-9]+}}(%r{{[sb]}}p) # 8-byte Spill
+; EGPR-NEXT:    movq 32(%rdi), %r10
+; EGPR-NEXT:    movq 56(%rdi), %r15
+; EGPR-NEXT:    movq 40(%rdi), %rdi
+; EGPR-NEXT:    movq 48(%r24), %r12
 ; EGPR-NEXT:    movq 24(%rsi), %r23
 ; EGPR-NEXT:    movq 16(%rsi), %r11
 ; EGPR-NEXT:    movq (%rsi), %r27
 ; EGPR-NEXT:    movq 8(%rsi), %r14
-; EGPR-NEXT:    movq 40(%rdi), %rsi
-; EGPR-NEXT:    movq 32(%rdi), %r10
-; EGPR-NEXT:    movq 56(%rdi), %r15
-; EGPR-NEXT:    movq 48(%rdi), %r12
 ; EGPR-NEXT:    movq %r12, %rax
 ; EGPR-NEXT:    mulq %r27
 ; EGPR-NEXT:    movq %rdx, %r8
@@ -55,7 +55,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    mulq %r27
 ; EGPR-NEXT:    movq %rdx, %r20
 ; EGPR-NEXT:    movq %rax, %r25
-; EGPR-NEXT:    movq %rsi, %rax
+; EGPR-NEXT:    movq %rdi, %rax
 ; EGPR-NEXT:    mulq %r27
 ; EGPR-NEXT:    movq %rdx, %r21
 ; EGPR-NEXT:    movq %rax, %r22
@@ -69,7 +69,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    adcq %r21, %r20
 ; EGPR-NEXT:    setb %al
 ; EGPR-NEXT:    movzbl %al, %ecx
-; EGPR-NEXT:    movq %rsi, %rax
+; EGPR-NEXT:    movq %rdi, %rax
 ; EGPR-NEXT:    mulq %r14
 ; EGPR-NEXT:    movq %rdx, %r21
 ; EGPR-NEXT:    movq %rax, %r22
@@ -84,8 +84,8 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    mulq %r11
 ; EGPR-NEXT:    movq %rdx, %r8
 ; EGPR-NEXT:    movq %rax, %r30
-; EGPR-NEXT:    movq %rsi, %rax
-; EGPR-NEXT:    movq %rsi, {{[-0-9]+}}(%r{{[sb]}}p) # 8-byte Spill
+; EGPR-NEXT:    movq %rdi, %rax
+; EGPR-NEXT:    movq %rdi, {{[-0-9]+}}(%r{{[sb]}}p) # 8-byte Spill
 ; EGPR-NEXT:    mulq %r11
 ; EGPR-NEXT:    movq %rdx, %r19
 ; EGPR-NEXT:    movq %rax, %r20
@@ -99,7 +99,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    adcq %r19, %rbx
 ; EGPR-NEXT:    setb %al
 ; EGPR-NEXT:    movzbl %al, %ecx
-; EGPR-NEXT:    movq %rsi, %rax
+; EGPR-NEXT:    movq %rdi, %rax
 ; EGPR-NEXT:    mulq %r23
 ; EGPR-NEXT:    movq %rdx, %r26
 ; EGPR-NEXT:    movq %rax, %r8
@@ -408,12 +408,12 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    adcq %r22, %r31
 ; EGPR-NEXT:    adcq %r21, %r13
 ; EGPR-NEXT:    setb %r15b
-; EGPR-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %r29 # 8-byte Reload
+; EGPR-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %rsi # 8-byte Reload
 ; EGPR-NEXT:    movq %rsi, %rax
 ; EGPR-NEXT:    mulq %r25
 ; EGPR-NEXT:    movq %rdx, %r8
 ; EGPR-NEXT:    movq %rax, %r19
-; EGPR-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %r14 # 8-byte Reload
+; EGPR-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %r21 # 8-byte Reload
 ; EGPR-NEXT:    movq %r21, %rax
 ; EGPR-NEXT:    mulq %r25
 ; EGPR-NEXT:    movq %rdx, %r9
@@ -421,6 +421,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    addq %r8, %r16
 ; EGPR-NEXT:    adcq $0, %r9
 ; EGPR-NEXT:    movq %rsi, %rax
+; EGPR-NEXT:    movq %rsi, %r29
 ; EGPR-NEXT:    mulq %rcx
 ; EGPR-NEXT:    movq %rdx, %r8
 ; EGPR-NEXT:    movq %rax, %r20
@@ -428,6 +429,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NEXT:    adcq %r9, %r8
 ; EGPR-NEXT:    setb %r18b
 ; EGPR-NEXT:    movq %r21, %rax
+; EGPR-NEXT:    movq %r21, %r14
 ; EGPR-NEXT:    mulq %rcx
 ; EGPR-NEXT:    movq %rdx, %r9
 ; EGPR-NEXT:    movq %rax, %r16
@@ -1299,16 +1301,16 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NDD-NEXT:    movq %r11, {{[-0-9]+}}(%r{{[sb]}}p) # 8-byte Spill
 ; EGPR-NDD-NEXT:    movq 48(%r11), %r11
 ; EGPR-NDD-NEXT:    movq %r10, %rax
-; EGPR-NDD-NEXT:    mulq %r11
-; EGPR-NDD-NEXT:    movq %rdx, %r28
-; EGPR-NDD-NEXT:    movq %rax, %r29
-; EGPR-NDD-NEXT:    movq %r16, %rax
-; EGPR-NDD-NEXT:    mulq %r11
-; EGPR-NDD-NEXT:    addq %rax, %r28
-; EGPR-NDD-NEXT:    movq %r10, %rsi
 ; EGPR-NDD-NEXT:    movq %r10, {{[-0-9]+}}(%r{{[sb]}}p) # 8-byte Spill
+; EGPR-NDD-NEXT:    mulq %r11
+; EGPR-NDD-NEXT:    movq %rax, %r29
+; EGPR-NDD-NEXT:    movq %r10, %rsi
+; EGPR-NDD-NEXT:    movq %rdx, %r28
+; EGPR-NDD-NEXT:    movq %r16, %rax
 ; EGPR-NDD-NEXT:    movq %r16, %r10
 ; EGPR-NDD-NEXT:    movq %r16, {{[-0-9]+}}(%r{{[sb]}}p) # 8-byte Spill
+; EGPR-NDD-NEXT:    mulq %r11
+; EGPR-NDD-NEXT:    addq %rax, %r28
 ; EGPR-NDD-NEXT:    adcq $0, %rdx, %rcx
 ; EGPR-NDD-NEXT:    movq 56(%r14), %r16
 ; EGPR-NDD-NEXT:    movq %rsi, %rax
@@ -1374,7 +1376,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NDD-NEXT:    mulq %r26
 ; EGPR-NDD-NEXT:    movq %rdx, %r25
 ; EGPR-NDD-NEXT:    movq %rax, %r28
-; EGPR-NDD-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %r23 # 8-byte Reload
+; EGPR-NDD-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %r9 # 8-byte Reload
 ; EGPR-NDD-NEXT:    movq %r9, %rax
 ; EGPR-NDD-NEXT:    mulq %r26
 ; EGPR-NDD-NEXT:    addq %r25, %rax, %rsi
@@ -1386,6 +1388,7 @@ define void @test_1024(ptr %a, ptr %b, ptr %out) nounwind {
 ; EGPR-NDD-NEXT:    adcq %rdx, %rdi
 ; EGPR-NDD-NEXT:    setb %r8b
 ; EGPR-NDD-NEXT:    movq %r9, %rax
+; EGPR-NDD-NEXT:    movq %r9, %r23
 ; EGPR-NDD-NEXT:    mulq %r18
 ; EGPR-NDD-NEXT:    addq %rax, %rdi
 ; EGPR-NDD-NEXT:    movzbl %r8b, %eax
