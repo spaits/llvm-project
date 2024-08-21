@@ -133,23 +133,15 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
   assert("This function only operates on a basic block level." &&
          MBB == SrcInstr->getParent());
 
-  int SrcDistance =
-      std::distance(MBB->begin()->getIterator(), SrcInstr->getIterator());
   int SectionSize =
       std::distance(SrcInstr->getIterator(), DstInstr->getIterator());
-  //llvm::errs() << "Prints: " << SrcDistance << " " << SectionSize << "\n";
+
   // The bit vector representing the instructions in the section.
-  BitVector SectionInstr(SectionSize,false);
+  // This vector stores which instruction needs to be moved and which does not.
+  BitVector SectionInstr(SectionSize, false);
 
   // The queue for the breadth first search.
-  // TODO: Use a priority queue instead of this to?
-  //       Ot would be a greedy DFS. I would always go for the instruction that
-  //       is the closest to the top.
-  // TODO: Just use std::map. It is sorted.
   std::queue<const SUnit *> Edges;
-  // std::map can be conveniently be used as a priority queue since the standard
-  // requires the element of std::map to be sorted by the keys. TODO: elaborate further on this.
-  std::map<unsigned, MachineInstr *> InstructionsToInsert;
 
   // Process the children of a node.
   // Basically every node are checked before it is being put into the queue.
@@ -157,8 +149,7 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-
-  auto ProcessSNodeChildren = [SrcInstr, DstInstr, &InstructionsToInsert, &SectionSize, &SectionInstr](
+  auto ProcessSNodeChildren = [SrcInstr, &SectionSize, &SectionInstr](
                                   std::queue<const SUnit *> &Queue,
                                   const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
@@ -167,35 +158,24 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
       if (!IsRoot && &MI == SrcInstr)
         return false;
 
-      auto Pos =
-          std::find_if(SrcInstr->getIterator(), DstInstr->getIterator(),
-                       [&MI](const auto &MIInSec) { return &MIInSec == &MI; });
       int DestinationFromSource =
           std::distance(SrcInstr->getIterator(), MI.getIterator());
 
       if (&MI != SrcInstr && DestinationFromSource > 0 &&
           DestinationFromSource < SectionSize) {
-        int InstrID = std::distance(SrcInstr->getIterator(), Pos);
-        assert(InstrID == DestinationFromSource);
-
         // If an instruction is already in the Instructions to move map, than
         // that means that it has already been processes with all of their
         // dependence. We do not need to do anything with it again.
         if (!SectionInstr[DestinationFromSource]) {
           SectionInstr[DestinationFromSource] = true;
           Queue.push(SU);
-          InstructionsToInsert.insert(
-              std::pair<unsigned, MachineInstr *>{InstrID, &MI});
         }
       }
     }
     return true;
   };
-  // TODO maybe do DFS?
-  //      It would may yield faster results if we were to do Depth first search
-  //      since it would be beneficiary if we could cancel this search as early
-  //      as possible if no moving is possible.
-  // Basically the BFS happens here.
+
+  // The BFS happens here.
   //
   // Could not use the ADT implementation of BFS here.
   // In ADT graph traversals we don't have the chance to select exactly which
@@ -225,25 +205,10 @@ static bool moveInstructionsOutOfTheWayIfWeCan(SUnit *Dst,
   // If all of the dependencies were deemed valid during the BFS then we
   // are moving them before the copy source here keeping their relative
   // order to each other.
-
-  // TODO: 1. Find the nearest immediate successor to source with a true
-  // dependency on source.
-  // TODO: 2. Check if the size of instructions to move is greater than that.
-  // TODO: 3. Disable this logic with Osize.
-  // while (!InstructionsToInsert.empty()) {
-  //   // TODO: Take latencies into account.
-  //   // TODO: Just call this and don't do anything with kills?
-  //   //        InstructionsToInsert.begin()->second->clearKillInfo();
-  //   MBB->splice(SrcInstr->getIterator(), MBB,
-  //               InstructionsToInsert.begin()->second->getIterator());
-  //   InstructionsToInsert.erase(InstructionsToInsert.begin());
-  // }
-
   auto CurrentInst = SrcInstr->getIterator();
   for (int I = 0; I < SectionSize; I++) {
-    if (SectionInstr[I]) {
+    if (SectionInstr[I])
       MBB->splice(SrcInstr->getIterator(), MBB, CurrentInst->getIterator());
-    }
     ++CurrentInst;
   }
   return true;
@@ -1192,7 +1157,7 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
 
 void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
                                            ScheduleDAGMCP &DG,
-                                           bool ResolveAntiDeps) {
+                                           bool MoveDependenciesForBetterCopyPropagation) {
   if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies())
     return;
 
@@ -1217,7 +1182,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
     if (!Copy) {
-      if (!ResolveAntiDeps)
+      if (!MoveDependenciesForBetterCopyPropagation)
         continue;
 
       LLVM_DEBUG(
@@ -1261,7 +1226,7 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
     LLVM_DEBUG(dbgs() << "MCP: Replacing " << printReg(MODef.getReg(), TRI)
                       << "\n     with " << printReg(Def, TRI) << "\n     in "
                       << MI << "     from " << *Copy);
-    if (!ResolveAntiDeps) {
+    if (!MoveDependenciesForBetterCopyPropagation) {
       MODef.setReg(Def);
       MODef.setIsRenamable(CopyOperands->Destination->isRenamable());
 
@@ -1274,9 +1239,9 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
 }
 
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
-    MachineBasicBlock &MBB, bool ResolveAntiDeps) {
+    MachineBasicBlock &MBB, bool MoveDependenciesForBetterCopyPropagation) {
   ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
-  if (ResolveAntiDeps) {
+  if (MoveDependenciesForBetterCopyPropagation) {
     DG.startBlock(&MBB);
     DG.enterRegion(&MBB, MBB.begin(), MBB.end(), MBB.size());
     DG.buildSchedGraph(nullptr);
@@ -1302,7 +1267,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         // just let forward cp do COPY-to-COPY propagation.
         if (isBackwardPropagatableCopy(*CopyOperands, *MRI)) {
           Tracker.invalidateRegister(SrcReg.asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, true);
+                                     UseCopyInstr, MoveDependenciesForBetterCopyPropagation);
           Tracker.invalidateRegister(DefReg.asMCReg(), *TRI, *TII,
                                      UseCopyInstr);
           Tracker.trackCopy(&MI, *TRI, *TII, UseCopyInstr);
@@ -1320,7 +1285,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, false);
       }
 
-    propagateDefs(MI, DG, ResolveAntiDeps);
+    propagateDefs(MI, DG, MoveDependenciesForBetterCopyPropagation);
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;
@@ -1344,7 +1309,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
           }
         } else {
           Tracker.invalidateRegister(MO.getReg().asMCReg(), *TRI, *TII,
-                                     UseCopyInstr, true);
+                                     UseCopyInstr, MoveDependenciesForBetterCopyPropagation);
         }
       }
     }
@@ -1362,11 +1327,12 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     Copy->eraseFromParent();
     ++NumDeletes;
   }
-  if (ResolveAntiDeps) {
+  if (MoveDependenciesForBetterCopyPropagation) {
     DG.exitRegion();
     DG.finishBlock();
-    // TODO: Does it makes sense to keep the kill flags here?
-    //       On the other parts of this pass we juts throw out the kill flags.
+    // QUESTION: Does it makes sense to keep the kill flags here?
+    //           On the other parts of this pass we juts throw out
+    //           the kill flags.
     DG.fixupKills(MBB);
   }
 
