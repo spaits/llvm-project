@@ -618,11 +618,11 @@ private:
   void ReadRegister(MCRegister Reg, MachineInstr &Reader, DebugType DT);
   void readSuccessorLiveIns(const MachineBasicBlock &MBB);
   void ForwardCopyPropagateBlock(MachineBasicBlock &MBB);
-  void BackwardCopyPropagateBlock(MachineBasicBlock &MBB);
+  void BackwardCopyPropagateBlock(MachineBasicBlock &MBB, bool ResolveAntiDeps = false);
   void EliminateSpillageCopies(MachineBasicBlock &MBB);
   bool eraseIfRedundant(MachineInstr &Copy, MCRegister Src, MCRegister Def);
   void forwardUses(MachineInstr &MI);
-  void propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG);
+  void propagateDefs(MachineInstr &MI, ScheduleDAGMCP &DG, bool ResolveAntiDeps = false);
   bool isForwardableRegClassCopy(const MachineInstr &Copy,
                                  const MachineInstr &UseI, unsigned UseIdx);
   bool isBackwardPropagatableRegClassCopy(const MachineInstr &Copy,
@@ -1191,7 +1191,8 @@ static bool isBackwardPropagatableCopy(const DestSourcePair &CopyOperands,
 }
 
 void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
-                                           ScheduleDAGMCP &DG) {
+                                           ScheduleDAGMCP &DG,
+                                           bool ResolveAntiDeps) {
   if (!Tracker.hasAnyCopies() && !Tracker.hasAnyInvalidCopies())
     return;
 
@@ -1216,6 +1217,9 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
     MachineInstr *Copy = Tracker.findAvailBackwardCopy(
         MI, MODef.getReg().asMCReg(), *TRI, *TII, UseCopyInstr);
     if (!Copy) {
+      if (!ResolveAntiDeps)
+        continue;
+
       LLVM_DEBUG(
           dbgs()
           << "MCP: Couldn't find any backward copy that has no dependency.\n");
@@ -1257,25 +1261,28 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
     LLVM_DEBUG(dbgs() << "MCP: Replacing " << printReg(MODef.getReg(), TRI)
                       << "\n     with " << printReg(Def, TRI) << "\n     in "
                       << MI << "     from " << *Copy);
+    if (!ResolveAntiDeps) {
+      MODef.setReg(Def);
+      MODef.setIsRenamable(CopyOperands->Destination->isRenamable());
 
-    MODef.setReg(Def);
-    MODef.setIsRenamable(CopyOperands->Destination->isRenamable());
-
-    LLVM_DEBUG(dbgs() << "MCP: After replacement: " << MI << "\n");
-    MaybeDeadCopies.insert(Copy);
-    Changed = true;
-    ++NumCopyBackwardPropagated;
+      LLVM_DEBUG(dbgs() << "MCP: After replacement: " << MI << "\n");
+      MaybeDeadCopies.insert(Copy);
+      Changed = true;
+      ++NumCopyBackwardPropagated;
+    }
   }
 }
 
 void MachineCopyPropagation::BackwardCopyPropagateBlock(
-    MachineBasicBlock &MBB) {
+    MachineBasicBlock &MBB, bool ResolveAntiDeps) {
   ScheduleDAGMCP DG{*(MBB.getParent()), nullptr, false};
-
-  DG.startBlock(&MBB);
-  DG.enterRegion(&MBB, MBB.begin(), MBB.end(), MBB.size());
-  DG.buildSchedGraph(nullptr);
-  // DG.viewGraph();
+  if (ResolveAntiDeps) {
+    DG.startBlock(&MBB);
+    DG.enterRegion(&MBB, MBB.begin(), MBB.end(), MBB.size());
+    DG.buildSchedGraph(nullptr);
+    // DG.viewGraph();
+  }
+ 
 
   LLVM_DEBUG(dbgs() << "MCP: BackwardCopyPropagateBlock " << MBB.getName()
                     << "\n");
@@ -1313,7 +1320,7 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
         Tracker.invalidateRegister(Reg, *TRI, *TII, UseCopyInstr, false);
       }
 
-    propagateDefs(MI, DG);
+    propagateDefs(MI, DG, ResolveAntiDeps);
     for (const MachineOperand &MO : MI.operands()) {
       if (!MO.isReg())
         continue;
@@ -1355,12 +1362,14 @@ void MachineCopyPropagation::BackwardCopyPropagateBlock(
     Copy->eraseFromParent();
     ++NumDeletes;
   }
+  if (ResolveAntiDeps) {
+    DG.exitRegion();
+    DG.finishBlock();
+    // TODO: Does it makes sense to keep the kill flags here?
+    //       On the other parts of this pass we juts throw out the kill flags.
+    DG.fixupKills(MBB);
+  }
 
-  DG.exitRegion();
-  DG.finishBlock();
-  // TODO: Does it makes sense to keep the kill flags here?
-  //       On the other parts of this pass we juts throw out the kill flags.
-  DG.fixupKills(MBB);
 
   MaybeDeadCopies.clear();
   CopyDbgUsers.clear();
@@ -1718,6 +1727,8 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
+    // A first analysis step.
+    BackwardCopyPropagateBlock(MBB, true);
     BackwardCopyPropagateBlock(MBB);
     ForwardCopyPropagateBlock(MBB);
   }

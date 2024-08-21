@@ -91,7 +91,8 @@ define <8 x half> @vfmin_v8f16_vv(<8 x half> %a, <8 x half> %b) {
 ; ZVFHMIN-NEXT:    vsetvli zero, zero, e32, m2, ta, ma
 ; ZVFHMIN-NEXT:    vmfeq.vv v0, v12, v12
 ; ZVFHMIN-NEXT:    vmerge.vvm v14, v12, v10, v0
-; ZVFHMIN-NEXT:    vmfeq.vv v0, v10, v10
+; ZVFHMIN-NEXT:    vmfeq.vv v8, v10, v10
+; ZVFHMIN-NEXT:    vmv1r.v v0, v8
 ; ZVFHMIN-NEXT:    vmerge.vvm v8, v10, v12, v0
 ; ZVFHMIN-NEXT:    vfmin.vv v10, v8, v14
 ; ZVFHMIN-NEXT:    vsetvli zero, zero, e16, m1, ta, ma
@@ -109,7 +110,8 @@ define <16 x half> @vfmin_v16f16_vv(<16 x half> %a, <16 x half> %b) {
 ; ZVFH-NEXT:    vsetivli zero, 16, e16, m2, ta, ma
 ; ZVFH-NEXT:    vmfeq.vv v0, v8, v8
 ; ZVFH-NEXT:    vmerge.vvm v14, v8, v10, v0
-; ZVFH-NEXT:    vmfeq.vv v0, v10, v10
+; ZVFH-NEXT:    vmfeq.vv v12, v10, v10
+; ZVFH-NEXT:    vmv1r.v v0, v12
 ; ZVFH-NEXT:    vmerge.vvm v8, v10, v8, v0
 ; ZVFH-NEXT:    vfmin.vv v8, v8, v14
 ; ZVFH-NEXT:    ret
@@ -122,7 +124,8 @@ define <16 x half> @vfmin_v16f16_vv(<16 x half> %a, <16 x half> %b) {
 ; ZVFHMIN-NEXT:    vsetvli zero, zero, e32, m4, ta, ma
 ; ZVFHMIN-NEXT:    vmfeq.vv v0, v16, v16
 ; ZVFHMIN-NEXT:    vmerge.vvm v20, v16, v12, v0
-; ZVFHMIN-NEXT:    vmfeq.vv v0, v12, v12
+; ZVFHMIN-NEXT:    vmfeq.vv v8, v12, v12
+; ZVFHMIN-NEXT:    vmv1r.v v0, v8
 ; ZVFHMIN-NEXT:    vmerge.vvm v8, v12, v16, v0
 ; ZVFHMIN-NEXT:    vfmin.vv v12, v8, v20
 ; ZVFHMIN-NEXT:    vsetvli zero, zero, e16, m2, ta, ma
@@ -172,7 +175,8 @@ define <8 x float> @vfmin_v8f32_vv(<8 x float> %a, <8 x float> %b) {
 ; CHECK-NEXT:    vsetivli zero, 8, e32, m2, ta, ma
 ; CHECK-NEXT:    vmfeq.vv v0, v8, v8
 ; CHECK-NEXT:    vmerge.vvm v14, v8, v10, v0
-; CHECK-NEXT:    vmfeq.vv v0, v10, v10
+; CHECK-NEXT:    vmfeq.vv v12, v10, v10
+; CHECK-NEXT:    vmv1r.v v0, v12
 ; CHECK-NEXT:    vmerge.vvm v8, v10, v8, v0
 ; CHECK-NEXT:    vfmin.vv v8, v8, v14
 ; CHECK-NEXT:    ret
@@ -188,7 +192,8 @@ define <16 x float> @vfmin_v16f32_vv(<16 x float> %a, <16 x float> %b) {
 ; CHECK-NEXT:    vsetivli zero, 16, e32, m4, ta, ma
 ; CHECK-NEXT:    vmfeq.vv v0, v8, v8
 ; CHECK-NEXT:    vmerge.vvm v20, v8, v12, v0
-; CHECK-NEXT:    vmfeq.vv v0, v12, v12
+; CHECK-NEXT:    vmfeq.vv v16, v12, v12
+; CHECK-NEXT:    vmv1r.v v0, v16
 ; CHECK-NEXT:    vmerge.vvm v8, v12, v8, v0
 ; CHECK-NEXT:    vfmin.vv v8, v8, v20
 ; CHECK-NEXT:    ret
@@ -220,7 +225,8 @@ define <4 x double> @vfmin_v4f64_vv(<4 x double> %a, <4 x double> %b) {
 ; CHECK-NEXT:    vsetivli zero, 4, e64, m2, ta, ma
 ; CHECK-NEXT:    vmfeq.vv v0, v8, v8
 ; CHECK-NEXT:    vmerge.vvm v14, v8, v10, v0
-; CHECK-NEXT:    vmfeq.vv v0, v10, v10
+; CHECK-NEXT:    vmfeq.vv v12, v10, v10
+; CHECK-NEXT:    vmv1r.v v0, v12
 ; CHECK-NEXT:    vmerge.vvm v8, v10, v8, v0
 ; CHECK-NEXT:    vfmin.vv v8, v8, v14
 ; CHECK-NEXT:    ret
@@ -236,7 +242,8 @@ define <8 x double> @vfmin_v8f64_vv(<8 x double> %a, <8 x double> %b) {
 ; CHECK-NEXT:    vsetivli zero, 8, e64, m4, ta, ma
 ; CHECK-NEXT:    vmfeq.vv v0, v8, v8
 ; CHECK-NEXT:    vmerge.vvm v20, v8, v12, v0
-; CHECK-NEXT:    vmfeq.vv v0, v12, v12
+; CHECK-NEXT:    vmfeq.vv v16, v12, v12
+; CHECK-NEXT:    vmv1r.v v0, v16
 ; CHECK-NEXT:    vmerge.vvm v8, v12, v8, v0
 ; CHECK-NEXT:    vfmin.vv v8, v8, v20
 ; CHECK-NEXT:    ret
@@ -252,7 +259,8 @@ define <16 x double> @vfmin_v16f64_vv(<16 x double> %a, <16 x double> %b) nounwi
 ; CHECK-NEXT:    vsetivli zero, 16, e64, m8, ta, ma
 ; CHECK-NEXT:    vmfeq.vv v0, v8, v8
 ; CHECK-NEXT:    vmerge.vvm v24, v8, v16, v0
-; CHECK-NEXT:    vmfeq.vv v0, v16, v16
+; CHECK-NEXT:    vmfeq.vv v7, v16, v16
+; CHECK-NEXT:    vmv1r.v v0, v7
 ; CHECK-NEXT:    vmerge.vvm v8, v16, v8, v0
 ; CHECK-NEXT:    vfmin.vv v8, v8, v24
 ; CHECK-NEXT:    ret

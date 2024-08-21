@@ -155,9 +155,10 @@ define i64 @rol_i64(i64 %a, i64 %b) nounwind {
 ; CHECK-NEXT:    srl a3, a1, a6
 ; CHECK-NEXT:    sll a0, a0, a2
 ; CHECK-NEXT:    srli a4, a4, 1
-; CHECK-NEXT:    or a0, a5, a3
 ; CHECK-NEXT:    srl a1, a4, a6
+; CHECK-NEXT:    or a3, a5, a3
 ; CHECK-NEXT:    or a1, a0, a1
+; CHECK-NEXT:    mv a0, a3
 ; CHECK-NEXT:    ret
   %or = tail call i64 @llvm.fshl.i64(i64 %a, i64 %a, i64 %b)
   ret i64 %or
@@ -253,8 +254,8 @@ define i64 @rori_i64(i64 %a) nounwind {
 ; CHECK-NEXT:    slli a3, a1, 31
 ; CHECK-NEXT:    srli a1, a1, 1
 ; CHECK-NEXT:    slli a0, a0, 31
-; CHECK-NEXT:    or a0, a3, a2
 ; CHECK-NEXT:    or a1, a0, a1
+; CHECK-NEXT:    or a0, a3, a2
 ; CHECK-NEXT:    ret
   %1 = tail call i64 @llvm.fshl.i64(i64 %a, i64 %a, i64 63)
   ret i64 %1
@@ -267,8 +268,8 @@ define i64 @rori_i64_fshr(i64 %a) nounwind {
 ; CHECK-NEXT:    slli a3, a0, 1
 ; CHECK-NEXT:    srli a0, a0, 31
 ; CHECK-NEXT:    slli a1, a1, 1
-; CHECK-NEXT:    or a0, a3, a2
 ; CHECK-NEXT:    or a1, a1, a0
+; CHECK-NEXT:    or a0, a3, a2
 ; CHECK-NEXT:    ret
   %1 = tail call i64 @llvm.fshr.i64(i64 %a, i64 %a, i64 63)
   ret i64 %1
