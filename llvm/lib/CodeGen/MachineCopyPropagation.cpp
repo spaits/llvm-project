@@ -129,9 +129,9 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr, MachineInstr *SrcInst
 
   MachineBasicBlock *MBB = SrcInstr->getParent();
   int SectionSize =
-      std::distance(SrcInstr->getIterator(), DstInstr->getIterator());
+      std::distance(SrcInstr->getIterator(), DstInstr->getIterator()) + 1;
 
-  DG.enterRegion(MBB, (SrcInstr->getIterator()), ++(DstInstr->getIterator()), SectionSize+1);
+  DG.enterRegion(MBB, (SrcInstr->getIterator()), ++(DstInstr->getIterator()), SectionSize);
   DG.buildSchedGraph(nullptr);
   Dst = DG.getSUnit(DstInstr);
   unsigned MaxNumberOfNodesToBeProcessed = 10;
