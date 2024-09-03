@@ -123,24 +123,27 @@ public:
 };
 
 static std::optional<llvm::SmallVector<MachineInstr *>>
-moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr, MachineInstr *SrcInstr, ScheduleDAGMCP &DG) {
-  SUnit *Dst;
-  //SUnit *Src;
-
-  MachineBasicBlock *MBB = SrcInstr->getParent();
-  int SectionSize =
-      std::distance(SrcInstr->getIterator(), DstInstr->getIterator()) + 1;
-
-  DG.enterRegion(MBB, (SrcInstr->getIterator()), ++(DstInstr->getIterator()), SectionSize);
-  DG.buildSchedGraph(nullptr);
-  Dst = DG.getSUnit(DstInstr);
-  unsigned MaxNumberOfNodesToBeProcessed = 10;
+moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr,
+                                   MachineInstr *SrcInstr, ScheduleDAGMCP &DG) {
   if (DstInstr == nullptr || SrcInstr == nullptr)
     return {};
-
+  MachineBasicBlock *MBB = SrcInstr->getParent();
   assert("This function only operates on a basic block level." &&
          MBB == DstInstr->getParent());
 
+  SUnit *Dst;
+  // SUnit *Src;
+
+  int SectionSize =
+      std::distance(SrcInstr->getIterator(), DstInstr->getIterator()) + 1;
+
+  DG.enterRegion(MBB, (SrcInstr->getIterator()), ++(DstInstr->getIterator()),
+                 SectionSize);
+  DG.buildSchedGraph(nullptr);
+  //DG.viewGraph();
+
+  Dst = DG.getSUnit(DstInstr);
+  unsigned MaxNumberOfNodesToBeProcessed = 10;
 
   assert(SectionSize > 0 &&
          "The copy source must precede the copy destination.");
@@ -160,8 +163,9 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr, MachineInstr *SrcInst
   // (only if we are not talking about the destination node which is a special
   // case indicated by a flag) and is located between the source of the copy and
   // the destination of the copy.
-  auto ProcessSNodeChildren = [&Edges, SrcInstr, &SectionSize, &SectionInstr, &NumProcessedNode, &MaxNumberOfNodesToBeProcessed](
-                                  const SUnit *Node, bool IsRoot) -> bool {
+  auto ProcessSNodeChildren =
+      [&Edges, SrcInstr, &SectionInstr, &NumProcessedNode,
+       &MaxNumberOfNodesToBeProcessed](const SUnit *Node, bool IsRoot) -> bool {
     for (llvm::SDep I : Node->Preds) {
       SUnit *SU = I.getSUnit();
       MachineInstr &MI = *(SU->getInstr());
@@ -171,8 +175,7 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr, MachineInstr *SrcInst
       int DestinationFromSource =
           std::distance(SrcInstr->getIterator(), MI.getIterator());
 
-      if (&MI != SrcInstr && DestinationFromSource > 0 &&
-          DestinationFromSource < SectionSize) {
+      if (&MI != SrcInstr) {
         // If an instruction is already in the Instructions to move map, than
         // that means that it has already been processes with all of their
         // dependence. We do not need to do anything with it again.
@@ -183,7 +186,7 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr, MachineInstr *SrcInst
         }
       }
     }
-    return NumProcessedNode < MaxNumberOfNodesToBeProcessed;      
+    return NumProcessedNode < MaxNumberOfNodesToBeProcessed;
   };
 
   // The BFS happens here.
@@ -227,6 +230,7 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr, MachineInstr *SrcInst
       InstructionsToMove.push_back(&(*CurrentInst));
     ++CurrentInst;
   }
+  assert(InstructionsToMove.size() != 0 && "If we have got here then we must have instructions that are blocking a copy!\n");
   return InstructionsToMove;
 }
 
@@ -1253,8 +1257,6 @@ void MachineCopyPropagation::propagateDefs(MachineInstr &MI,
     MaybeDeadCopies.insert(Copy);
     Changed = true;
     ++NumCopyBackwardPropagated;
-     
-      
   }
 }
 
