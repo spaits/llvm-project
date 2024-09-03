@@ -231,6 +231,8 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr,
     ++CurrentInst;
   }
   //assert(InstructionsToMove.size() != 0 && "If we have got here then we must have instructions that are blocking a copy!\n");
+  if (InstructionsToMove.size() == 0)
+    return {};
   return InstructionsToMove;
 }
 
