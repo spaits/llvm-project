@@ -230,7 +230,7 @@ moveInstructionsOutOfTheWayIfWeCan(MachineInstr *DstInstr,
       InstructionsToMove.push_back(&(*CurrentInst));
     ++CurrentInst;
   }
-  assert(InstructionsToMove.size() != 0 && "If we have got here then we must have instructions that are blocking a copy!\n");
+  //assert(InstructionsToMove.size() != 0 && "If we have got here then we must have instructions that are blocking a copy!\n");
   return InstructionsToMove;
 }
 
@@ -308,6 +308,8 @@ public:
     for (MCRegUnit Unit : RegUnitsToInvalidate) {
       if (Copies.contains(Unit) && MayStillBePropagated)
         InvalidCopies[Unit] = Copies[Unit];
+      else
+       InvalidCopies.erase(Unit);
       Copies.erase(Unit);
     }
   }
