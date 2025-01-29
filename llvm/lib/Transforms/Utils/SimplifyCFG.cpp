@@ -68,6 +68,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/InstructionCost.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -3046,6 +3047,7 @@ bool SimplifyCFGOpt::SpeculativelyExecuteBB(BranchInst *BI,
   SmallVector<Instruction *, 4> SpeculatedDbgIntrinsics;
 
   unsigned SpeculatedInstructions = 0;
+  InstructionCost BlockCostSoFar = 0;
   Value *SpeculatedStoreValue = nullptr;
   StoreInst *SpeculatedStore = nullptr;
   EphemeralValueTracker EphTracker;
@@ -3072,20 +3074,27 @@ bool SimplifyCFGOpt::SpeculativelyExecuteBB(BranchInst *BI,
     if (EphTracker.track(&I))
       continue;
 
-    // Only speculatively execute a single instruction (not counting the
-    // terminator) for now.
-    ++SpeculatedInstructions;
-    if (SpeculatedInstructions > 1)
-      return false;
-
     // Don't hoist the instruction if it's unsafe or expensive.
     if (!isSafeToSpeculativelyExecute(&I) &&
         !(HoistCondStores && (SpeculatedStoreValue = isSafeToSpeculateStore(
                                   &I, BB, ThenBB, EndBB))))
       return false;
+
+    if (const ExtractValueInst *EVI = dyn_cast_or_null<ExtractValueInst>(&I);
+        EVI &&
+        match(EVI->getAggregateOperand(),
+          m_OneUse(m_Intrinsic<Intrinsic::umul_with_overflow>(m_Value()))) && ThenBB->size() <= 3) {
+      break;
+    }
+
+    BlockCostSoFar += computeSpeculationCost(&I, TTI);
     if (!SpeculatedStoreValue &&
-        computeSpeculationCost(&I, TTI) >
-            PHINodeFoldingThreshold * TargetTransformInfo::TCC_Basic)
+        BlockCostSoFar >
+          PHINodeFoldingThreshold * TargetTransformInfo::TCC_Basic)
+      return false;
+    // If we don't find any pattern, that must be cheap, then only speculatively execute a single instruction (not counting the terminator).
+    ++SpeculatedInstructions;
+    if (SpeculatedInstructions > 1)
       return false;
 
     // Store the store speculation candidate.
