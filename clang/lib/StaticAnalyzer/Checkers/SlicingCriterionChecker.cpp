@@ -80,7 +80,8 @@ class SlicingCriterionChecker : public Checker<check::PreStmt<Stmt>> {
 public:
   SlicingCriterionOptions Opts;
   void checkPreStmt(const Stmt *S, CheckerContext &C) const {
-    llvm::errs() << "SC: " << Opts.LineNumber << ":" << Opts.ExpressionName << '\n';
+    llvm::errs() << "SC: " << Opts.LineNumber << ":" << Opts.ExpressionName
+                 << '\n';
     llvm::errs() << "Entering Slicing Criterion checker for stmt: "
                  << S->getStmtClassName() << "\n";
     std::vector<const Expr *> ExpressionsInStmt = findNamedExprsInStmt(S, C);
@@ -94,10 +95,8 @@ void clang::ento::registerSlicingCriterionChecker(
   const AnalyzerOptions &AnOpts = Mgr.getAnalyzerOptions();
   SlicingCriterionOptions &ChOpts = Chk->Opts;
   ChOpts.LineNumber = AnOpts.getCheckerIntegerOption(Chk, "LineNumber");
-  ChOpts.ExpressionName = AnOpts.getCheckerStringOption(
-      Chk, "ExpressionName");
+  ChOpts.ExpressionName = AnOpts.getCheckerStringOption(Chk, "ExpressionName");
 }
-
 
 bool clang::ento::shouldRegisterSlicingCriterionChecker(
     clang::ento::CheckerManager const &mgr) {
