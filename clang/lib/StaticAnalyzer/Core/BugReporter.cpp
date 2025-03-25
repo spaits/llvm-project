@@ -74,6 +74,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 using namespace clang;
 using namespace ento;
@@ -2667,7 +2668,7 @@ BugPathInfo *BugPathGetter::getNextBugPath() {
     return nullptr;
 
   const ExplodedNode *OrigN;
-  std::tie(CurrentBugPath.Report, OrigN) = ReportNodes.pop_back_val();
+  std::tie(CurrentBugPath.Report, OrigN) = ReportNodes[0];
   assert(PriorityMap.contains(OrigN) && "error node not accessible from root");
 
   // Create a new graph with a single path. This is the graph that will be
@@ -2865,10 +2866,14 @@ std::optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
     ArrayRef<PathSensitiveBugReport *> &bugReports,
     PathSensitiveBugReporter &Reporter) {
   Z3CrosscheckOracle Z3Oracle(Reporter.getAnalyzerOptions());
+  llvm::errs() << "Num of bug nodes: " << bugReports.size() << "\n";
 
   BugPathGetter BugGraph(&Reporter.getGraph(), bugReports);
 
+  std::set<int> lines{};
+  
   while (BugPathInfo *BugPath = BugGraph.getNextBugPath()) {
+    llvm::errs() << "Bug path size " << BugPath->BugPath->size() << '\n';
     // Find the BugReport with the original location.
     PathSensitiveBugReport *R = BugPath->Report;
     assert(R && "No original report found for sliced graph.");
@@ -2889,6 +2894,14 @@ std::optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
     // Run all visitors on a given graph, once.
     std::unique_ptr<VisitorsDiagnosticsTy> visitorNotes =
         generateVisitorsDiagnostics(R, ErrorNode, BRC);
+    for (auto I = visitorNotes->begin(); I != visitorNotes->end(); I++) {
+      auto &SourceManager = Reporter.getContext().getSourceManager();
+      const Stmt *S = I->getFirst()->getStmtForDiagnostics();
+      if (S) {
+        int ln = SourceManager.getSpellingLineNumber(S->getBeginLoc());
+        lines.insert(ln);
+      }
+    }
 
     if (R->isValid()) {
       if (Reporter.getAnalyzerOptions().ShouldCrosscheckWithZ3) {
@@ -2915,12 +2928,16 @@ std::optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
           break;
         }
       }
-
+      for (auto I : lines) {
+        std::cout << I << ' ';
+      }
+      std::cout << '\n';
       assert(R->isValid());
       return PathDiagnosticBuilder(std::move(BRC), std::move(BugPath->BugPath),
                                    BugPath->Report, BugPath->ErrorNode,
                                    std::move(visitorNotes));
     }
+    llvm::errs() << "INVALID BUG\n";
   }
 
   ++NumTimesReportEQClassWasExhausted;

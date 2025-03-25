@@ -319,6 +319,22 @@ def StdVariantChecker : Checker<"StdVariant">,
   HelpText<"Check for bad type access for std::variant.">,
   Documentation<HasDocumentation>;
 
+def SlicingCriterionChecker : Checker<"SlicingCriterion">,
+  HelpText<"Find slicing criterions.">,
+  CheckerOptions<[
+    CmdLineOption<Integer,
+                  "LineNumber",
+                  "Line number of the slicing criterion.",
+                  "-1",
+                  InAlpha>,
+    CmdLineOption<String,
+                  "ExpressionName",
+                  "Name of the expression in the slicing criterion.",
+                  "",
+                  InAlpha>
+  ]>,
+  Documentation<HasDocumentation>;
+
 } // end "alpha.core"
 
 //===----------------------------------------------------------------------===//

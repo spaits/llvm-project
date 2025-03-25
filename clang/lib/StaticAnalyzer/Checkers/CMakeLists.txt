@@ -106,6 +106,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   StackAddrEscapeChecker.cpp
   StdLibraryFunctionsChecker.cpp
   StdVariantChecker.cpp
+  SlicingCriterionChecker.cpp
   STLAlgorithmModeling.cpp
   StreamChecker.cpp
   StringChecker.cpp
