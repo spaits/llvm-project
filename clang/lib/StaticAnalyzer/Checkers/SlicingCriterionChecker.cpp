@@ -113,6 +113,7 @@ static std::optional<const Expr *> namedExpressionPresentInStmt(const Stmt *S,
 class SlicingCriterionChecker : public Checker<check::PreStmt<Stmt>> {
 public:
   SlicingCriterionOptions Opts;
+  BugType SlicingCriterionFound{this, "SlicingCriterionFound", "SlicingCriterionFound"};
 
   void checkPreStmt(const Stmt *S, CheckerContext &C) const {
     const SourceManager &SM = C.getSourceManager();
@@ -124,9 +125,14 @@ public:
     std::optional<const Expr *> Ex = namedExpressionPresentInStmt(S, Opts.ExpressionName);
     if (!Ex)
       return;
-    
-    llvm::errs() << "SLICING CRITERION FOUND\n";
 
+    llvm::errs() << "SLICING CRITERION FOUND\n";
+    ExplodedNode *ErrNode = C.generateErrorNode(C.getState());
+    if (!ErrNode)
+      return;
+    llvm::SmallString<128> Str;
+    llvm::raw_svector_ostream OS(Str);
+    OS << "Slicing Criterion Found";
     //llvm::errs() << "Line: " << SM.getSpellingLineNumber(S->getBeginLoc())
     //           << '\n';
     //llvm::errs() << "SC: " << Opts.LineNumber << ":" << Opts.ExpressionName
@@ -134,8 +140,10 @@ public:
     //llvm::errs() << "Entering Slicing Criterion checker for stmt: "
     //             << S->getStmtClassName() << "\n";
     //std::vector<const Expr *> ExpressionsInStmt = findNamedExprsInStmt(S);
-    
-
+    auto R = std::make_unique<PathSensitiveBugReport>(SlicingCriterionFound, OS.str(),
+                                                      ErrNode);
+    bugreporter::trackExpressionValue(ErrNode, *Ex, *R);
+    C.emitReport(std::move(R));
   }
 };
 
