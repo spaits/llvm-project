@@ -1,3 +1,4 @@
+#include "clang/AST/Expr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/Type.h"
@@ -11,8 +12,11 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include <algorithm>
 #include <iterator>
+#include <optional>
 #include <string>
 // Run with: ninja clang && \
 // bin/clang++ --analyze -Xclang -analyzer-checker=core,alpha.core.SlicingCriterion \
@@ -52,39 +56,86 @@ struct SlicingCriterionOptions {
   std::string ExpressionName;
 };
 
-static std::vector<const Expr *> findNamedExprsInStmt(const Stmt *S,
-                                                      CheckerContext &C) {
-  const SourceManager &SM = C.getSourceManager();
-  llvm::errs() << "Line: " << SM.getSpellingLineNumber(S->getBeginLoc())
-               << '\n';
+static std::vector<const Expr *> findNamedExprsInStmt(const Stmt *S) {
+  
 
   slicing::NamedExprVisitor V{};
   V.traverse(S);
 
-  for (const Expr *E : V.NamedExprs) {
-    E->dump(); // or print name with:
-    if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
-      llvm::errs() << "  Name: " << DRE->getNameInfo().getAsString() << '\n';
-    } else if (const auto *ME = dyn_cast<MemberExpr>(E)) {
-      llvm::errs() << "  Member: " << ME->getMemberDecl()->getNameAsString()
-                   << '\n';
-    } else if (const auto *ULE = dyn_cast<UnresolvedLookupExpr>(E)) {
-      llvm::errs() << "  Unresolved name: " << ULE->getName().getAsString()
-                   << '\n';
-    }
-  }
+  // for (const Expr *E : V.NamedExprs) {
+  //   E->dump(); // or print name with:
+  //   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+  //     llvm::errs() << "  Name: " << DRE->getNameInfo().getAsString() << '\n';
+  //   } else if (const auto *ME = dyn_cast<MemberExpr>(E)) {
+  //     llvm::errs() << "  Member: " << ME->getMemberDecl()->getNameAsString()
+  //                  << '\n';
+  //   } else if (const auto *ULE = dyn_cast<UnresolvedLookupExpr>(E)) {
+  //     llvm::errs() << "  Unresolved name: " << ULE->getName().getAsString()
+  //                  << '\n';
+  //   }
+  // }
   return V.NamedExprs;
+}
+
+
+
+static std::optional<const Expr *> namedExpressionPresentInStmt(const Stmt *S,
+                                         const std::string& Name) {
+  auto GetNameForNamedExpression = [](const Expr *Ex) -> std::string {
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(Ex)) {
+      return DRE->getNameInfo().getAsString();
+    }
+    if (const auto *ME = dyn_cast<MemberExpr>(Ex)) {
+      return ME->getMemberDecl()->getNameAsString();
+    }
+    if (const auto *ULE = dyn_cast<UnresolvedLookupExpr>(Ex)) {
+      return ULE->getName().getAsString();
+    }
+    return std::string("");
+  };
+
+  std::vector<const Expr *> ExpressionsInStmt = findNamedExprsInStmt(S);
+  if (!ExpressionsInStmt.size())
+    return {};
+
+  auto ExWithTheNameIt = std::find_if(ExpressionsInStmt.begin(),
+               ExpressionsInStmt.end(),
+               [Name, &GetNameForNamedExpression](const Expr *Ex) {
+                 return GetNameForNamedExpression(Ex) == Name;
+               });
+
+  if (ExWithTheNameIt == ExpressionsInStmt.end())
+    return {};
+
+  return *ExWithTheNameIt;
 }
 
 class SlicingCriterionChecker : public Checker<check::PreStmt<Stmt>> {
 public:
   SlicingCriterionOptions Opts;
+
   void checkPreStmt(const Stmt *S, CheckerContext &C) const {
-    llvm::errs() << "SC: " << Opts.LineNumber << ":" << Opts.ExpressionName
-                 << '\n';
-    llvm::errs() << "Entering Slicing Criterion checker for stmt: "
-                 << S->getStmtClassName() << "\n";
-    std::vector<const Expr *> ExpressionsInStmt = findNamedExprsInStmt(S, C);
+    const SourceManager &SM = C.getSourceManager();
+    unsigned line = SM.getSpellingLineNumber(S->getBeginLoc());
+    if (line != (unsigned)Opts.LineNumber)
+      return;
+
+    // We know that we are in the correct line.
+    std::optional<const Expr *> Ex = namedExpressionPresentInStmt(S, Opts.ExpressionName);
+    if (!Ex)
+      return;
+    
+    llvm::errs() << "SLICING CRITERION FOUND\n";
+
+    //llvm::errs() << "Line: " << SM.getSpellingLineNumber(S->getBeginLoc())
+    //           << '\n';
+    //llvm::errs() << "SC: " << Opts.LineNumber << ":" << Opts.ExpressionName
+    //             << '\n';
+    //llvm::errs() << "Entering Slicing Criterion checker for stmt: "
+    //             << S->getStmtClassName() << "\n";
+    //std::vector<const Expr *> ExpressionsInStmt = findNamedExprsInStmt(S);
+    
+
   }
 };
 
