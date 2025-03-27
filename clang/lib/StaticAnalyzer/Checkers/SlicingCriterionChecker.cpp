@@ -127,7 +127,7 @@ public:
       return;
 
     llvm::errs() << "SLICING CRITERION FOUND\n";
-    ExplodedNode *ErrNode = C.generateErrorNode(C.getState());
+    ExplodedNode *ErrNode = C.generateNonFatalErrorNode(C.getState());
     if (!ErrNode)
       return;
     llvm::SmallString<128> Str;

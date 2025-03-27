@@ -2667,7 +2667,7 @@ BugPathInfo *BugPathGetter::getNextBugPath() {
     return nullptr;
 
   const ExplodedNode *OrigN;
-  std::tie(CurrentBugPath.Report, OrigN) = ReportNodes.pop_back_val();
+  std::tie(CurrentBugPath.Report, OrigN) = ReportNodes[0];
   assert(PriorityMap.contains(OrigN) && "error node not accessible from root");
 
   // Create a new graph with a single path. This is the graph that will be
@@ -2865,10 +2865,12 @@ std::optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
     ArrayRef<PathSensitiveBugReport *> &bugReports,
     PathSensitiveBugReporter &Reporter) {
   Z3CrosscheckOracle Z3Oracle(Reporter.getAnalyzerOptions());
+  llvm::errs() << "Num of bug nodes: " << bugReports.size() << "\n";
 
   BugPathGetter BugGraph(&Reporter.getGraph(), bugReports);
-
+  
   while (BugPathInfo *BugPath = BugGraph.getNextBugPath()) {
+    llvm::errs() << "Bug path size " << BugPath->BugPath->size() << '\n';
     // Find the BugReport with the original location.
     PathSensitiveBugReport *R = BugPath->Report;
     assert(R && "No original report found for sliced graph.");
@@ -2921,6 +2923,7 @@ std::optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
                                    BugPath->Report, BugPath->ErrorNode,
                                    std::move(visitorNotes));
     }
+    llvm::errs() << "INVALID BUG\n";
   }
 
   ++NumTimesReportEQClassWasExhausted;
