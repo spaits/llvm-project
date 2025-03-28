@@ -77,7 +77,20 @@ static std::vector<const Expr *> findNamedExprsInStmt(const Stmt *S) {
   return V.NamedExprs;
 }
 
-
+static std::optional<std::string> getNameForNamedExpression(const Expr *Ex) {
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(Ex)) {
+    return DRE->getNameInfo().getAsString();
+  }
+  if (const auto *ME = dyn_cast<MemberExpr>(Ex)) {
+    llvm::errs() << "MEMBER EXPR\n";
+    llvm::errs() << ME->getMemberNameInfo().getName() << '\n';
+    return ME->getMemberDecl()->getNameAsString();
+  }
+  if (const auto *ULE = dyn_cast<UnresolvedLookupExpr>(Ex)) {
+    return ULE->getName().getAsString();
+  }
+  return {};
+}
 
 static std::optional<const Expr *> namedExpressionPresentInStmt(const Stmt *S,
                                          const std::string& Name) {
@@ -123,8 +136,17 @@ public:
 
     // We know that we are in the correct line.
     std::optional<const Expr *> Ex = namedExpressionPresentInStmt(S, Opts.ExpressionName);
-    if (!Ex)
+    if (!Ex) {
+      llvm::errs() << "The line is fine but no expression named " 
+                   << Opts.ExpressionName << '\n'
+                   << "The available expression names are the following:\n";
+      for (const auto *ex : findNamedExprsInStmt(S)) {
+        getNameForNamedExpression(ex);
+        llvm::errs() << '\n';
+      }
+      llvm::errs() << "--\n";
       return;
+    }
 
     llvm::errs() << "SLICING CRITERION FOUND\n";
     ExplodedNode *ErrNode = C.generateNonFatalErrorNode(C.getState());
