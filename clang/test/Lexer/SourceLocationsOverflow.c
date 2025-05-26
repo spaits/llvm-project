@@ -36,3 +36,32 @@
 #include "Inputs/inc1.h"
 #include "Inputs/inc1.h"
 #include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+#include "Inputs/inc1.h"
+
+#include <stdio.h>
+
+#define DEF_NOT_42 42
+
+int main() {
+    printf("Hi %d\n", DEF_NOT_42);
+
+    return 0;
+}

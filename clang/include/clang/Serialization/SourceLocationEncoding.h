@@ -58,10 +58,10 @@ class SourceLocationEncoding {
   friend SourceLocationSequence;
 
 public:
-  using RawLocEncoding = unsigned __int128;
+  using RawLocEncoding = uint64_t;
 
   static RawLocEncoding encode(SourceLocation Loc, UIntTy BaseOffset,
-                               unsigned BaseModuleFileIndex,
+                               uint64_t BaseModuleFileIndex,
                                SourceLocationSequence * = nullptr);
   static std::pair<SourceLocation, uint64_t>
   decode(RawLocEncoding, SourceLocationSequence * = nullptr);
@@ -96,9 +96,8 @@ public:
 ///
 class SourceLocationSequence {
   using UIntTy = SourceLocation::UIntTy;
-  using EncodedTy = unsigned __int128;
+  using EncodedTy = uint64_t;
   constexpr static auto UIntBits = SourceLocationEncoding::UIntBits;
-  static_assert(sizeof(EncodedTy) > sizeof(UIntTy), "Need one extra bit!");
 
   // Prev stores the rotated last nonzero location.
   UIntTy &Prev;
@@ -106,7 +105,7 @@ class SourceLocationSequence {
   // Zig-zag encoding turns small signed integers into small unsigned integers.
   // 0 => 0, -1 => 1, 1 => 2, -2 => 3, ...
   static UIntTy zigZag(UIntTy V) {
-    UIntTy Sign = (V & (1UL << (UIntBits - 1))) ? UIntTy(-1) : UIntTy(0);
+    UIntTy Sign = (V & (1 << (UIntBits - 1))) ? UIntTy(-1) : UIntTy(0);
     return Sign ^ (V << 1);
   }
   static UIntTy zagZig(UIntTy V) { return (V >> 1) ^ -(V & 1); }
@@ -161,7 +160,7 @@ public:
 
 inline SourceLocationEncoding::RawLocEncoding
 SourceLocationEncoding::encode(SourceLocation Loc, UIntTy BaseOffset,
-                               unsigned BaseModuleFileIndex,
+                               uint64_t BaseModuleFileIndex,
                                SourceLocationSequence *Seq) {
   // If the source location is a local source location, we can try to optimize
   // the similar sequences to only record the differences.
@@ -179,21 +178,21 @@ SourceLocationEncoding::encode(SourceLocation Loc, UIntTy BaseOffset,
   RawLocEncoding Encoded = encodeRaw(Loc.getRawEncoding());
 
   // 16 bits should be sufficient to store the module file index.
-  assert(BaseModuleFileIndex < (1 << 16));
-  Encoded |= (RawLocEncoding)BaseModuleFileIndex << 64;
+  assert(BaseModuleFileIndex < (1UL << 32));
+  Encoded |= (RawLocEncoding)BaseModuleFileIndex << 48;
   return Encoded;
 }
 inline std::pair<SourceLocation, uint64_t>
 SourceLocationEncoding::decode(RawLocEncoding Encoded,
                                SourceLocationSequence *Seq) {
-  uint64_t ModuleFileIndex = Encoded >> 32;
+  uint64_t ModuleFileIndex = Encoded >> 48;
 
   if (!ModuleFileIndex)
     return {Seq ? Seq->decode(Encoded)
                 : SourceLocation::getFromRawEncoding(decodeRaw(Encoded)),
             ModuleFileIndex};
 
-  Encoded &= llvm::maskTrailingOnes<RawLocEncoding>(64);
+  Encoded &= llvm::maskTrailingOnes<RawLocEncoding>(48);
   SourceLocation Loc = SourceLocation::getFromRawEncoding(decodeRaw(Encoded));
 
   return {Loc, ModuleFileIndex};
