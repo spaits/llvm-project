@@ -2405,7 +2405,7 @@ public:
 
   /// Read a source location from raw form and return it in its
   /// originating module file's source location space.
-  std::pair<SourceLocation, unsigned>
+  std::pair<SourceLocation, uint64_t>
   ReadUntranslatedSourceLocation(RawLocEncoding Raw,
                                  LocSeq *Seq = nullptr) const {
     return SourceLocationEncoding::decode(Raw, Seq);

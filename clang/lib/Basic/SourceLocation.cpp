@@ -21,6 +21,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -166,7 +167,7 @@ FullSourceLoc FullSourceLoc::getExpansionLoc() const {
   return FullSourceLoc(SrcMgr->getExpansionLoc(*this), *SrcMgr);
 }
 
-std::pair<FileID, unsigned> FullSourceLoc::getDecomposedExpansionLoc() const {
+std::pair<FileID, uint64_t> FullSourceLoc::getDecomposedExpansionLoc() const {
   return SrcMgr->getDecomposedExpansionLoc(*this);
 }
 
@@ -207,7 +208,7 @@ std::pair<FullSourceLoc, StringRef> FullSourceLoc::getModuleImportLoc() const {
                         ImportLoc.second);
 }
 
-unsigned FullSourceLoc::getFileOffset() const {
+uint64_t FullSourceLoc::getFileOffset() const {
   assert(isValid());
   return SrcMgr->getFileOffset(*this);
 }
@@ -232,22 +233,22 @@ OptionalFileEntryRef FullSourceLoc::getFileEntryRef() const {
   return SrcMgr->getFileEntryRefForID(getFileID());
 }
 
-unsigned FullSourceLoc::getExpansionLineNumber(bool *Invalid) const {
+uint64_t FullSourceLoc::getExpansionLineNumber(bool *Invalid) const {
   assert(isValid());
   return SrcMgr->getExpansionLineNumber(*this, Invalid);
 }
 
-unsigned FullSourceLoc::getExpansionColumnNumber(bool *Invalid) const {
+uint64_t FullSourceLoc::getExpansionColumnNumber(bool *Invalid) const {
   assert(isValid());
   return SrcMgr->getExpansionColumnNumber(*this, Invalid);
 }
 
-unsigned FullSourceLoc::getSpellingLineNumber(bool *Invalid) const {
+uint64_t FullSourceLoc::getSpellingLineNumber(bool *Invalid) const {
   assert(isValid());
   return SrcMgr->getSpellingLineNumber(*this, Invalid);
 }
 
-unsigned FullSourceLoc::getSpellingColumnNumber(bool *Invalid) const {
+uint64_t FullSourceLoc::getSpellingColumnNumber(bool *Invalid) const {
   assert(isValid());
   return SrcMgr->getSpellingColumnNumber(*this, Invalid);
 }
@@ -276,6 +277,6 @@ StringRef FullSourceLoc::getBufferData(bool *Invalid) const {
   return SrcMgr->getBufferData(SrcMgr->getFileID(*this), Invalid);
 }
 
-std::pair<FileID, unsigned> FullSourceLoc::getDecomposedLoc() const {
+std::pair<FileID, uint64_t> FullSourceLoc::getDecomposedLoc() const {
   return SrcMgr->getDecomposedLoc(*this);
 }

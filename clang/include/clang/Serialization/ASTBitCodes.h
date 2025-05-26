@@ -194,6 +194,8 @@ const unsigned int NUM_PREDEF_SUBMODULE_IDS = 1;
 class UnalignedUInt64 {
   uint32_t BitLow = 0;
   uint32_t BitHigh = 0;
+  uint32_t BitLow1 = 0;
+  uint32_t BitHigh2 = 0;
 
 public:
   UnalignedUInt64() = default;

@@ -2552,7 +2552,7 @@ SourceLocation ASTUnit::mapLocationFromPreamble(SourceLocation Loc) const {
   if (Loc.isInvalid() || !Preamble || PreambleID.isInvalid())
     return Loc;
 
-  unsigned Offs;
+  uint64_t Offs;
   if (SourceMgr->isInFileID(Loc, PreambleID, &Offs) && Offs < Preamble->getBounds().Size) {
     SourceLocation FileLoc
         = SourceMgr->getLocForStartOfFile(SourceMgr->getMainFileID());
@@ -2573,7 +2573,7 @@ SourceLocation ASTUnit::mapLocationToPreamble(SourceLocation Loc) const {
   if (Loc.isInvalid() || !Preamble || PreambleID.isInvalid())
     return Loc;
 
-  unsigned Offs;
+  uint64_t Offs;
   if (SourceMgr->isInFileID(Loc, SourceMgr->getMainFileID(), &Offs) &&
       Offs < Preamble->getBounds().Size) {
     SourceLocation FileLoc = SourceMgr->getLocForStartOfFile(PreambleID);

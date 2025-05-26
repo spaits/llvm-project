@@ -20,6 +20,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Allocator.h"
 #include <cassert>
+#include <cstdint>
 #include <map>
 #include <vector>
 
@@ -98,16 +99,16 @@ public:
     LineEntries.clear();
   }
 
-  unsigned getLineTableFilenameID(StringRef Str);
+  uint64_t getLineTableFilenameID(StringRef Str);
 
   StringRef getFilename(unsigned ID) const {
     assert(ID < FilenamesByID.size() && "Invalid FilenameID");
     return FilenamesByID[ID]->getKey();
   }
 
-  unsigned getNumFilenames() const { return FilenamesByID.size(); }
+  uint64_t getNumFilenames() const { return FilenamesByID.size(); }
 
-  void AddLineNote(FileID FID, unsigned Offset,
+  void AddLineNote(FileID FID, uint64_t Offset,
                    unsigned LineNo, int FilenameID,
                    unsigned EntryExit, SrcMgr::CharacteristicKind FileKind);
 
@@ -115,7 +116,7 @@ public:
   /// Find the line entry nearest to FID that is before it.
   ///
   /// If there is no line entry before \p Offset in \p FID, returns null.
-  const LineEntry *FindNearestLineEntry(FileID FID, unsigned Offset);
+  const LineEntry *FindNearestLineEntry(FileID FID, uint64_t Offset);
 
   // Low-level access
   using iterator = std::map<FileID, std::vector<LineEntry>>::iterator;

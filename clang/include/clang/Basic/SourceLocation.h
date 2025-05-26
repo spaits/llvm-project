@@ -93,8 +93,8 @@ class SourceLocation {
   friend class SourceLocationEncoding;
 
 public:
-  using UIntTy = uint32_t;
-  using IntTy = int32_t;
+  using UIntTy = uint64_t;
+  using IntTy = int64_t;
 
 private:
   UIntTy ID = 0;
@@ -394,19 +394,19 @@ public:
   bool isMacroArgExpansion(FullSourceLoc *StartLoc = nullptr) const;
   FullSourceLoc getImmediateMacroCallerLoc() const;
   std::pair<FullSourceLoc, StringRef> getModuleImportLoc() const;
-  unsigned getFileOffset() const;
+  uint64_t getFileOffset() const;
 
-  unsigned getExpansionLineNumber(bool *Invalid = nullptr) const;
-  unsigned getExpansionColumnNumber(bool *Invalid = nullptr) const;
+  uint64_t getExpansionLineNumber(bool *Invalid = nullptr) const;
+  uint64_t getExpansionColumnNumber(bool *Invalid = nullptr) const;
 
   /// Decompose the underlying \c SourceLocation into a raw (FileID + Offset)
   /// pair, after walking through all expansion records.
   ///
   /// \see SourceManager::getDecomposedExpansionLoc
-  std::pair<FileID, unsigned> getDecomposedExpansionLoc() const;
+  std::pair<FileID, uint64_t> getDecomposedExpansionLoc() const;
 
-  unsigned getSpellingLineNumber(bool *Invalid = nullptr) const;
-  unsigned getSpellingColumnNumber(bool *Invalid = nullptr) const;
+  uint64_t getSpellingLineNumber(bool *Invalid = nullptr) const;
+  uint64_t getSpellingColumnNumber(bool *Invalid = nullptr) const;
 
   const char *getCharacterData(bool *Invalid = nullptr) const;
 
@@ -424,7 +424,7 @@ public:
   ///
   /// The first element is the FileID, the second is the offset from the
   /// start of the buffer of the location.
-  std::pair<FileID, unsigned> getDecomposedLoc() const;
+  std::pair<FileID, uint64_t> getDecomposedLoc() const;
 
   bool isInSystemHeader() const;
 

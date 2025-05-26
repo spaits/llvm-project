@@ -184,7 +184,7 @@ ContentCache::getBufferOrNone(DiagnosticsEngine &Diag, FileManager &FM,
   return Buffer->getMemBufferRef();
 }
 
-unsigned LineTableInfo::getLineTableFilenameID(StringRef Name) {
+uint64_t LineTableInfo::getLineTableFilenameID(StringRef Name) {
   auto IterBool = FilenameIDs.try_emplace(Name, FilenamesByID.size());
   if (IterBool.second)
     FilenamesByID.push_back(&*IterBool.first);
@@ -197,7 +197,7 @@ unsigned LineTableInfo::getLineTableFilenameID(StringRef Name) {
 /// change the presumed \#include stack.  If it is 1, this is a file entry, if
 /// it is 2 then this is a file exit. FileKind specifies whether this is a
 /// system header or extern C system header.
-void LineTableInfo::AddLineNote(FileID FID, unsigned Offset, unsigned LineNo,
+void LineTableInfo::AddLineNote(FileID FID, uint64_t Offset, unsigned LineNo,
                                 int FilenameID, unsigned EntryExit,
                                 SrcMgr::CharacteristicKind FileKind) {
   std::vector<LineEntry> &Entries = LineEntries[FID];
@@ -205,7 +205,7 @@ void LineTableInfo::AddLineNote(FileID FID, unsigned Offset, unsigned LineNo,
   assert((Entries.empty() || Entries.back().FileOffset < Offset) &&
          "Adding line entries out of order!");
 
-  unsigned IncludeOffset = 0;
+  uint64_t IncludeOffset = 0;
   if (EntryExit == 1) {
     // Push #include
     IncludeOffset = Offset-1;
@@ -235,7 +235,7 @@ void LineTableInfo::AddLineNote(FileID FID, unsigned Offset, unsigned LineNo,
 /// FindNearestLineEntry - Find the line entry nearest to FID that is before
 /// it.  If there is no line entry before Offset in FID, return null.
 const LineEntry *LineTableInfo::FindNearestLineEntry(FileID FID,
-                                                     unsigned Offset) {
+                                                     uint64_t Offset) {
   const std::vector<LineEntry> &Entries = LineEntries[FID];
   assert(!Entries.empty() && "No #line entries for this FID after all!");
 
@@ -259,7 +259,7 @@ void LineTableInfo::AddEntry(FileID FID,
 }
 
 /// getLineTableFilenameID - Return the uniqued ID for the specified filename.
-unsigned SourceManager::getLineTableFilenameID(StringRef Name) {
+uint64_t SourceManager::getLineTableFilenameID(StringRef Name) {
   return getLineTable().getLineTableFilenameID(Name);
 }
 
@@ -1582,7 +1582,7 @@ bool SourceManager::isInMainFile(SourceLocation Loc) const {
 }
 
 /// The size of the SLocEntry that \p FID represents.
-unsigned SourceManager::getFileIDSize(FileID FID) const {
+uint64_t SourceManager::getFileIDSize(FileID FID) const {
   bool Invalid = false;
   const SrcMgr::SLocEntry &Entry = getSLocEntry(FID, &Invalid);
   if (Invalid)
@@ -1590,7 +1590,7 @@ unsigned SourceManager::getFileIDSize(FileID FID) const {
 
   int ID = FID.ID;
   SourceLocation::UIntTy NextOffset;
-  if ((ID > 0 && unsigned(ID+1) == local_sloc_entry_size()))
+  if ((ID > 0 && uint64_t(ID+1) == local_sloc_entry_size()))
     NextOffset = getNextLocalOffset();
   else if (ID+1 == -1)
     NextOffset = MaxLoadedOffset;
@@ -1839,11 +1839,11 @@ void SourceManager::associateFileChunkWithMacroArgExp(
 
   assert(SpellLoc.isFileID());
 
-  unsigned BeginOffs;
+  uint64_t BeginOffs;
   if (!isInFileID(SpellLoc, FID, &BeginOffs))
     return;
 
-  unsigned EndOffs = BeginOffs + ExpansionLength;
+  uint64_t EndOffs = BeginOffs + ExpansionLength;
 
   // Add a new chunk for this macro argument. A previous macro argument chunk
   // may have been lexed again, so e.g. if the map is
@@ -1918,7 +1918,7 @@ SourceManager::getMacroArgExpandedLocation(SourceLocation Loc) const {
   return Loc;
 }
 
-std::pair<FileID, unsigned>
+std::pair<FileID, uint64_t>
 SourceManager::getDecomposedIncludedLoc(FileID FID) const {
   if (FID.isInvalid())
     return std::make_pair(FileID(), 0);
@@ -1966,8 +1966,8 @@ FileID SourceManager::getUniqueLoadedASTFileID(SourceLocation Loc) const {
 }
 
 bool SourceManager::isInTheSameTranslationUnitImpl(
-    const std::pair<FileID, unsigned> &LOffs,
-    const std::pair<FileID, unsigned> &ROffs) const {
+    const std::pair<FileID, uint64_t> &LOffs,
+    const std::pair<FileID, uint64_t> &ROffs) const {
   // If one is local while the other is loaded.
   if (isLoadedFileID(LOffs.first) != isLoadedFileID(ROffs.first))
     return false;
@@ -1993,9 +1993,9 @@ bool SourceManager::isInTheSameTranslationUnitImpl(
 /// possible, return the decomposed version of the parent in Loc and return
 /// false.  If Loc is a top-level entry, return true and don't modify it.
 static bool
-MoveUpTranslationUnitIncludeHierarchy(std::pair<FileID, unsigned> &Loc,
+MoveUpTranslationUnitIncludeHierarchy(std::pair<FileID, uint64_t> &Loc,
                                       const SourceManager &SM) {
-  std::pair<FileID, unsigned> UpperLoc = SM.getDecomposedIncludedLoc(Loc.first);
+  std::pair<FileID, uint64_t> UpperLoc = SM.getDecomposedIncludedLoc(Loc.first);
   if (UpperLoc.first.isInvalid() ||
       !SM.isInTheSameTranslationUnitImpl(UpperLoc, Loc))
     return true; // We reached the top.
@@ -2041,8 +2041,8 @@ bool SourceManager::isBeforeInTranslationUnit(SourceLocation LHS,
   if (LHS == RHS)
     return false;
 
-  std::pair<FileID, unsigned> LOffs = getDecomposedLoc(LHS);
-  std::pair<FileID, unsigned> ROffs = getDecomposedLoc(RHS);
+  std::pair<FileID, uint64_t> LOffs = getDecomposedLoc(LHS);
+  std::pair<FileID, uint64_t> ROffs = getDecomposedLoc(RHS);
 
   // getDecomposedLoc may have failed to return a valid FileID because, e.g. it
   // is a serialized one referring to a file that was removed after we loaded
@@ -2058,8 +2058,8 @@ bool SourceManager::isBeforeInTranslationUnit(SourceLocation LHS,
 }
 
 std::pair<bool, bool> SourceManager::isInTheSameTranslationUnit(
-    std::pair<FileID, unsigned> &LOffs,
-    std::pair<FileID, unsigned> &ROffs) const {
+    std::pair<FileID, uint64_t> &LOffs,
+    std::pair<FileID, uint64_t> &ROffs) const {
   // If the source locations are not in the same TU, return early.
   if (!isInTheSameTranslationUnitImpl(LOffs, ROffs))
     return std::make_pair(false, false);

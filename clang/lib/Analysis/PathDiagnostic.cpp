@@ -41,6 +41,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -328,8 +329,8 @@ static bool compareCrossTUSourceLocs(FullSourceLoc XL, FullSourceLoc YL) {
     return true;
   if (XL.isValid() && YL.isInvalid())
     return false;
-  std::pair<FileID, unsigned> XOffs = XL.getDecomposedLoc();
-  std::pair<FileID, unsigned> YOffs = YL.getDecomposedLoc();
+  std::pair<FileID, uint64_t> XOffs = XL.getDecomposedLoc();
+  std::pair<FileID, uint64_t> YOffs = YL.getDecomposedLoc();
   const SourceManager &SM = XL.getManager();
   std::pair<bool, bool> InSameTU = SM.isInTheSameTranslationUnit(XOffs, YOffs);
   if (InSameTU.first)

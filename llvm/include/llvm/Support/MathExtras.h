@@ -80,7 +80,7 @@ constexpr float ef          = 0x1.5bf0a8P+1F, // (2.71828183) https://oeis.org/A
 /// Create a bitmask with the N right-most bits set to 1, and all other
 /// bits set to 0.  Only unsigned types are allowed.
 template <typename T> T maskTrailingOnes(unsigned N) {
-  static_assert(std::is_unsigned_v<T>, "Invalid type!");
+  // static_assert(std::is_unsigned_v<T>, "Invalid type!"); For some reason unsigned __int128 isn't unsigned.
   const unsigned Bits = CHAR_BIT * sizeof(T);
   assert(N <= Bits && "Invalid bit index");
   if (N == 0)

@@ -822,7 +822,7 @@ class SourceManager : public RefCountedBase<SourceManager> {
 
   /// Lazily computed map of macro argument chunks to their expanded
   /// source location.
-  using MacroArgsMap = std::map<unsigned, SourceLocation>;
+  using MacroArgsMap = std::map<uint64_t, SourceLocation>;
 
   mutable llvm::DenseMap<FileID, std::unique_ptr<MacroArgsMap>>
       MacroArgsCacheMap;
@@ -1255,7 +1255,7 @@ public:
   SourceLocation getImmediateSpellingLoc(SourceLocation Loc) const;
 
   /// Form a SourceLocation from a FileID and Offset pair.
-  SourceLocation getComposedLoc(FileID FID, unsigned Offset) const {
+  SourceLocation getComposedLoc(FileID FID, uint64_t Offset) const {
     auto *Entry = getSLocEntryOrNull(FID);
     if (!Entry)
       return SourceLocation();
@@ -1269,7 +1269,7 @@ public:
   ///
   /// The first element is the FileID, the second is the offset from the
   /// start of the buffer of the location.
-  std::pair<FileID, unsigned> getDecomposedLoc(SourceLocation Loc) const {
+  std::pair<FileID, uint64_t> getDecomposedLoc(SourceLocation Loc) const {
     FileID FID = getFileID(Loc);
     auto *Entry = getSLocEntryOrNull(FID);
     if (!Entry)
@@ -1299,14 +1299,14 @@ public:
   ///
   /// If the location is an expansion record, walk through it until we find
   /// its spelling record.
-  std::pair<FileID, unsigned>
+  std::pair<FileID, uint64_t>
   getDecomposedSpellingLoc(SourceLocation Loc) const {
     FileID FID = getFileID(Loc);
     auto *E = getSLocEntryOrNull(FID);
     if (!E)
       return std::make_pair(FileID(), 0);
 
-    unsigned Offset = Loc.getOffset()-E->getOffset();
+    uint64_t Offset = Loc.getOffset()-E->getOffset();
     if (Loc.isFileID())
       return std::make_pair(FID, Offset);
     return getDecomposedSpellingLocSlowCase(E, Offset);
@@ -1314,13 +1314,13 @@ public:
 
   /// Returns the "included/expanded in" decomposed location of the given
   /// FileID.
-  std::pair<FileID, unsigned> getDecomposedIncludedLoc(FileID FID) const;
+  std::pair<FileID, uint64_t> getDecomposedIncludedLoc(FileID FID) const;
 
   /// Returns the offset from the start of the file that the
   /// specified SourceLocation represents.
   ///
   /// This is not very meaningful for a macro ID.
-  unsigned getFileOffset(SourceLocation SpellingLoc) const {
+  uint64_t getFileOffset(SourceLocation SpellingLoc) const {
     return getDecomposedLoc(SpellingLoc).second;
   }
 
@@ -1560,13 +1560,13 @@ public:
   }
 
   /// The size of the SLocEntry that \p FID represents.
-  unsigned getFileIDSize(FileID FID) const;
+  uint64_t getFileIDSize(FileID FID) const;
 
   /// Given a specific FileID, returns true if \p Loc is inside that
   /// FileID chunk and sets relative offset (offset of \p Loc from beginning
   /// of FileID) to \p relativeOffset.
   bool isInFileID(SourceLocation Loc, FileID FID,
-                  unsigned *RelativeOffset = nullptr) const {
+                  uint64_t *RelativeOffset = nullptr) const {
     SourceLocation::UIntTy Offs = Loc.getOffset();
     if (isOffsetInFileID(FID, Offs)) {
       if (RelativeOffset)
@@ -1582,7 +1582,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Return the uniqued ID for the specified filename.
-  unsigned getLineTableFilenameID(StringRef Str);
+  uint64_t getLineTableFilenameID(StringRef Str);
 
   /// Add a line note to the line table for the FileID and offset
   /// specified by Loc.
@@ -1673,8 +1673,8 @@ public:
   ///          are in the same TU. The second bool is true if the first is true
   ///          and \p LOffs is before \p ROffs.
   std::pair<bool, bool>
-  isInTheSameTranslationUnit(std::pair<FileID, unsigned> &LOffs,
-                             std::pair<FileID, unsigned> &ROffs) const;
+  isInTheSameTranslationUnit(std::pair<FileID, uint64_t> &LOffs,
+                             std::pair<FileID, uint64_t> &ROffs) const;
 
   /// \param Loc a source location in a loaded AST (of a PCH/Module file).
   /// \returns a FileID uniquely identifies the AST of a loaded
@@ -1683,8 +1683,8 @@ public:
 
   /// Determines whether the two decomposed source location is in the same TU.
   bool isInTheSameTranslationUnitImpl(
-      const std::pair<FileID, unsigned> &LOffs,
-      const std::pair<FileID, unsigned> &ROffs) const;
+      const std::pair<FileID, uint64_t> &LOffs,
+      const std::pair<FileID, uint64_t> &ROffs) const;
 
   /// Determines the order of 2 source locations in the "source location
   /// address space".
@@ -1752,14 +1752,14 @@ public:
   unsigned loaded_sloc_entry_size() const { return LoadedSLocEntryTable.size();}
 
   /// Get a loaded SLocEntry. This is exposed for indexing.
-  const SrcMgr::SLocEntry &getLoadedSLocEntry(unsigned Index,
+  const SrcMgr::SLocEntry &getLoadedSLocEntry(uint64_t Index,
                                               bool *Invalid = nullptr) const {
     return const_cast<SourceManager *>(this)->getLoadedSLocEntry(Index,
                                                                  Invalid);
   }
 
   /// Get a loaded SLocEntry. This is exposed for indexing.
-  SrcMgr::SLocEntry &getLoadedSLocEntry(unsigned Index,
+  SrcMgr::SLocEntry &getLoadedSLocEntry(uint64_t Index,
                                         bool *Invalid = nullptr) {
     assert(Index < LoadedSLocEntryTable.size() && "Invalid index");
     if (SLocEntryLoaded[Index])
