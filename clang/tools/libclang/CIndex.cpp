@@ -168,7 +168,7 @@ CXSourceRange cxloc::translateSourceRange(const SourceManager &SM,
   }
 
   CXSourceRange Result = {
-      {&SM, &LangOpts}, R.getBegin().getRawEncoding(), EndLoc.getRawEncoding()};
+      {&SM, &LangOpts}, R.getBegin().getRawEncoding(), static_cast<unsigned int>(EndLoc.getRawEncoding())};
   return Result;
 }
 
