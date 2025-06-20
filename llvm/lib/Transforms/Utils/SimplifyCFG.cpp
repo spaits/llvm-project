@@ -6292,8 +6292,9 @@ static Value *foldSwitchToSelect(const SwitchCaseResultVectorTy &ResultVector,
     if (isPowerOf2_32(CaseCount)) {
       ConstantInt *MinCaseVal = CaseValues[0];
       // Find mininal value.
-      // If there is a mask, the grabs a property of the values enabled from the range.
-      // For example. For 3 and 1 are the only odd numbers on the range [0,1)
+      // If there is a mask, the grabs a property of the values enabled from the
+      // range. For example. For 3 and 1 are the only odd numbers on the range
+      // [0,1)
       APInt AndMask = APInt::getAllOnes(MinCaseVal->getBitWidth());
       for (auto *Case : CaseValues) {
         if (Case->getValue().slt(MinCaseVal->getValue()))
@@ -6302,9 +6303,13 @@ static Value *foldSwitchToSelect(const SwitchCaseResultVectorTy &ResultVector,
       }
       ConstantRange CR = computeConstantRange(
           Condition, /* ForSigned */ Condition->getType()->isSingleValueType());
-      APInt ActiveBitsMask =
-          APInt(Condition->getType()->getIntegerBitWidth(), (1 << CR.getActiveBits()) - 1, false);
-      unsigned ActiveBits = CR.getActiveBits();
+      unsigned int ConditionWidth = Condition->getType()->getIntegerBitWidth();
+      APInt ActiveBits =
+          APInt(ConditionWidth, CR.getActiveBits(),
+                Condition->getType()->isSingleValueType());
+
+      APInt One(ConditionWidth, 1, false);
+      APInt ActiveBitsMask = (One << ActiveBits) - 1;
 
       // In case, there are bits, that can only be present in any CaseValue we
       // can transform the switch into a select. Basically the conjunction of
@@ -6312,7 +6317,7 @@ static Value *foldSwitchToSelect(const SwitchCaseResultVectorTy &ResultVector,
       // representation of the accepted values is actually unique we check,
       // wheter the conjucted bits and the another conjuction with the input
       // value will only be true for exactly CaseCount number times.
-      if ((1U << ActiveBits) - (1U << (ActiveBits - AndMask.popcount())) ==
+      if ((One << ActiveBits) - (One << (ActiveBits - AndMask.popcount())) ==
           CaseCount) {
         Value *And = Builder.CreateAnd(Condition, AndMask);
         Value *Cmp =
