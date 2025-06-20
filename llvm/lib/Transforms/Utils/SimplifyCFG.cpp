@@ -80,6 +80,7 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -6291,9 +6292,33 @@ static Value *foldSwitchToSelect(const SwitchCaseResultVectorTy &ResultVector,
     if (isPowerOf2_32(CaseCount)) {
       ConstantInt *MinCaseVal = CaseValues[0];
       // Find mininal value.
-      for (auto *Case : CaseValues)
+      // If there is a mask, the grabs a property of the values enabled from the range.
+      // For example. For 3 and 1 are the only odd numbers on the range [0,1)
+      APInt AndMask = APInt::getAllOnes(MinCaseVal->getBitWidth());
+      for (auto *Case : CaseValues) {
         if (Case->getValue().slt(MinCaseVal->getValue()))
           MinCaseVal = Case;
+        AndMask &= Case->getValue();
+      }
+      ConstantRange CR = computeConstantRange(
+          Condition, /* ForSigned */ Condition->getType()->isSingleValueType());
+      APInt ActiveBitsMask =
+          APInt(Condition->getType()->getIntegerBitWidth(), (1 << CR.getActiveBits()) - 1, false);
+      unsigned ActiveBits = CR.getActiveBits();
+
+      // In case, there are bits, that can only be present in any CaseValue we
+      // can transform the switch into a select. Basically the conjunction of
+      // all the values uniquely identify the CaseValues. To make sure, that the
+      // representation of the accepted values is actually unique we check,
+      // wheter the conjucted bits and the another conjuction with the input
+      // value will only be true for exactly CaseCount number times.
+      if ((1U << ActiveBits) - (1U << (ActiveBits - AndMask.popcount())) ==
+          CaseCount) {
+        Value *And = Builder.CreateAnd(Condition, AndMask);
+        Value *Cmp =
+            Builder.CreateICmpNE(And, Constant::getNullValue(And->getType()));
+        return Builder.CreateSelect(Cmp, ResultVector[0].first, DefaultResult);
+      }
 
       // Mark the bits case number touched.
       APInt BitMask = APInt::getZero(MinCaseVal->getBitWidth());
@@ -6302,6 +6327,7 @@ static Value *foldSwitchToSelect(const SwitchCaseResultVectorTy &ResultVector,
 
       // Check if cases with the same result can cover all number
       // in touched bits.
+      // 2 ^^ BitMask.popcount() cases will be enabled! 
       if (BitMask.popcount() == Log2_32(CaseCount)) {
         if (!MinCaseVal->isNullValue())
           Condition = Builder.CreateSub(Condition, MinCaseVal);
