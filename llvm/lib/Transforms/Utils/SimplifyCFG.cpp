@@ -6291,10 +6291,6 @@ static Value *foldSwitchToSelect(const SwitchCaseResultVectorTy &ResultVector,
     // case 0,2,8,10 -> Cond & 0b1..0101 == 0 ? result : default
     if (isPowerOf2_32(CaseCount)) {
       ConstantInt *MinCaseVal = CaseValues[0];
-      // Find mininal value.
-      // If there is a mask, the grabs a property of the values enabled from the
-      // range. For example. For 3 and 1 are the only odd numbers on the range
-      // [0,1)
       APInt AndMask = APInt::getAllOnes(MinCaseVal->getBitWidth());
       for (auto *Case : CaseValues) {
         if (Case->getValue().slt(MinCaseVal->getValue()))
