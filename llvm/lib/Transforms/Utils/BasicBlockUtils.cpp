@@ -58,14 +58,37 @@ static cl::opt<unsigned> MaxDeoptOrUnreachableSuccessorCheckDepth(
              "is followed by a block that either has a terminating "
              "deoptimizing call or is terminated with an unreachable"));
 
-static void replaceFuncletPadsRetWithUnreachable(Instruction &I) {
+static void zapAllInstructionInDeadBasicBlock(BasicBlock *BB) {
+  while (!BB->empty()) {
+    Instruction &I = BB->back();
+    // Because control flow can't get here, we don't care what we replace the
+    // value with. Note that since this block is unreachable, and all values
+    // contained within it must dominate their uses, that all uses will
+    // eventually be removed (they are themselves dead).
+    if (!I.use_empty())
+      I.replaceAllUsesWith(PoisonValue::get(I.getType()));
+    BB->back().eraseFromParent();
+  }
+}
+
+static void replaceFuncletPadsRetWithUnreachable(Instruction &I, SmallVectorImpl<DominatorTree::UpdateType> *Updates, bool KeepOneInputPHIs) {
   assert(isa<FuncletPadInst>(I) && "Instruction must be a funclet pad!");
+  // Set for the detached basic blocks.
+  SmallPtrSet<BasicBlock *, 4> UniqueSuccessors;
+
   for (User *User : make_early_inc_range(I.users())) {
     Instruction *ReturnInstr = dyn_cast<Instruction>(User);
     if (isa<CatchReturnInst>(ReturnInstr) ||
         isa<CleanupReturnInst>(ReturnInstr)) {
       BasicBlock *ReturnInstrBB = ReturnInstr->getParent();
-      ReturnInstr->eraseFromParent();
+      // This catchret or catchpad basic block is detached now. Let the successors know it.
+      UniqueSuccessors.clear();
+      for (BasicBlock *Succ : successors(ReturnInstrBB)) {
+        Succ->removePredecessor(ReturnInstrBB, KeepOneInputPHIs);
+        if (Updates && UniqueSuccessors.insert(Succ).second)
+          Updates->push_back({DominatorTree::Delete, ReturnInstrBB, Succ});
+      }
+      zapAllInstructionInDeadBasicBlock(ReturnInstrBB);
       new UnreachableInst(ReturnInstrBB->getContext(), ReturnInstrBB);
     }
   }
@@ -79,15 +102,9 @@ void llvm::detachDeadBlocks(
     // Loop through all of our successors and make sure they know that one
     // of their predecessors is going away.
     SmallPtrSet<BasicBlock *, 4> UniqueSuccessors;
-    for (BasicBlock *Succ : successors(BB)) {
-      Succ->removePredecessor(BB, KeepOneInputPHIs);
-      if (Updates && UniqueSuccessors.insert(Succ).second)
-        Updates->push_back({DominatorTree::Delete, BB, Succ});
-    }
-
-    // Zap all the instructions in the block.
-    while (!BB->empty()) {
-      Instruction &I = BB->back();
+    auto NonFirstPhiIt = BB->getFirstNonPHIIt();
+    if (NonFirstPhiIt != BB->end()) {
+      Instruction &I = *NonFirstPhiIt;
       // Exception handling funclets need to be explicitly addressed.
       // These funclets must begin with cleanuppad or catchpad and end with
       // cleanupred or catchret. The return instructions can be in different
@@ -95,7 +112,7 @@ void llvm::detachDeadBlocks(
       // first block, the we would have possible cleanupret and catchret
       // instructions with poison arguments, which wouldn't be valid.
       if (isa<FuncletPadInst>(I))
-        replaceFuncletPadsRetWithUnreachable(I);
+        replaceFuncletPadsRetWithUnreachable(I, Updates, KeepOneInputPHIs);
 
       // Catchswitch instructions have handlers, that must be catchpads and
       // an unwind label, that is either a catchpad or catchswitch.
@@ -107,7 +124,7 @@ void llvm::detachDeadBlocks(
           BasicBlock *SucBlock = CSI->getSuccessor(I);
           Instruction &SucFstInst = *(SucBlock->getFirstNonPHIIt());
           if (isa<FuncletPadInst>(SucFstInst)) {
-            replaceFuncletPadsRetWithUnreachable(SucFstInst);
+            replaceFuncletPadsRetWithUnreachable(SucFstInst, Updates, KeepOneInputPHIs);
             // There may be catchswitch instructions using the catchpad.
             // Just replace those with poison.
             if (!SucFstInst.use_empty())
@@ -117,7 +134,17 @@ void llvm::detachDeadBlocks(
           }
         }
       }
+    }
 
+    for (BasicBlock *Succ : successors(BB)) {
+      Succ->removePredecessor(BB, KeepOneInputPHIs);
+      if (Updates && UniqueSuccessors.insert(Succ).second)
+        Updates->push_back({DominatorTree::Delete, BB, Succ});
+    }
+
+    // Zap all the instructions in the block.
+    while (!BB->empty()) {
+      Instruction &I = BB->back();
       // Because control flow can't get here, we don't care what we replace the
       // value with.  Note that since this block is unreachable, and all values
       // contained within it must dominate their uses, that all uses will
@@ -1704,8 +1731,8 @@ BranchInst *llvm::GetIfCondition(BasicBlock *BB, BasicBlock *&IfTrue,
 
   // We can only handle branches.  Other control flow will be lowered to
   // branches if possible anyway.
-  BranchInst *Pred1Br = dyn_cast<BranchInst>(Pred1->getTerminator());
-  BranchInst *Pred2Br = dyn_cast<BranchInst>(Pred2->getTerminator());
+  BranchInst *Pred1Br = dyn_cast_or_null<BranchInst>(Pred1->getTerminator());
+  BranchInst *Pred2Br = dyn_cast_or_null<BranchInst>(Pred2->getTerminator());
   if (!Pred1Br || !Pred2Br)
     return nullptr;
 
