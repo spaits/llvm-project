@@ -106,7 +106,8 @@ void llvm::detachDeadBlocks(ArrayRef<BasicBlock *> BBs,
       // first block, the we would have possible cleanupret and catchret
       // instructions with poison arguments, which wouldn't be valid.
       if (isa<FuncletPadInst>(I)) {
-        for (User *User : make_early_inc_range(I.users())) {
+        SmallPtrSet<BasicBlock *, 4> UniqueEHRetBlocksToDelete;
+        for (User *User : I.users()) {
           Instruction *ReturnInstr = dyn_cast<Instruction>(User);
           // If we have a cleanupret or catchret block, replace it with just an
           // unreachable. The other alternative, that may use a catchpad is a
@@ -114,33 +115,12 @@ void llvm::detachDeadBlocks(ArrayRef<BasicBlock *> BBs,
           if (isa<CatchReturnInst>(ReturnInstr) ||
               isa<CleanupReturnInst>(ReturnInstr)) {
             BasicBlock *ReturnInstrBB = ReturnInstr->getParent();
-            // This catchret or catchpad basic block is detached now. Let the
-            // successors know it.
-            // This basic block also may have some predecessors too. For
-            // example the following LLVM-IR is valid:
-            //
-            //   [cleanuppad_block]
-            //            |
-            //    [regular_block]
-            //            |
-            //   [cleanupret_block]
-            //
-            // The IR after the cleanup will look like this:
-            //
-            //   [cleanuppad_block]
-            //            |
-            //    [regular_block]
-            //            |
-            //     [unreachable]
-            //
-            // So regular_block will lead to an unreachable block, which is also
-            // valid. There is no need to replace regular_block with unreachable
-            // in this context now.
-            // On the other hand, the cleanupret/catchret block's successors
-            // need to know about the deletion of their predecessors.
-            emptyAndDetachBlock(ReturnInstrBB, Updates, KeepOneInputPHIs);
+            UniqueEHRetBlocksToDelete.insert(ReturnInstrBB);
           }
         }
+        for (BasicBlock *EHRetBB :
+             make_early_inc_range(UniqueEHRetBlocksToDelete))
+          emptyAndDetachBlock(EHRetBB, Updates, KeepOneInputPHIs);
       }
     }
 
