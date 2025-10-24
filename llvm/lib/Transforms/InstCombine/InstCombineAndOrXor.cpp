@@ -11,15 +11,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstCombineInternal.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/Analysis/CmpInstAnalysis.h"
 #include "llvm/Analysis/FloatingPointPredicateUtils.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/ConstantRange.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/IR/Value.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/InstCombine/InstCombiner.h"
 #include "llvm/Transforms/Utils/Local.h"
 
@@ -4083,6 +4089,14 @@ Instruction *InstCombinerImpl::visitOr(BinaryOperator &I) {
     Value *Or = Builder.CreateOr(X, Y);
     return BinaryOperator::CreateXor(Or, ConstantInt::get(Ty, *CV));
   }
+
+//  Value *CommonInput;
+//  ConstantInt *SelLeft, *SelRight;
+//  if (match(&I, m_c_Or(m_Select(m_Value(CommonInput), m_ConstantInt(SelLeft),
+//                                m_ConstantInt(SelRight)),
+//                       m_ZExtOrTruncOrSelf(m_Deferred(CommonInput))))) {
+//    return SelectInst::Create(CommonInput, ConstantInt::get(Ty, SelLeft->getValue() | 1), SelRight);
+//  }
 
   // If the operands have no common bits set:
   // or (mul X, Y), X --> add (mul X, Y), X --> mul X, (Y + 1)

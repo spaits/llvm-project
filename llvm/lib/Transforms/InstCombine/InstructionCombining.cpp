@@ -2256,8 +2256,8 @@ Instruction *InstCombinerImpl::foldBinopWithPhiOperands(BinaryOperator &BO) {
 }
 
 Instruction *InstCombinerImpl::foldBinOpIntoSelectOrPhi(BinaryOperator &I) {
-  if (!isa<Constant>(I.getOperand(1)))
-    return nullptr;
+  //if (!isa<Constant>(I.getOperand(1)))
+  //  return nullptr;
 
   if (auto *Sel = dyn_cast<SelectInst>(I.getOperand(0))) {
     if (Instruction *NewSel = FoldOpIntoSelect(I, Sel))
