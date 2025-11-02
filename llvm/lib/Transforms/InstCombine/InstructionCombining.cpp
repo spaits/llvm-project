@@ -1825,6 +1825,11 @@ Instruction *InstCombinerImpl::FoldOpIntoSelect(Instruction &Op, SelectInst *SI,
   if (SimplifyBothArms && !(NewTV && NewFV))
     return nullptr;
 
+  // If one of the new instructions created is a select, we have an infinite optimization hazard.
+  if ((isa_and_nonnull<SelectInst>(NewTV)) ||
+      (isa_and_nonnull<SelectInst>(NewFV)))
+    return nullptr;
+
   // Create an instruction for the arm that did not fold.
   if (!NewTV)
     NewTV = foldOperationIntoSelectOperand(Op, SI, TV, *this);
@@ -2261,11 +2266,12 @@ Instruction *InstCombinerImpl::foldBinopWithPhiOperands(BinaryOperator &BO) {
 }
 
 Instruction *InstCombinerImpl::foldBinOpIntoSelectOrPhi(BinaryOperator &I) {
-  if (!isa<Constant>(I.getOperand(1)))
-    return nullptr;
+  bool OtherOpConst = isa<Constant>(I.getOperand(1));
+
+
 
   if (auto *Sel = dyn_cast<SelectInst>(I.getOperand(0))) {
-    if (Instruction *NewSel = FoldOpIntoSelect(I, Sel))
+    if (Instruction *NewSel = FoldOpIntoSelect(I, Sel, false, !OtherOpConst))
       return NewSel;
   } else if (auto *PN = dyn_cast<PHINode>(I.getOperand(0))) {
     if (Instruction *NewPhi = foldOpIntoPhi(I, PN))
