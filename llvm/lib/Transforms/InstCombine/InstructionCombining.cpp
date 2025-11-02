@@ -1825,10 +1825,6 @@ Instruction *InstCombinerImpl::FoldOpIntoSelect(Instruction &Op, SelectInst *SI,
   if (SimplifyBothArms && !(NewTV && NewFV))
     return nullptr;
 
-  // If one of the new instructions created is a select, we have an infinite optimization hazard.
-  if ((isa_and_nonnull<SelectInst>(NewTV)) ||
-      (isa_and_nonnull<SelectInst>(NewFV)))
-    return nullptr;
 
   // Create an instruction for the arm that did not fold.
   if (!NewTV)
