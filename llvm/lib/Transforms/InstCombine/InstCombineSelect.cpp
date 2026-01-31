@@ -4539,7 +4539,9 @@ Instruction *InstCombinerImpl::visitSelectInst(SelectInst &SI) {
       if (Value *V = simplifyNestedSelectsUsingImpliedCond(
               *TrueSI, CondVal, /*CondIsTrue=*/true, DL))
         return replaceOperand(SI, 1, V);
-
+      
+      Value *CmpLeft, *CmpRight, *CmpCondition;
+      if (match(TrueSI->getCondition(), m_Cmp(m_Value(CmpLeft), m_Value(CmpRight))));
       // We choose this as normal form to enable folding on the And and
       // shortening paths for the values (this helps getUnderlyingObjects() for
       // example).
