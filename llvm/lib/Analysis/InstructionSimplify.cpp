@@ -4982,28 +4982,35 @@ bool isSelectWithIdenticalPHI(PHINode &PN, PHINode &IdenticalPN) {
   return true;
 }
 
-
-static Value *simplifySelectWithSelect(Value *Cond, Value *TrueVal, Value *FalseVal) {
+static Value *simplifySelectWithSelect(Value *Cond, Value *TrueVal,
+                                       Value *FalseVal) {
   CmpPredicate Pred1, Pred2;
-  Value *FstSelCond, *FstSelTV, *FstSelFV, *Cmp1LHS, *Cmp1RHS , *Cmp2LHS, *Cmp2RHS;
+  Value *Cmp1LHS, *Cmp1RHS, *Cmp2LHS, *Cmp2RHS;
 
   if (!match(Cond, m_ICmp(Pred2, m_Value(Cmp2LHS), m_Value(Cmp2RHS))))
     return nullptr;
 
-  if (!match(FalseVal, m_Select(m_ICmp(Pred1, m_Value(Cmp1LHS), m_Value(Cmp1RHS)), m_Value(FstSelTV), m_Specific(TrueVal))))
+  Value *RequiredSelect = nullptr;
+  if (match(FalseVal,
+            m_Select(m_ICmp(Pred1, m_Value(Cmp1LHS), m_Value(Cmp1RHS)),
+                     m_Value(), m_Specific(TrueVal))))
+    RequiredSelect = FalseVal;
+  else if (match(TrueVal,
+                 m_Select(m_ICmp(Pred1, m_Value(Cmp1LHS), m_Value(Cmp1RHS)),
+                          m_Specific(FalseVal), m_Value())))
+    RequiredSelect = TrueVal;
+  else
     return nullptr;
 
   if (Pred1 != ICmpInst::ICMP_EQ || Pred2 != ICmpInst::ICMP_EQ)
     return nullptr;
 
-  if (Cmp1LHS == Cmp2LHS || Cmp1LHS == Cmp2RHS || Cmp1RHS == Cmp2LHS || Cmp1RHS == Cmp2RHS) {
-    llvm::errs() << "Ok. Could found select in select!\n";
-    return FalseVal;
-  }
+  if (Cmp1LHS == Cmp2LHS || Cmp1LHS == Cmp2RHS || Cmp1RHS == Cmp2LHS ||
+      Cmp1RHS == Cmp2RHS)
+    return RequiredSelect;
 
   return nullptr;
 };
-
 
 /// Given operands for a SelectInst, see if we can fold the result.
 /// If not, this returns null.
