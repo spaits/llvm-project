@@ -4,11 +4,9 @@
 define i32 @selectSelectICmpICmp1(i32 %6, i32 %44) {
 ; CHECK-LABEL: define i32 @selectSelectICmpICmp1(
 ; CHECK-SAME: i32 [[TMP0:%.*]], i32 [[TMP1:%.*]]) {
-; CHECK-NEXT:    [[TMP4:%.*]] = icmp eq i32 [[TMP1]], 4
 ; CHECK-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[TMP0]], 4
 ; CHECK-NEXT:    [[DOT_I:%.*]] = select i1 [[TMP3]], i32 [[TMP1]], i32 [[TMP0]]
-; CHECK-NEXT:    [[DOT0_I8:%.*]] = select i1 [[TMP4]], i32 [[TMP0]], i32 [[DOT_I]]
-; CHECK-NEXT:    ret i32 [[DOT0_I8]]
+; CHECK-NEXT:    ret i32 [[DOT_I]]
 ;
   %46 = icmp eq i32 %44, 4
   %47 = icmp eq i32 %6, 4
@@ -36,12 +34,10 @@ define i32 @selectSelectICmpICmp2(i32 %6, i32 %44) {
 define i32 @selectSelectICmpICmp1MultiUseEliminatedSelect(i32 %6, i32 %44) {
 ; CHECK-LABEL: define i32 @selectSelectICmpICmp1MultiUseEliminatedSelect(
 ; CHECK-SAME: i32 [[TMP0:%.*]], i32 [[TMP1:%.*]]) {
-; CHECK-NEXT:    [[TMP4:%.*]] = icmp eq i32 [[TMP1]], 4
 ; CHECK-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[TMP0]], 4
 ; CHECK-NEXT:    [[DOT_I:%.*]] = select i1 [[TMP3]], i32 [[TMP1]], i32 [[TMP0]]
-; CHECK-NEXT:    [[DOT0_I8:%.*]] = select i1 [[TMP4]], i32 [[TMP0]], i32 [[DOT_I]]
-; CHECK-NEXT:    call void @use32(i32 [[DOT0_I8]])
-; CHECK-NEXT:    ret i32 [[DOT0_I8]]
+; CHECK-NEXT:    call void @use32(i32 [[DOT_I]])
+; CHECK-NEXT:    ret i32 [[DOT_I]]
 ;
   %46 = icmp eq i32 %44, 4
   %47 = icmp eq i32 %6, 4
@@ -102,12 +98,10 @@ define i32 @negative_selectSelectICmpICmpBadOrder2(i32 %6, i32 %44) {
 define void @realExample(ptr %0, i32 %6, i32 %44) {
 ; CHECK-LABEL: define void @realExample(
 ; CHECK-SAME: ptr [[TMP0:%.*]], i32 [[TMP1:%.*]], i32 [[TMP2:%.*]]) {
-; CHECK-NEXT:    [[TMP6:%.*]] = icmp eq i32 [[TMP2]], 4
 ; CHECK-NEXT:    [[TMP4:%.*]] = icmp eq i32 [[TMP1]], 4
 ; CHECK-NEXT:    [[DOT_I:%.*]] = select i1 [[TMP4]], i32 [[TMP2]], i32 [[TMP1]]
-; CHECK-NEXT:    [[DOT0_I8:%.*]] = select i1 [[TMP6]], i32 [[TMP1]], i32 [[DOT_I]]
 ; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw i8, ptr [[TMP0]], i64 12
-; CHECK-NEXT:    store i32 [[DOT0_I8]], ptr [[TMP5]], align 4
+; CHECK-NEXT:    store i32 [[DOT_I]], ptr [[TMP5]], align 4
 ; CHECK-NEXT:    ret void
 ;
   %46 = icmp eq i32 %44, 4

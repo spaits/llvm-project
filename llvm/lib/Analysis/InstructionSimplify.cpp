@@ -4980,6 +4980,29 @@ bool isSelectWithIdenticalPHI(PHINode &PN, PHINode &IdenticalPN) {
   return true;
 }
 
+static Value *simplifySelectWithSelect(Value *Cond, Value *TrueVal,
+                                       Value *FalseVal) {
+  CmpPredicate Pred1, Pred2;
+  Value *Cmp1LHS, *Cmp1RHS, *Cmp2LHS, *Cmp2RHS;
+
+  if (!match(Cond, m_ICmp(Pred2, m_Value(Cmp2LHS), m_Value(Cmp2RHS))))
+    return nullptr;
+
+  if (!match(FalseVal,
+             m_Select(m_ICmp(Pred1, m_Value(Cmp1LHS), m_Value(Cmp1RHS)),
+                      m_Value(), m_Specific(TrueVal))))
+    return nullptr;
+
+  if (Pred1 != ICmpInst::ICMP_EQ || Pred2 != ICmpInst::ICMP_EQ)
+    return nullptr;
+
+  if (Cmp1LHS == Cmp2LHS || Cmp1LHS == Cmp2RHS || Cmp1RHS == Cmp2LHS ||
+      Cmp1RHS == Cmp2RHS)
+    return FalseVal;
+
+  return nullptr;
+}
+
 /// Given operands for a SelectInst, see if we can fold the result.
 /// If not, this returns null.
 static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
@@ -5141,6 +5164,9 @@ static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
     if (NewC.size() == NumElts)
       return ConstantVector::get(NewC);
   }
+
+  if (Value *V = simplifySelectWithSelect(Cond, TrueVal, FalseVal))
+    return V;
 
   if (Value *V =
           simplifySelectWithICmpCond(Cond, TrueVal, FalseVal, Q, MaxRecurse))
