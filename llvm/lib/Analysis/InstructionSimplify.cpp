@@ -4983,21 +4983,20 @@ bool isSelectWithIdenticalPHI(PHINode &PN, PHINode &IdenticalPN) {
 static Value *simplifySelectWithSelect(Value *Cond, Value *TrueVal,
                                        Value *FalseVal) {
   CmpPredicate Pred1, Pred2;
-  Value *Cmp1LHS, *Cmp1RHS, *Cmp2LHS, *Cmp2RHS;
+  Value *Cmp1LHS, *Cmp1RHS, *Cmp2LHS, *Cmp2RHS, *TV;
 
   if (!match(Cond, m_ICmp(Pred2, m_Value(Cmp2LHS), m_Value(Cmp2RHS))))
     return nullptr;
 
   if (!match(FalseVal,
              m_Select(m_ICmp(Pred1, m_Value(Cmp1LHS), m_Value(Cmp1RHS)),
-                      m_Value(), m_Specific(TrueVal))))
+                      m_Value(TV), m_Specific(TrueVal))))
     return nullptr;
 
   if (Pred1 != ICmpInst::ICMP_EQ || Pred2 != ICmpInst::ICMP_EQ)
     return nullptr;
 
-  if (Cmp1LHS == Cmp2LHS || Cmp1LHS == Cmp2RHS || Cmp1RHS == Cmp2LHS ||
-      Cmp1RHS == Cmp2RHS)
+  if (Cmp2LHS == TV && Cmp1LHS == TrueVal && Cmp1RHS == Cmp2RHS)
     return FalseVal;
 
   return nullptr;
