@@ -45,8 +45,10 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/Statepoint.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/KnownFPClass.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <optional>
 using namespace llvm;
@@ -4482,6 +4484,12 @@ static Value *simplifyWithOpsReplaced(Value *V,
       if (NewOps.size() == 2 && match(NewOps[1], m_Zero()))
         return NewOps[0];
     }
+
+    // TODO: I am not fully yet sure if it is fine.
+    if (SelectInst *SI = dyn_cast<SelectInst>(I))
+      if (NewOps[1] == NewOps[2])
+        return NewOps[1];
+
   } else {
     // The simplification queries below may return the original value. Consider:
     //   %div = udiv i32 %arg, %arg2
@@ -5140,6 +5148,21 @@ static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
     }
     if (NewC.size() == NumElts)
       return ConstantVector::get(NewC);
+  }
+
+
+  // TODO: Maybe move this to simplifySelectWithICmpCond.
+  CmpPredicate Pred1, Pred2;
+  Value *V1, *V2, *EQV;
+  // TODO: Maybe do the same for or, but in that case first try to replace V1 and then V2?
+  if (match(Cond, m_And(
+                        m_ICmp(Pred1, m_Value(V1), m_Value(EQV)),
+                        m_ICmp(Pred2, m_Value(V2), m_Deferred(EQV))))) {
+    if (Pred1 == ICmpInst::ICMP_EQ && Pred2 == ICmpInst::ICMP_EQ) {
+      if (Value *V = simplifySelectWithEquivalence({{V2, EQV}, {V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse)) {
+        return V;
+      }
+    }
   }
 
   if (Value *V =
