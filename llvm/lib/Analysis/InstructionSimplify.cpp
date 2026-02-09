@@ -47,7 +47,9 @@
 #include "llvm/IR/Statepoint.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/KnownFPClass.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <cassert>
 #include <optional>
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -4484,17 +4486,22 @@ static Value *simplifyWithOpsReplaced(Value *V,
     }
 
     if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
-      if (SI->hasPoisonGeneratingAnnotations()) {
-        if (!DropFlags)
-          return nullptr;
+      Value *SimplifiedValue = nullptr;
 
-        DropFlags->push_back(SI);
+      // Cond ? V : V -> V
+      if (NewOps[1] == NewOps[2] && !impliesPoison(SI, NewOps[0]))
+        SimplifiedValue = NewOps[1];
+
+      // If we could do any simplification check if it has any poison generating
+      // flags and handle them.
+      if (SimplifiedValue) {
+        if (SI->hasPoisonGeneratingAnnotations()) {
+          if (!DropFlags)
+            return nullptr;
+          DropFlags->push_back(SI);
+        }
+        return SimplifiedValue;
       }
-
-      // If both of the arm give the same value and that value isn't poison we
-      // can simplify the select to that value.
-      if (isGuaranteedNotToBePoison(NewOps[1]) && NewOps[1] == NewOps[2])
-        return NewOps[1];
     }
 
   } else {
