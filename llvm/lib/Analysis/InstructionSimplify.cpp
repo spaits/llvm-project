@@ -5166,15 +5166,13 @@ static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
 
   CmpPredicate Pred1, Pred2;
   Value *V1, *V2, *EQV;
-  if (match(Cond, m_And(m_ICmp(Pred1, m_Value(V1), m_Value(EQV)),
-                        m_ICmp(Pred2, m_Value(V2), m_Deferred(EQV))))) {
-    if (Pred1 == ICmpInst::ICMP_EQ && Pred2 == ICmpInst::ICMP_EQ) {
-      if (Value *V = simplifySelectWithEquivalence(
-              {{V2, EQV}, {V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse)) {
-        return V;
-      }
-    }
-  }
+  if (match(Cond,
+            m_And(m_SpecificICmp(ICmpInst::ICMP_EQ, m_Value(V1), m_Value(EQV)),
+                  m_SpecificICmp(ICmpInst::ICMP_EQ, m_Value(V2),
+                                 m_Deferred(EQV)))))
+    if (Value *V = simplifySelectWithEquivalence(
+            {{V2, EQV}, {V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse))
+      return V;
 
   if (Value *V =
           simplifySelectWithICmpCond(Cond, TrueVal, FalseVal, Q, MaxRecurse))
