@@ -45,6 +45,9 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/Statepoint.h"
+#include "llvm/IR/Value.h"
+#include "llvm/Support/Alignment.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/KnownFPClass.h"
 #include "llvm/Support/raw_ostream.h"
@@ -5171,9 +5174,23 @@ static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
                   m_SpecificICmp(ICmpInst::ICMP_EQ, m_Value(V2),
                                  m_Deferred(EQV)))))
     if (Value *V = simplifySelectWithEquivalence(
-            {{V2, EQV}, {V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse))
-      return V;
+            {{V2, EQV}, {V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse)) {
+      SelectInst *VasSI = dyn_cast<SelectInst>(V);
+      if (VasSI && impliesPoison(VasSI->getCondition(), Cond))
+        return V;
+    }
 
+// TODO: I'll have to finish this. There is still testing to be done here!
+//  if (match(Cond,
+//            m_Or(m_SpecificICmp(ICmpInst::ICMP_NE, m_Value(V1), m_Value(EQV)),
+//                 m_SpecificICmp(ICmpInst::ICMP_NE, m_Value(V2), m_Deferred(EQV))))) {
+//    
+//    if (Value *V = simplifySelectWithEquivalence({{V2, EQV}}, TrueVal, FalseVal, Q, MaxRecurse))
+//      return V;
+//    if (Value *V = simplifySelectWithEquivalence({{V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse))
+//      return V;
+//  }
+  
   if (Value *V =
           simplifySelectWithICmpCond(Cond, TrueVal, FalseVal, Q, MaxRecurse))
     return V;
