@@ -45,6 +45,7 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/Statepoint.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/KnownFPClass.h"
 #include <algorithm>
@@ -4482,6 +4483,37 @@ static Value *simplifyWithOpsReplaced(Value *V,
       if (NewOps.size() == 2 && match(NewOps[1], m_Zero()))
         return NewOps[0];
     }
+
+    if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+      Value *SimplifiedValue = nullptr;
+      Value *Cond = SI->getCondition();
+
+      // If this select was a poison barrier (so the any of the arms cold be
+      // poison without making the condition a poison) we can't get rid of the
+      // select. We also can't make any change, if the new condition would
+      // have different values that would make that poison.
+      if (impliesPoison(SI->getTrueValue(), Cond) &&
+          impliesPoison(SI->getFalseValue(), Cond) &&
+          impliesPoison(NewOps[0], Cond)) {
+
+        // Cond ? V : V -> V
+        if (NewOps[1] == NewOps[2])
+          SimplifiedValue = NewOps[1];
+
+        // TODO: Implement more non refining select optimizations here!
+
+        // If we could do any simplification check if it has any poison
+        // generating flags and handle them.
+        if (SimplifiedValue) {
+          if (SI->hasPoisonGeneratingAnnotations()) {
+            if (!DropFlags)
+              return nullptr;
+            DropFlags->push_back(SI);
+          }
+          return SimplifiedValue;
+        }
+      }
+    }
   } else {
     // The simplification queries below may return the original value. Consider:
     //   %div = udiv i32 %arg, %arg2
@@ -4707,8 +4739,9 @@ static Value *simplifySelectWithBitTest(Value *CondVal, Value *TrueVal,
 /// Try to simplify a select instruction when its condition operand is an
 /// integer equality or floating-point equivalence comparison.
 static Value *simplifySelectWithEquivalence(
-    ArrayRef<std::pair<Value *, Value *>> Replacements, Value *TrueVal,
-    Value *FalseVal, const SimplifyQuery &Q, unsigned MaxRecurse) {
+    ArrayRef<std::pair<Value *, Value *>> Replacements, Value *Cond,
+    Value *TrueVal, Value *FalseVal, const SimplifyQuery &Q,
+    unsigned MaxRecurse) {
   Value *SimplifiedFalseVal =
       simplifyWithOpsReplaced(FalseVal, Replacements, Q.getWithoutUndef(),
                               /* AllowRefinement */ false,
@@ -4723,8 +4756,20 @@ static Value *simplifySelectWithEquivalence(
   if (!SimplifiedTrueVal)
     SimplifiedTrueVal = TrueVal;
 
-  if (SimplifiedFalseVal == SimplifiedTrueVal)
+  if (SimplifiedFalseVal == SimplifiedTrueVal) {
+    Value *FVCond;
+
+    // The returned value is the one being used instead of the simplified
+    // select. That value may also be a select, since simplifyWithOpsReplaced
+    // can do non-refining optimizations on select instructions. If that value
+    // is a select, we have to make sure that it has a condition more poison
+    // than the replaced select. That way we know that the second select wasn't
+    // acting as a poison barrier here, so it can be omitted.
+    if (match(FalseVal, m_Select(m_Value(FVCond), m_Value(), m_Value())))
+      return impliesPoison(FVCond, Cond) ? FalseVal : nullptr;
+
     return FalseVal;
+  }
 
   return nullptr;
 }
@@ -4814,13 +4859,13 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
   if (Pred == ICmpInst::ICMP_EQ) {
     if (CmpLHS->getType()->isIntOrIntVectorTy() ||
         canReplacePointersIfEqual(CmpLHS, CmpRHS, Q.DL))
-      if (Value *V = simplifySelectWithEquivalence({{CmpLHS, CmpRHS}}, TrueVal,
-                                                   FalseVal, Q, MaxRecurse))
+      if (Value *V = simplifySelectWithEquivalence(
+              {{CmpLHS, CmpRHS}}, CondVal, TrueVal, FalseVal, Q, MaxRecurse))
         return V;
     if (CmpLHS->getType()->isIntOrIntVectorTy() ||
         canReplacePointersIfEqual(CmpRHS, CmpLHS, Q.DL))
-      if (Value *V = simplifySelectWithEquivalence({{CmpRHS, CmpLHS}}, TrueVal,
-                                                   FalseVal, Q, MaxRecurse))
+      if (Value *V = simplifySelectWithEquivalence(
+              {{CmpRHS, CmpLHS}}, CondVal, TrueVal, FalseVal, Q, MaxRecurse))
         return V;
 
     Value *X;
@@ -4829,8 +4874,9 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
     if (match(CmpLHS, m_Or(m_Value(X), m_Value(Y))) &&
         match(CmpRHS, m_Zero())) {
       // (X | Y) == 0 implies X == 0 and Y == 0.
-      if (Value *V = simplifySelectWithEquivalence(
-              {{X, CmpRHS}, {Y, CmpRHS}}, TrueVal, FalseVal, Q, MaxRecurse))
+      if (Value *V =
+              simplifySelectWithEquivalence({{X, CmpRHS}, {Y, CmpRHS}}, CondVal,
+                                            TrueVal, FalseVal, Q, MaxRecurse))
         return V;
     }
 
@@ -4838,8 +4884,9 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
     if (match(CmpLHS, m_And(m_Value(X), m_Value(Y))) &&
         match(CmpRHS, m_AllOnes())) {
       // (X & Y) == -1 implies X == -1 and Y == -1.
-      if (Value *V = simplifySelectWithEquivalence(
-              {{X, CmpRHS}, {Y, CmpRHS}}, TrueVal, FalseVal, Q, MaxRecurse))
+      if (Value *V =
+              simplifySelectWithEquivalence({{X, CmpRHS}, {Y, CmpRHS}}, CondVal,
+                                            TrueVal, FalseVal, Q, MaxRecurse))
         return V;
     }
   }
@@ -4868,11 +4915,11 @@ static Value *simplifySelectWithFCmp(Value *Cond, Value *T, Value *F,
   // This transforms is safe if at least one operand is known to not be zero.
   // Otherwise, the select can change the sign of a zero operand.
   if (IsEquiv) {
-    if (Value *V = simplifySelectWithEquivalence({{CmpLHS, CmpRHS}}, T, F, Q,
-                                                 MaxRecurse))
+    if (Value *V = simplifySelectWithEquivalence({{CmpLHS, CmpRHS}}, Cond, T, F,
+                                                 Q, MaxRecurse))
       return V;
-    if (Value *V = simplifySelectWithEquivalence({{CmpRHS, CmpLHS}}, T, F, Q,
-                                                 MaxRecurse))
+    if (Value *V = simplifySelectWithEquivalence({{CmpRHS, CmpLHS}}, Cond, T, F,
+                                                 Q, MaxRecurse))
       return V;
   }
 
@@ -5142,6 +5189,36 @@ static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
       return ConstantVector::get(NewC);
   }
 
+  CmpPredicate Pred1, Pred2;
+  Value *V1, *V2, *EQV;
+  if (match(Cond,
+            m_And(m_SpecificICmp(ICmpInst::ICMP_EQ, m_Value(V1), m_Value(EQV)),
+                  m_SpecificICmp(ICmpInst::ICMP_EQ, m_Value(V2),
+                                 m_Deferred(EQV)))))
+    if (Value *V = simplifySelectWithEquivalence(
+            {{V2, EQV}, {V1, EQV}}, Cond, TrueVal, FalseVal, Q, MaxRecurse)) {
+      // We should only throw away a select if we get a select in place of that
+      // because of the poison barrier property.
+      SelectInst *VasSI = dyn_cast<SelectInst>(V);
+      // Also we have to check if the removing of the current select doesn't
+      // introduce any new poison. We should only remove the current select if
+      // its condition is poison in every case where the new select condition is
+      // poison.
+      if (VasSI && impliesPoison(VasSI->getCondition(), Cond))
+        return V;
+    }
+
+// TODO: I'll have to finish this. There is still testing to be done here!
+//  if (match(Cond,
+//            m_Or(m_SpecificICmp(ICmpInst::ICMP_NE, m_Value(V1), m_Value(EQV)),
+//                 m_SpecificICmp(ICmpInst::ICMP_NE, m_Value(V2), m_Deferred(EQV))))) {
+//    
+//    if (Value *V = simplifySelectWithEquivalence({{V2, EQV}}, TrueVal, FalseVal, Q, MaxRecurse))
+//      return V;
+//    if (Value *V = simplifySelectWithEquivalence({{V1, EQV}}, TrueVal, FalseVal, Q, MaxRecurse))
+//      return V;
+//  }
+  
   if (Value *V =
           simplifySelectWithICmpCond(Cond, TrueVal, FalseVal, Q, MaxRecurse))
     return V;
