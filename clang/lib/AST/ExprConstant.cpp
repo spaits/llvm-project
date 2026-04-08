@@ -55,6 +55,8 @@
 #include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TargetInfo.h"
+#include "shared/math/cos.h"
+#include "shared/math/sin.h"
 #include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -19579,6 +19581,20 @@ bool FloatExprEvaluator::VisitCallExpr(const CallExpr *E) {
         !EvaluateFloat(E->getArg(1), RHS, Info))
       return false;
     Result.copySign(RHS);
+    return true;
+  }
+
+  case Builtin::BI__builtin_cos: {
+    if (!EvaluateFloat(E->getArg(0), Result, Info))
+      return false;
+    Result = APFloat(LIBC_NAMESPACE::shared::cos(Result.convertToDouble()));
+    return true;
+  }
+
+  case Builtin::BI__builtin_sin: {
+    if (!EvaluateFloat(E->getArg(0), Result, Info))
+      return false;
+    Result = APFloat(LIBC_NAMESPACE::shared::sin(Result.convertToDouble()));
     return true;
   }
 

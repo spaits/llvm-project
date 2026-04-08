@@ -3908,6 +3908,7 @@ def Cos : FPMathTemplate, LibBuiltin<"math.h"> {
   let Attributes = [NoThrow, ConstIgnoringErrnoAndExceptions];
   let Prototype = "T(T)";
   let AddBuiltinPrefixedAlias = 1;
+  let OnlyBuiltinPrefixedAliasIsConstexpr = 1;
 }
 
 def Cosh : FPMathTemplate, LibBuiltin<"math.h"> {
