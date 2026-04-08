@@ -20,6 +20,8 @@ clang_tablegen(AttrDocTable.inc -gen-clang-attr-doc-table
   SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../include/clang/Basic/Attr.td
   TARGET ClangAttrDocTable)
 
+include(FindLibcCommonUtils)
+
 add_clang_library(clangAST
   APValue.cpp
   ASTConcept.cpp
@@ -153,8 +155,4 @@ add_clang_library(clangAST
   target_parser_gen
   )
 
-set(libc_path ${CMAKE_CURRENT_SOURCE_DIR}/../../../libc)
-if (EXISTS ${libc_path} AND IS_DIRECTORY ${libc_path})
-  target_include_directories(clangAST PRIVATE ${libc_path})
-  target_compile_definitions(clangAST PRIVATE LIBC_NAMESPACE=__llvm_libc_common_utils)
-endif()
+use_libc_common_utils(clangAST)
