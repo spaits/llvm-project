@@ -582,8 +582,9 @@ RISCVLegalizerInfo::RISCVLegalizerInfo(const RISCVSubtarget &ST)
   getActionDefinitionsBuilder(G_IS_FPCLASS)
       .customFor(ST.hasStdExtF(), {{s1, s32}})
       .customFor(ST.hasStdExtD(), {{s1, s64}})
+      .customFor(ST.hasStdExtQ(), {{s1, s128}})
       .customFor(ST.hasStdExtZfh(), {{s1, s16}})
-      .lowerFor({{s1, s32}, {s1, s64}});
+      .lowerFor({{s1, s32}, {s1, s64}, {s1, s128}});
 
   getActionDefinitionsBuilder(G_FCONSTANT)
       .legalFor(ST.hasStdExtF(), {s32})

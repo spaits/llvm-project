@@ -50,3 +50,16 @@ body:             |
     PseudoRET implicit $x10
 
 ...
+
+---
+name:            is_fpclass_f128
+body:             |
+  bb.1:
+    liveins: $f10_q
+    %0:_(s128) = COPY $f10_q
+    %1:_(s1) = G_IS_FPCLASS %0(s128), 608
+    %2:_(s64) = G_ANYEXT %1(s1)
+    $x10 = COPY %2(s64)
+    PseudoRET implicit $x10
+
+...
