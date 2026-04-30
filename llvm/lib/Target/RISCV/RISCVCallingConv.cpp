@@ -17,6 +17,8 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCRegister.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cstdint>
 
 using namespace llvm;
 
@@ -91,8 +93,8 @@ static const MCPhysReg ArgFPR64s[] = {RISCV::F10_D, RISCV::F11_D, RISCV::F12_D,
                                       RISCV::F13_D, RISCV::F14_D, RISCV::F15_D,
                                       RISCV::F16_D, RISCV::F17_D};
 static const MCPhysReg ArgFPR128s[] = {RISCV::F10_Q, RISCV::F11_Q, RISCV::F12_Q,
-                                      RISCV::F13_Q, RISCV::F14_Q, RISCV::F15_Q,
-                                      RISCV::F16_Q, RISCV::F17_Q};
+                                       RISCV::F13_Q, RISCV::F14_Q, RISCV::F15_Q,
+                                       RISCV::F16_Q, RISCV::F17_Q};
 // This is an interim calling convention and it may be changed in the future.
 static const MCPhysReg ArgVRs[] = {
     RISCV::V8,  RISCV::V9,  RISCV::V10, RISCV::V11, RISCV::V12, RISCV::V13,
@@ -545,6 +547,22 @@ static bool CC_RISCV_Impl(unsigned ValNo, MVT ValVT, MVT LocVT,
   assert(PendingLocs.size() == PendingArgFlags.size() &&
          "PendingLocs and PendingArgFlags out of sync");
 
+  // If f128 cannot be passed in an FPR on RV32, it is passed according to the
+  // integer calling convention. Since it is larger than 2*XLEN, pass it by
+  // reference.
+  if (XLen == 32 && LocVT == MVT::f128) {
+    LocVT = XLenVT;
+    LocInfo = CCValAssign::Indirect;
+    if (MCRegister Reg = State.AllocateReg(ArgGPRs))
+      State.addLoc(CCValAssign::getReg(ValNo, ValVT, Reg, LocVT, LocInfo));
+    else {
+      int64_t StackOffset = State.AllocateStack(4, Align(4));
+      State.addLoc(
+          CCValAssign::getMem(ValNo, ValVT, StackOffset, LocVT, LocInfo));
+    }
+    return false;
+  }
+
   // Handle passing f64 on RV32D with a soft float ABI or when floating point
   // registers are exhausted.
   if ((XLen == 32 && LocVT == MVT::f64) || (XLen == 64 && LocVT == MVT::f128)) {
@@ -555,19 +573,21 @@ static bool CC_RISCV_Impl(unsigned ValNo, MVT ValVT, MVT LocVT,
     // cases.
     MCRegister Reg = State.AllocateReg(ArgGPRs);
     if (!Reg) {
-      int64_t StackOffset = State.AllocateStack(8, Align(8));
+      uint32_t AlignForXLen = XLen == 64 ? 16 : 8;
+      int64_t StackOffset = State.AllocateStack(AlignForXLen, Align(AlignForXLen));
       State.addLoc(
           CCValAssign::getMem(ValNo, ValVT, StackOffset, LocVT, LocInfo));
       return false;
     }
-    LocVT = XLen == 32 ? MVT::i32 : MVT::i64;
+    LocVT = XLenVT;
     State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
     MCRegister HiReg = State.AllocateReg(ArgGPRs);
     if (HiReg) {
       State.addLoc(
           CCValAssign::getCustomReg(ValNo, ValVT, HiReg, LocVT, LocInfo));
     } else {
-      int64_t StackOffset = State.AllocateStack(4, Align(4));
+      uint32_t AlignForXLen = XLen == 64 ? 8 : 4;
+      int64_t StackOffset = State.AllocateStack(AlignForXLen, Align(AlignForXLen));
       State.addLoc(
           CCValAssign::getCustomMem(ValNo, ValVT, StackOffset, LocVT, LocInfo));
     }

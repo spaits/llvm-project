@@ -5,6 +5,9 @@
 ; RUN: llc -mtriple=riscv32 -mattr=+d -target-abi ilp32d \
 ; RUN:    -global-isel -stop-after=irtranslator -verify-machineinstrs < %s \
 ; RUN:   | FileCheck -check-prefixes=RV32-ILP32FD,RV32-ILP32D %s
+; RUN: llc -mtriple=riscv32 -mattr=+q -target-abi ilp32q \
+; RUN:    -global-isel -stop-after=irtranslator -verify-machineinstrs < %s \
+; RUN:   | FileCheck -check-prefixes=RV32-ILP32FD,RV32-ILP32Q %s
 
 ; This file contains tests that should have identical output for the ilp32f
 ; and ilp32d ABIs.
@@ -51,6 +54,19 @@ define i32 @caller_float_in_fpr() nounwind {
   ; RV32-ILP32D-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
   ; RV32-ILP32D-NEXT:   $x10 = COPY [[COPY]](s32)
   ; RV32-ILP32D-NEXT:   PseudoRET implicit $x10
+  ;
+  ; RV32-ILP32Q-LABEL: name: caller_float_in_fpr
+  ; RV32-ILP32Q: bb.1 (%ir-block.0):
+  ; RV32-ILP32Q-NEXT:   [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+  ; RV32-ILP32Q-NEXT:   [[C1:%[0-9]+]]:_(s32) = G_FCONSTANT float 2.000000e+00
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[C]](s32)
+  ; RV32-ILP32Q-NEXT:   $f10_f = COPY [[C1]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoCALL target-flags(riscv-call) @callee_float_in_fpr, csr_ilp32q_lp64q, implicit-def $x1, implicit $x10, implicit $f10_f, implicit-def $x10
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[COPY]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoRET implicit $x10
   %1 = call i32 @callee_float_in_fpr(i32 1, float 2.0)
   ret i32 %1
 }
@@ -149,6 +165,38 @@ define i32 @caller_float_in_fpr_exhausted_gprs() nounwind {
   ; RV32-ILP32D-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x10
   ; RV32-ILP32D-NEXT:   $x10 = COPY [[COPY1]](s32)
   ; RV32-ILP32D-NEXT:   PseudoRET implicit $x10
+  ;
+  ; RV32-ILP32Q-LABEL: name: caller_float_in_fpr_exhausted_gprs
+  ; RV32-ILP32Q: bb.1 (%ir-block.0):
+  ; RV32-ILP32Q-NEXT:   [[C:%[0-9]+]]:_(s64) = G_CONSTANT i64 1
+  ; RV32-ILP32Q-NEXT:   [[C1:%[0-9]+]]:_(s64) = G_CONSTANT i64 2
+  ; RV32-ILP32Q-NEXT:   [[C2:%[0-9]+]]:_(s64) = G_CONSTANT i64 3
+  ; RV32-ILP32Q-NEXT:   [[C3:%[0-9]+]]:_(s64) = G_CONSTANT i64 4
+  ; RV32-ILP32Q-NEXT:   [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 5
+  ; RV32-ILP32Q-NEXT:   [[C5:%[0-9]+]]:_(s32) = G_FCONSTANT float 6.000000e+00
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKDOWN 4, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C]](s64)
+  ; RV32-ILP32Q-NEXT:   [[UV2:%[0-9]+]]:_(s32), [[UV3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C1]](s64)
+  ; RV32-ILP32Q-NEXT:   [[UV4:%[0-9]+]]:_(s32), [[UV5:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C2]](s64)
+  ; RV32-ILP32Q-NEXT:   [[UV6:%[0-9]+]]:_(s32), [[UV7:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C3]](s64)
+  ; RV32-ILP32Q-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
+  ; RV32-ILP32Q-NEXT:   [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+  ; RV32-ILP32Q-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C6]](s32)
+  ; RV32-ILP32Q-NEXT:   G_STORE [[C4]](s32), [[PTR_ADD]](p0) :: (store (s32) into stack, align 16)
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[UV]](s32)
+  ; RV32-ILP32Q-NEXT:   $x11 = COPY [[UV1]](s32)
+  ; RV32-ILP32Q-NEXT:   $x12 = COPY [[UV2]](s32)
+  ; RV32-ILP32Q-NEXT:   $x13 = COPY [[UV3]](s32)
+  ; RV32-ILP32Q-NEXT:   $x14 = COPY [[UV4]](s32)
+  ; RV32-ILP32Q-NEXT:   $x15 = COPY [[UV5]](s32)
+  ; RV32-ILP32Q-NEXT:   $x16 = COPY [[UV6]](s32)
+  ; RV32-ILP32Q-NEXT:   $x17 = COPY [[UV7]](s32)
+  ; RV32-ILP32Q-NEXT:   $f10_f = COPY [[C5]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoCALL target-flags(riscv-call) @callee_float_in_fpr_exhausted_gprs, csr_ilp32q_lp64q, implicit-def $x1, implicit $x10, implicit $x11, implicit $x12, implicit $x13, implicit $x14, implicit $x15, implicit $x16, implicit $x17, implicit $f10_f, implicit-def $x10
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKUP 4, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x10
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[COPY1]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoRET implicit $x10
   %1 = call i32 @callee_float_in_fpr_exhausted_gprs(
       i64 1, i64 2, i64 3, i64 4, i32 5, float 6.0)
   ret i32 %1
@@ -234,6 +282,33 @@ define i32 @caller_float_in_gpr_exhausted_fprs() nounwind {
   ; RV32-ILP32D-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
   ; RV32-ILP32D-NEXT:   $x10 = COPY [[COPY]](s32)
   ; RV32-ILP32D-NEXT:   PseudoRET implicit $x10
+  ;
+  ; RV32-ILP32Q-LABEL: name: caller_float_in_gpr_exhausted_fprs
+  ; RV32-ILP32Q: bb.1 (%ir-block.0):
+  ; RV32-ILP32Q-NEXT:   [[C:%[0-9]+]]:_(s32) = G_FCONSTANT float 1.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C1:%[0-9]+]]:_(s32) = G_FCONSTANT float 2.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C2:%[0-9]+]]:_(s32) = G_FCONSTANT float 3.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C3:%[0-9]+]]:_(s32) = G_FCONSTANT float 4.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C4:%[0-9]+]]:_(s32) = G_FCONSTANT float 5.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C5:%[0-9]+]]:_(s32) = G_FCONSTANT float 6.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C6:%[0-9]+]]:_(s32) = G_FCONSTANT float 7.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C7:%[0-9]+]]:_(s32) = G_FCONSTANT float 8.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C8:%[0-9]+]]:_(s32) = G_FCONSTANT float 9.000000e+00
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   $f10_f = COPY [[C]](s32)
+  ; RV32-ILP32Q-NEXT:   $f11_f = COPY [[C1]](s32)
+  ; RV32-ILP32Q-NEXT:   $f12_f = COPY [[C2]](s32)
+  ; RV32-ILP32Q-NEXT:   $f13_f = COPY [[C3]](s32)
+  ; RV32-ILP32Q-NEXT:   $f14_f = COPY [[C4]](s32)
+  ; RV32-ILP32Q-NEXT:   $f15_f = COPY [[C5]](s32)
+  ; RV32-ILP32Q-NEXT:   $f16_f = COPY [[C6]](s32)
+  ; RV32-ILP32Q-NEXT:   $f17_f = COPY [[C7]](s32)
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[C8]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoCALL target-flags(riscv-call) @callee_float_in_gpr_exhausted_fprs, csr_ilp32q_lp64q, implicit-def $x1, implicit $f10_f, implicit $f11_f, implicit $f12_f, implicit $f13_f, implicit $f14_f, implicit $f15_f, implicit $f16_f, implicit $f17_f, implicit $x10, implicit-def $x10
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $x10
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[COPY]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoRET implicit $x10
   %1 = call i32 @callee_float_in_gpr_exhausted_fprs(
       float 1.0, float 2.0, float 3.0, float 4.0, float 5.0, float 6.0,
       float 7.0, float 8.0, float 9.0)
@@ -371,6 +446,52 @@ define i32 @caller_float_on_stack_exhausted_gprs_fprs() nounwind {
   ; RV32-ILP32D-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x10
   ; RV32-ILP32D-NEXT:   $x10 = COPY [[COPY1]](s32)
   ; RV32-ILP32D-NEXT:   PseudoRET implicit $x10
+  ;
+  ; RV32-ILP32Q-LABEL: name: caller_float_on_stack_exhausted_gprs_fprs
+  ; RV32-ILP32Q: bb.1 (%ir-block.0):
+  ; RV32-ILP32Q-NEXT:   [[C:%[0-9]+]]:_(s64) = G_CONSTANT i64 1
+  ; RV32-ILP32Q-NEXT:   [[C1:%[0-9]+]]:_(s32) = G_FCONSTANT float 2.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C2:%[0-9]+]]:_(s64) = G_CONSTANT i64 3
+  ; RV32-ILP32Q-NEXT:   [[C3:%[0-9]+]]:_(s32) = G_FCONSTANT float 4.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C4:%[0-9]+]]:_(s64) = G_CONSTANT i64 5
+  ; RV32-ILP32Q-NEXT:   [[C5:%[0-9]+]]:_(s32) = G_FCONSTANT float 6.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C6:%[0-9]+]]:_(s64) = G_CONSTANT i64 7
+  ; RV32-ILP32Q-NEXT:   [[C7:%[0-9]+]]:_(s32) = G_FCONSTANT float 8.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C8:%[0-9]+]]:_(s32) = G_FCONSTANT float 9.000000e+00
+  ; RV32-ILP32Q-NEXT:   [[C9:%[0-9]+]]:_(s32) = G_FCONSTANT float 1.000000e+01
+  ; RV32-ILP32Q-NEXT:   [[C10:%[0-9]+]]:_(s32) = G_FCONSTANT float 1.100000e+01
+  ; RV32-ILP32Q-NEXT:   [[C11:%[0-9]+]]:_(s32) = G_FCONSTANT float 1.200000e+01
+  ; RV32-ILP32Q-NEXT:   [[C12:%[0-9]+]]:_(s32) = G_FCONSTANT float 1.300000e+01
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKDOWN 4, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C]](s64)
+  ; RV32-ILP32Q-NEXT:   [[UV2:%[0-9]+]]:_(s32), [[UV3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C2]](s64)
+  ; RV32-ILP32Q-NEXT:   [[UV4:%[0-9]+]]:_(s32), [[UV5:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C4]](s64)
+  ; RV32-ILP32Q-NEXT:   [[UV6:%[0-9]+]]:_(s32), [[UV7:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[C6]](s64)
+  ; RV32-ILP32Q-NEXT:   [[COPY:%[0-9]+]]:_(p0) = COPY $x2
+  ; RV32-ILP32Q-NEXT:   [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+  ; RV32-ILP32Q-NEXT:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C13]](s32)
+  ; RV32-ILP32Q-NEXT:   G_STORE [[C12]](s32), [[PTR_ADD]](p0) :: (store (s32) into stack, align 16)
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[UV]](s32)
+  ; RV32-ILP32Q-NEXT:   $x11 = COPY [[UV1]](s32)
+  ; RV32-ILP32Q-NEXT:   $f10_f = COPY [[C1]](s32)
+  ; RV32-ILP32Q-NEXT:   $x12 = COPY [[UV2]](s32)
+  ; RV32-ILP32Q-NEXT:   $x13 = COPY [[UV3]](s32)
+  ; RV32-ILP32Q-NEXT:   $f11_f = COPY [[C3]](s32)
+  ; RV32-ILP32Q-NEXT:   $x14 = COPY [[UV4]](s32)
+  ; RV32-ILP32Q-NEXT:   $x15 = COPY [[UV5]](s32)
+  ; RV32-ILP32Q-NEXT:   $f12_f = COPY [[C5]](s32)
+  ; RV32-ILP32Q-NEXT:   $x16 = COPY [[UV6]](s32)
+  ; RV32-ILP32Q-NEXT:   $x17 = COPY [[UV7]](s32)
+  ; RV32-ILP32Q-NEXT:   $f13_f = COPY [[C7]](s32)
+  ; RV32-ILP32Q-NEXT:   $f14_f = COPY [[C8]](s32)
+  ; RV32-ILP32Q-NEXT:   $f15_f = COPY [[C9]](s32)
+  ; RV32-ILP32Q-NEXT:   $f16_f = COPY [[C10]](s32)
+  ; RV32-ILP32Q-NEXT:   $f17_f = COPY [[C11]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoCALL target-flags(riscv-call) @callee_float_on_stack_exhausted_gprs_fprs, csr_ilp32q_lp64q, implicit-def $x1, implicit $x10, implicit $x11, implicit $f10_f, implicit $x12, implicit $x13, implicit $f11_f, implicit $x14, implicit $x15, implicit $f12_f, implicit $x16, implicit $x17, implicit $f13_f, implicit $f14_f, implicit $f15_f, implicit $f16_f, implicit $f17_f, implicit-def $x10
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKUP 4, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[COPY1:%[0-9]+]]:_(s32) = COPY $x10
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[COPY1]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoRET implicit $x10
   %1 = call i32 @callee_float_on_stack_exhausted_gprs_fprs(
       i64 1, float 2.0, i64 3, float 4.0, i64 5, float 6.0, i64 7, float 8.0,
       float 9.0, float 10.0, float 11.0, float 12.0, float 13.0)
@@ -404,6 +525,15 @@ define i32 @caller_float_ret() nounwind {
   ; RV32-ILP32D-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $f10_f
   ; RV32-ILP32D-NEXT:   $x10 = COPY [[COPY]](s32)
   ; RV32-ILP32D-NEXT:   PseudoRET implicit $x10
+  ;
+  ; RV32-ILP32Q-LABEL: name: caller_float_ret
+  ; RV32-ILP32Q: bb.1 (%ir-block.0):
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKDOWN 0, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   PseudoCALL target-flags(riscv-call) @callee_float_ret, csr_ilp32q_lp64q, implicit-def $x1, implicit-def $f10_f
+  ; RV32-ILP32Q-NEXT:   ADJCALLSTACKUP 0, 0, implicit-def $x2, implicit $x2
+  ; RV32-ILP32Q-NEXT:   [[COPY:%[0-9]+]]:_(s32) = COPY $f10_f
+  ; RV32-ILP32Q-NEXT:   $x10 = COPY [[COPY]](s32)
+  ; RV32-ILP32Q-NEXT:   PseudoRET implicit $x10
   %1 = call float @callee_float_ret()
   %2 = bitcast float %1 to i32
   ret i32 %2

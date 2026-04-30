@@ -21,6 +21,8 @@
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <cstdint>
 
 using namespace llvm;
 
@@ -59,15 +61,25 @@ struct RISCVOutgoingValueHandler : public CallLowering::OutgoingValueHandler {
     auto MMO =
         MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
                                 commonAlignment(Align(16), LocMemOffset));
-
-    Register ExtReg = extendRegister(ValVReg, VA);
+    // TODO: Check if this should be moved to extendRegister.
+    Register ExtReg = VA.getLocInfo() == CCValAssign::Indirect
+                          ? ValVReg
+                          : extendRegister(ValVReg, VA);
     MIRBuilder.buildStore(ExtReg, Addr, *MMO);
   }
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
                         const CCValAssign &VA,
                         ISD::ArgFlagsTy Flags = {}) override {
-    Register ExtReg = extendRegister(ValVReg, VA);
+    // TODO: Check if this should be moved to extendRegister.
+    Register ExtReg = ValVReg;
+    if (VA.getLocInfo() == CCValAssign::Indirect) {
+      LLT RegTy = MRI.getType(ValVReg);
+      if (RegTy.isPointer())
+        ExtReg =
+            MIRBuilder.buildPtrToInt(LLT(VA.getLocVT()), ValVReg).getReg(0);
+    } else
+      ExtReg = extendRegister(ValVReg, VA);
     MIRBuilder.buildCopy(PhysReg, ExtReg);
     MIB.addUse(PhysReg, RegState::Implicit);
   }
@@ -102,12 +114,19 @@ struct RISCVOutgoingValueHandler : public CallLowering::OutgoingValueHandler {
     assert(VA.getValNo() == VAHi.getValNo() &&
            "Values belong to different arguments");
 
-    assert(VA.getLocVT() == MVT::i32 && VAHi.getLocVT() == MVT::i32 &&
-           VA.getValVT() == MVT::f64 && VAHi.getValVT() == MVT::f64 &&
-           "unexpected custom value");
+    uint32_t RegWidth = 0;
+    if (VA.getLocVT() == MVT::i32 && VAHi.getLocVT() == MVT::i32 &&
+        VA.getValVT() == MVT::f64 && VAHi.getValVT() == MVT::f64) {
+      RegWidth = 32;
+    } else if (VA.getLocVT() == MVT::i64 && VAHi.getLocVT() == MVT::i64 &&
+               VA.getValVT() == MVT::f128 && VAHi.getValVT() == MVT::f128) {
+      RegWidth = 64;
+    } else
+      llvm_unreachable("Unexpected custom value");
 
-    Register NewRegs[] = {MRI.createGenericVirtualRegister(LLT::scalar(32)),
-                          MRI.createGenericVirtualRegister(LLT::scalar(32))};
+    Register NewRegs[] = {
+        MRI.createGenericVirtualRegister(LLT::scalar(RegWidth)),
+        MRI.createGenericVirtualRegister(LLT::scalar(RegWidth))};
     MIRBuilder.buildUnmerge(NewRegs, Arg.Regs[0]);
 
     if (VAHi.isMemLoc()) {
@@ -201,12 +220,19 @@ struct RISCVIncomingValueHandler : public CallLowering::IncomingValueHandler {
     assert(VA.getValNo() == VAHi.getValNo() &&
            "Values belong to different arguments");
 
-    assert(VA.getLocVT() == MVT::i32 && VAHi.getLocVT() == MVT::i32 &&
-           VA.getValVT() == MVT::f64 && VAHi.getValVT() == MVT::f64 &&
-           "unexpected custom value");
+    uint32_t RegWidth = 0;
+    if (VA.getLocVT() == MVT::i32 && VAHi.getLocVT() == MVT::i32 &&
+        VA.getValVT() == MVT::f64 && VAHi.getValVT() == MVT::f64) {
+      RegWidth = 32;
+    } else if (VA.getLocVT() == MVT::i64 && VAHi.getLocVT() == MVT::i64 &&
+               VA.getValVT() == MVT::f128 && VAHi.getValVT() == MVT::f128) {
+      RegWidth = 64;
+    } else
+      llvm_unreachable("Unexpected custom value");
 
-    Register NewRegs[] = {MRI.createGenericVirtualRegister(LLT::scalar(32)),
-                          MRI.createGenericVirtualRegister(LLT::scalar(32))};
+    Register NewRegs[] = {
+        MRI.createGenericVirtualRegister(LLT::scalar(RegWidth)),
+        MRI.createGenericVirtualRegister(LLT::scalar(RegWidth))};
 
     if (VAHi.isMemLoc()) {
       LLT MemTy(VAHi.getLocVT());
