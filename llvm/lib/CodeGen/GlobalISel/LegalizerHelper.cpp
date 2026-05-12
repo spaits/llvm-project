@@ -10675,17 +10675,16 @@ LegalizerHelper::LegalizeResult LegalizerHelper::lowerMulfix(MachineInstr &MI) {
   auto [Dst, LHS, RHS] = MI.getFirst3Regs();
   LLT Ty = MRI.getType(Dst);
   unsigned Scale = MI.getOperand(3).getImm();
-
-  if (Scale == 0) {
-    MIRBuilder.buildMul(Dst, LHS, RHS);
-    MI.eraseFromParent();
-    return Legalized;
-  }
-
   bool IsSigned =
       OpCode == TargetOpcode::G_SMULFIX || OpCode == TargetOpcode::G_SMULFIXSAT;
   bool IsSaturating = OpCode == TargetOpcode::G_SMULFIXSAT ||
                       OpCode == TargetOpcode::G_UMULFIXSAT;
+
+  if (Scale == 0 && !IsSaturating) {
+    MIRBuilder.buildMul(Dst, LHS, RHS);
+    MI.eraseFromParent();
+    return Legalized;
+  }
 
   LLT WideTy = Ty.changeElementSize(Ty.getScalarSizeInBits() * 2);
   auto ShiftAmt = MIRBuilder.buildConstant(WideTy, Scale);
@@ -10719,44 +10718,40 @@ LegalizerHelper::LegalizeResult LegalizerHelper::lowerMulfix(MachineInstr &MI) {
 LegalizerHelper::LegalizeResult
 LegalizerHelper::lowerTruncSat(MachineInstr &MI) {
   unsigned OpCode = MI.getOpcode();
-  assert(OpCode == TargetOpcode::G_TRUNC_SSAT_S ||
-         OpCode == TargetOpcode::G_TRUNC_SSAT_U ||
-         OpCode == TargetOpcode::G_TRUNC_USAT_U &&
-             "Operator must be either G_TRUNC_SSAT_S or G_TRUNC_SSAT_U or "
-             "G_TRUNC_USAT_U!");
+  assert((OpCode == TargetOpcode::G_TRUNC_SSAT_S ||
+          OpCode == TargetOpcode::G_TRUNC_SSAT_U ||
+          OpCode == TargetOpcode::G_TRUNC_USAT_U) &&
+         "Operator must be either G_TRUNC_SSAT_S or G_TRUNC_SSAT_U or "
+         "G_TRUNC_USAT_U!");
 
   auto [NarrowTy, WideTy] = MI.getFirst2LLTs();
   auto [Dst, Src] = MI.getFirst2Regs();
 
   bool IsSignedInput = OpCode == TargetOpcode::G_TRUNC_SSAT_S ||
                        OpCode == TargetOpcode::G_TRUNC_SSAT_U;
-  bool IsSignedOutput = OpCode == TargetOpcode::G_TRUNC_USAT_U ||
-                        OpCode == TargetOpcode::G_TRUNC_SSAT_U;
+  bool IsSignedOutput = OpCode == TargetOpcode::G_TRUNC_SSAT_S;
 
-  APInt MaxValueInNarrowTy{}, MinValueInNarrowTy{};
+  APInt MaxValue{}, MinValue{};
+  unsigned NarrowSize = NarrowTy.getScalarSizeInBits();
+  unsigned WideSize = WideTy.getScalarSizeInBits();
   if (IsSignedOutput) {
-    MaxValueInNarrowTy =
-        APInt::getSignedMaxValue(NarrowTy.getScalarSizeInBits());
-    MinValueInNarrowTy =
-        APInt::getSignedMinValue(NarrowTy.getScalarSizeInBits());
+    MaxValue = APInt::getSignedMaxValue(NarrowSize).sext(WideSize);
+    MinValue = APInt::getSignedMinValue(NarrowSize).sext(WideSize);
   } else {
-    MaxValueInNarrowTy = APInt::getMaxValue(NarrowTy.getScalarSizeInBits());
-    MinValueInNarrowTy = APInt::getZero(NarrowTy.getScalarSizeInBits());
+    MaxValue = APInt::getMaxValue(NarrowSize).zext(WideSize);
+    MinValue = APInt::getZero(WideSize);
   }
 
   MachineInstrBuilder LTmax{};
   if (IsSignedInput) {
-    auto MaxValueConstant =
-        MIRBuilder.buildConstant(WideTy, MaxValueInNarrowTy);
-    auto MinValueConstant =
-        MIRBuilder.buildConstant(WideTy, MinValueInNarrowTy);
+    auto MaxValueConstant = MIRBuilder.buildConstant(WideTy, MaxValue);
+    auto MinValueConstant = MIRBuilder.buildConstant(WideTy, MinValue);
 
     auto GTMin = MIRBuilder.buildSMax(WideTy, MinValueConstant, Src);
     LTmax = MIRBuilder.buildSMin(WideTy, GTMin, MaxValueConstant);
   } else {
-    auto MaxValueConstant =
-        MIRBuilder.buildConstant(WideTy, MaxValueInNarrowTy);
-    LTmax = MIRBuilder.buildUMin(NarrowTy, MaxValueConstant, Src);
+    auto MaxValueConstant = MIRBuilder.buildConstant(WideTy, MaxValue);
+    LTmax = MIRBuilder.buildUMin(WideTy, MaxValueConstant, Src);
   }
 
   MIRBuilder.buildTrunc(Dst, LTmax);
