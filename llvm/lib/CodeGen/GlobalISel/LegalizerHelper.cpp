@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/GlobalISel/LegalizerHelper.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
 #include "llvm/CodeGen/GlobalISel/GISelChangeObserver.h"
 #include "llvm/CodeGen/GlobalISel/GISelValueTracking.h"
@@ -4974,6 +4975,10 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT LowerHintTy) {
   case G_SMULFIXSAT:
   case G_UMULFIXSAT:
     return lowerMulfix(MI);
+  case G_TRUNC_SSAT_S:
+  case G_TRUNC_SSAT_U:
+  case G_TRUNC_USAT_U:
+    return lowerTruncSat(MI);
   }
 }
 
@@ -10706,6 +10711,55 @@ LegalizerHelper::LegalizeResult LegalizerHelper::lowerMulfix(MachineInstr &MI) {
       MIRBuilder.buildTruncUSatU(Dst, Shift);
   else
     MIRBuilder.buildTrunc(Dst, Shift);
+
+  MI.eraseFromParent();
+  return Legalized;
+}
+
+LegalizerHelper::LegalizeResult
+LegalizerHelper::lowerTruncSat(MachineInstr &MI) {
+  unsigned OpCode = MI.getOpcode();
+  assert(OpCode == TargetOpcode::G_TRUNC_SSAT_S ||
+         OpCode == TargetOpcode::G_TRUNC_SSAT_U ||
+         OpCode == TargetOpcode::G_TRUNC_USAT_U &&
+             "Operator must be either G_TRUNC_SSAT_S or G_TRUNC_SSAT_U or "
+             "G_TRUNC_USAT_U!");
+
+  auto [NarrowTy, WideTy] = MI.getFirst2LLTs();
+  auto [Dst, Src] = MI.getFirst2Regs();
+
+  bool IsSignedInput = OpCode == TargetOpcode::G_TRUNC_SSAT_S ||
+                       OpCode == TargetOpcode::G_TRUNC_SSAT_U;
+  bool IsSignedOutput = OpCode == TargetOpcode::G_TRUNC_USAT_U ||
+                        OpCode == TargetOpcode::G_TRUNC_SSAT_U;
+
+  APInt MaxValueInNarrowTy{}, MinValueInNarrowTy{};
+  if (IsSignedOutput) {
+    MaxValueInNarrowTy =
+        APInt::getSignedMaxValue(NarrowTy.getScalarSizeInBits());
+    MinValueInNarrowTy =
+        APInt::getSignedMinValue(NarrowTy.getScalarSizeInBits());
+  } else {
+    MaxValueInNarrowTy = APInt::getMaxValue(NarrowTy.getScalarSizeInBits());
+    MinValueInNarrowTy = APInt::getZero(NarrowTy.getScalarSizeInBits());
+  }
+
+  MachineInstrBuilder LTmax{};
+  if (IsSignedInput) {
+    auto MaxValueConstant =
+        MIRBuilder.buildConstant(WideTy, MaxValueInNarrowTy);
+    auto MinValueConstant =
+        MIRBuilder.buildConstant(WideTy, MinValueInNarrowTy);
+
+    auto GTMin = MIRBuilder.buildSMax(WideTy, MinValueConstant, Src);
+    LTmax = MIRBuilder.buildSMin(WideTy, GTMin, MaxValueConstant);
+  } else {
+    auto MaxValueConstant =
+        MIRBuilder.buildConstant(WideTy, MaxValueInNarrowTy);
+    LTmax = MIRBuilder.buildUMin(NarrowTy, MaxValueConstant, Src);
+  }
+
+  MIRBuilder.buildTrunc(Dst, LTmax);
 
   MI.eraseFromParent();
   return Legalized;
