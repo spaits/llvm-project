@@ -894,7 +894,6 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                       ValTy, extendOpFromFlags(Args[i].Flags[0]));
     }
 
-    bool IndirectParameterPassingHandled = false;
     bool BigEndianPartOrdering = TLI->hasBigEndianPartOrdering(OrigVT, DL);
     unsigned IndirectIdx = 0;
     Register IncomingIndirectValuePointer;
@@ -929,7 +928,6 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
 
         IndirectIdx++;
         ArgReg = IndirectPointerToStackReg;
-        IndirectParameterPassingHandled = true;
       }
 
       if (VA.isMemLoc() && !Flags.isByVal()) {
@@ -1030,7 +1028,6 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         auto LoadedPart = MIRBuilder.buildLoad(NewLLT, PartPtrReg, MPO, Alignment);
         Args[i].Regs[Part] = LoadedPart.getReg(0);
 
-        IndirectParameterPassingHandled = true;
         IndirectIdx++;
       }
     }
