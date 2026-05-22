@@ -21,6 +21,7 @@
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -877,6 +878,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // the incoming component of the larger value. These will later be
       // merged to form the final vreg.
       for (unsigned Part = 0; Part < NumParts; ++Part)
+        // TODO: Do we even need to create that many virtual registers for the indirect case?
         Args[i].Regs[Part] = MRI.createGenericVirtualRegister(
             IndirectParts[Part] ? PointerTy : NewLLT);
     }
@@ -895,6 +897,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
     bool IndirectParameterPassingHandled = false;
     bool BigEndianPartOrdering = TLI->hasBigEndianPartOrdering(OrigVT, DL);
     unsigned IndirectIdx = 0;
+    Register IncomingIndirectValuePointer;
     for (unsigned Part = 0; Part < NumParts; ++Part) {
       Register ArgReg = Args[i].Regs[Part];
       // There should be Regs.size() ArgLocs per argument.
@@ -995,7 +998,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                  Handler.isIncomingArgumentHandler() &&
                  isTypeIsValidForThisReturn(ValVT)) {
         Handler.assignValueToReg(ArgReg, ThisReturnRegs[Part], VA, Flags);
-      } else if (Handler.isIncomingArgumentHandler()) {
+      } else if (Handler.isIncomingArgumentHandler() && IndirectIdx == 0) {
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA, Flags);
       } else if (VA.getLocInfo() != CCValAssign::Indirect || IndirectIdx == 1) {
         DelayedOutgoingRegAssignments.emplace_back([=, &Handler]() {
@@ -1008,25 +1011,34 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // the return value).
       if (VA.getLocInfo() == CCValAssign::Indirect &&
           Handler.isIncomingArgumentHandler()) {
+        if (IndirectIdx == 0) {
+          IncomingIndirectValuePointer = Args[i].Regs[Part];
+        }
         Align Alignment = DL.getABITypeAlign(Args[i].Ty);
         MachinePointerInfo MPO = MachinePointerInfo::getUnknownStack(MF);
-
+        Register PartPtrReg = IncomingIndirectValuePointer;
+        if (IndirectIdx > 0) {
+          LLT OffsetTy = LLT::scalar(PointerTy.getSizeInBits());
+          uint64_t OffsetBytes = NewLLT.getSizeInBytes() * IndirectIdx;
+          auto PartOffset = MIRBuilder.buildConstant(OffsetTy, OffsetBytes);
+          PartPtrReg = MIRBuilder.buildPtrAdd(PointerTy, IncomingIndirectValuePointer, PartOffset).getReg(0);
+        }
         // Since we are doing indirect parameter passing, we know that the value
         // in the temporary register is not the value passed to the function,
         // but rather a pointer to that value. Let's load that value into the
         // virtual register where the parameter should go.
-        MIRBuilder.buildLoad(Args[i].OrigRegs[0], Args[i].Regs[0], MPO,
-                             Alignment);
+        auto LoadedPart = MIRBuilder.buildLoad(NewLLT, PartPtrReg, MPO, Alignment);
+        Args[i].Regs[Part] = LoadedPart.getReg(0);
 
         IndirectParameterPassingHandled = true;
+        IndirectIdx++;
       }
     }
 
     // Now that all pieces have been assigned, re-pack the register typed values
     // into the original value typed registers. This is only necessary, when
     // the value was passed in multiple registers, not indirectly.
-    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT &&
-        !IndirectParameterPassingHandled) {
+    if (Handler.isIncomingArgumentHandler() && OrigVT != LocVT) {
       // Merge the split registers into the expected larger result vregs of
       // the original call.
       buildCopyFromRegs(MIRBuilder, Args[i].OrigRegs, Args[i].Regs, OrigTy,
