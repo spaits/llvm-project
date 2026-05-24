@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/DataLayout.h"
@@ -862,6 +863,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
           llvm_unreachable("Indirect parameter passing where a middle part of an parameter is indirect isn't yet supported!");
       }
 
+      Register IndirectParameterPtrReg{};
       // The argument has an indirect part or is entirely passed indirectly.
       // Create space for it on the stack, so later we can store the value there.
       if (CurrentIndirectChunkSize > 0 && !Handler.isIncomingArgumentHandler()) {
@@ -871,16 +873,16 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
                                              AlignmentForStored, false);
         IndirectPointerToStackReg =
             MIRBuilder.buildFrameIndex(PointerTy, IndirectFrameIdx).getReg(0);
-        
       }
+      if (CurrentIndirectChunkSize > 0)
+        IndirectParameterPtrReg = MRI.createGenericVirtualRegister(PointerTy);
 
       // For each split register, create and assign a vreg that will store
       // the incoming component of the larger value. These will later be
       // merged to form the final vreg.
       for (unsigned Part = 0; Part < NumParts; ++Part)
         // TODO: Do we even need to create that many virtual registers for the indirect case?
-        Args[i].Regs[Part] = MRI.createGenericVirtualRegister(
-            IndirectParts[Part] ? PointerTy : NewLLT);
+        Args[i].Regs[Part] = IndirectParts[Part] ? IndirectParameterPtrReg : MRI.createGenericVirtualRegister(NewLLT);
     }
 
     assert((j + (NumParts - 1)) < ArgLocs.size() &&
