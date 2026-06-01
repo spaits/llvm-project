@@ -319,6 +319,7 @@ static bool isLegalElementTypeForRVV(Type *EltTy,
 // TODO: Remove IsLowerArgs argument by adding support for vectors in lowerCall.
 static bool isSupportedArgumentType(Type *T, const RISCVSubtarget &Subtarget,
                                     bool IsLowerArgs = false) {
+  return true;
   if (T->isIntegerTy())
     return true;
   if (T->isHalfTy() || T->isFloatTy() || T->isDoubleTy() || T->isFP128Ty())
@@ -329,7 +330,7 @@ static bool isSupportedArgumentType(Type *T, const RISCVSubtarget &Subtarget,
     return isSupportedArgumentType(T->getArrayElementType(), Subtarget,
                                    IsLowerArgs);
   // TODO: Support fixed vector types.
-  if (IsLowerArgs && T->isVectorTy() && Subtarget.hasVInstructions() &&
+  if (/*IsLowerArgs && */T->isVectorTy() && Subtarget.hasVInstructions() &&
       T->isScalableTy() &&
       isLegalElementTypeForRVV(T->getScalarType(), Subtarget))
     return true;
@@ -344,6 +345,7 @@ static bool isSupportedArgumentType(Type *T, const RISCVSubtarget &Subtarget,
 // lowerCall.
 static bool isSupportedReturnType(Type *T, const RISCVSubtarget &Subtarget,
                                   bool IsLowerRetVal = false) {
+  return true;
   if (T->isIntegerTy() || T->isFloatingPointTy() || T->isPointerTy())
     return true;
 
@@ -358,7 +360,7 @@ static bool isSupportedReturnType(Type *T, const RISCVSubtarget &Subtarget,
     return true;
   }
 
-  if (IsLowerRetVal && T->isVectorTy() && Subtarget.hasVInstructions() &&
+  if (/*IsLowerRetVal && */T->isVectorTy() && Subtarget.hasVInstructions() &&
       T->isScalableTy() &&
       isLegalElementTypeForRVV(T->getScalarType(), Subtarget))
     return true;
