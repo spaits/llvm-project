@@ -501,11 +501,6 @@ bool RISCVCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
   MachineFunction &MF = MIRBuilder.getMF();
 
   const RISCVSubtarget &Subtarget = MF.getSubtarget<RISCVSubtarget>();
-  for (auto &Arg : F.args()) {
-    if (!isSupportedArgumentType(Arg.getType(), Subtarget,
-                                 /*IsLowerArgs=*/true))
-      return false;
-  }
 
   MachineRegisterInfo &MRI = MF.getRegInfo();
   const DataLayout &DL = MF.getDataLayout();
@@ -559,12 +554,12 @@ bool RISCVCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
 
   const RISCVSubtarget &Subtarget =
       MIRBuilder.getMF().getSubtarget<RISCVSubtarget>();
-  for (auto &AInfo : Info.OrigArgs) {
-    if (!isSupportedArgumentType(AInfo.Ty, Subtarget))
-      return false;
-    if (AInfo.Flags[0].isByVal())
-      return false;
-  }
+  //for (auto &AInfo : Info.OrigArgs) {
+  //  if (!isSupportedArgumentType(AInfo.Ty, Subtarget))
+  //    return false;
+  //  if (AInfo.Flags[0].isByVal())
+  //    return false;
+  //}
 
   if (!Info.OrigRet.Ty->isVoidTy() &&
       !isSupportedReturnType(Info.OrigRet.Ty, Subtarget))

@@ -27,6 +27,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TypeSize.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cstdint>
@@ -509,9 +510,14 @@ void CallLowering::buildCopyFromRegs(MachineIRBuilder &B,
 
   assert(DstEltTy.getSizeInBits() == RealDstEltTy.getSizeInBits());
 
-  if (DstEltTy == PartLLT) {
+  if (MRI.getType(OrigRegs[0]).isScalableVector()) {
+    B.buildConcatVectors(OrigRegs[0], Regs);
+  } else if (DstEltTy == PartLLT) {
     // Vector was trivially scalarized.
-
+    DstEltTy.dump();
+    PartLLT.dump();
+    MRI.getType(OrigRegs[0]).dump();
+    llvm::errs() << "Rs: " << Regs.size();
     if (RealDstEltTy.isPointer()) {
       for (Register Reg : Regs)
         MRI.setType(Reg, RealDstEltTy);
@@ -806,6 +812,24 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
   // generating a split block with a CALL that uses undefined physregs.
   SmallVector<std::function<void()>> DelayedOutgoingRegAssignments;
 
+  llvm::errs() << "The arg locs:" << ArgLocs.size() << "\n";
+  llvm::errs() << "The args:" << Args.size() << "\n";
+  for (unsigned i = 0; i < ArgLocs.size(); i++) {
+    llvm::errs() << "----\n";
+    CCValAssign &VA = ArgLocs[i];
+    VA.getLocVT().dump();
+    VA.getValVT().dump();
+    llvm::errs() << "LocInfo: " << VA.getLocInfo() << '\n';
+  }
+  llvm::errs() << "===\n";
+  for (unsigned i = 0; i < Args.size(); i++) {
+    ArgInfo &Arg = Args[i];
+    llvm::errs() << "----\n";
+    llvm::errs() << "Reg Num " << Arg.Regs.size() << '\n';
+    llvm::errs() << "Reg Num " << Arg.OrigRegs.size() << '\n';
+    llvm::errs() << "Flag size " << Arg.Flags.size() << '\n';
+  }
+
   for (unsigned i = 0, j = 0; i != NumArgs; ++i, ++j) {
     assert(j < ArgLocs.size() && "Skipped too many arg locs");
     CCValAssign &VA = ArgLocs[j];
@@ -851,7 +875,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
     if (NumParts != 1 || NewLLT != OrigTy) {
       Args[i].Regs.clear();
 
-      uint64_t CurrentIndirectChunkSize = 0;
+      TypeSize CurrentIndirectChunkSize = TypeSize::getZero();
       for (unsigned Part = 0; Part < NumParts; Part++) {
         llvm::errs() << "Part: " << Part << " Type: " << ArgLocs[j + Part].getLocInfo() << '\n';
         ArgLocs[j + Part].getLocVT().dump();
@@ -870,12 +894,16 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // The argument has an indirect part or is entirely passed indirectly.
       // Create space for it on the stack, so later we can store the value
       // there.
-      if (CurrentIndirectChunkSize > 0 &&
+      if (CurrentIndirectChunkSize.isNonZero() &&
           !Handler.isIncomingArgumentHandler()) {
         Align AlignmentForStored = DL.getPrefTypeAlign(Args[i].Ty);
         MachineFrameInfo &MFI = MF.getFrameInfo();
-        IndirectFrameIdx = MFI.CreateStackObject(CurrentIndirectChunkSize,
-                                                 AlignmentForStored, false);
+        const TargetFrameLowering *TFI = MF.getSubtarget().getFrameLowering();
+        int StackID = 0;
+        if (CurrentIndirectChunkSize.isScalable())
+          StackID = TFI->getStackIDForScalableVectors();
+        IndirectFrameIdx = MFI.CreateStackObject(CurrentIndirectChunkSize.getKnownMinValue(),
+                                                 AlignmentForStored, false, nullptr, StackID);
         IndirectPointerToStackReg =
             MIRBuilder.buildFrameIndex(PointerTy, IndirectFrameIdx).getReg(0);
       }
@@ -908,13 +936,14 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       // Handle indirectly passed values.
       if (VA.getLocInfo() == CCValAssign::Indirect &&
           !Handler.isIncomingArgumentHandler()) {
+        // TODO: VSCALE here somewhere?
         Register StoreAddr = IndirectPointerToStackReg;
-        uint64_t OffsetBytes = NewLLT.getSizeInBytes() * IndirectIdx;
+        TypeSize OffsetBytes = NewLLT.getSizeInBytes().multiplyCoefficientBy(IndirectFrameIdx);
 
-        if (OffsetBytes > 0) {
-          LLT OffsetTy = LLT::scalar(PointerTy.getSizeInBits());
+        if (OffsetBytes.isNonZero()) {
+          LLT OffsetTy = LLT::scalar(PointerTy.getSizeInBits().getKnownMinValue());
           auto OffsetConst = MIRBuilder.buildConstant(
-              OffsetTy, NewLLT.getSizeInBytes() * IndirectIdx);
+              OffsetTy, NewLLT.getSizeInBytes().multiplyCoefficientBy(IndirectIdx).getKnownMinValue());
           StoreAddr = MIRBuilder
                           .buildPtrAdd(PointerTy, IndirectPointerToStackReg,
                                        OffsetConst)
@@ -922,7 +951,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         }
 
         auto PartToStore = MIRBuilder.buildExtract(
-            NewLLT, Args[i].OrigRegs[0], NewLLT.getSizeInBits() * IndirectIdx);
+            NewLLT, Args[i].OrigRegs[0], NewLLT.getSizeInBits().multiplyCoefficientBy(IndirectIdx).getKnownMinValue());
 
         auto StackPointerMPO = MachinePointerInfo::getFixedStack(
             MF, IndirectFrameIdx, OffsetBytes);
@@ -1013,6 +1042,8 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
       if (VA.getLocInfo() == CCValAssign::Indirect &&
           Handler.isIncomingArgumentHandler()) {
         llvm::errs() << "Entered the load builde phase!\n";
+        llvm::errs() << "The valt:\n";
+        VA.getValVT().dump();
         if (IndirectIdx == 0) {
           IncomingIndirectValuePointer = Args[i].Regs[Part];
         }
@@ -1029,7 +1060,7 @@ bool CallLowering::handleAssignments(ValueHandler &Handler,
         // in the temporary register is not the value passed to the function,
         // but rather a pointer to that value. Let's load that value into the
         // virtual register where the parameter should go.
-        auto LoadedPart = MIRBuilder.buildLoad(NewLLT, PartPtrReg, MPO, Alignment);
+        auto LoadedPart = MIRBuilder.buildLoad(getLLTForMVT(VA.getValVT()), PartPtrReg, MPO, Alignment);
         if (Part < Args[i].Regs.size())
           Args[i].Regs[Part] = LoadedPart.getReg(0);
         else

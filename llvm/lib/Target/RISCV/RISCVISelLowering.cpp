@@ -26913,13 +26913,13 @@ bool RISCVTargetLowering::fallBackToDAGISel(const Instruction &Inst) const {
       return false;
   }
 
-  if (Inst.getType()->isScalableTy())
-    return true;
+  //if (Inst.getType()->isScalableTy())
+  //  return true;
 
-  for (unsigned i = 0; i < Inst.getNumOperands(); ++i)
-    if (Inst.getOperand(i)->getType()->isScalableTy() &&
-        !isa<ReturnInst>(&Inst))
-      return true;
+  //for (unsigned i = 0; i < Inst.getNumOperands(); ++i)
+  //  if (Inst.getOperand(i)->getType()->isScalableTy() &&
+  //      !isa<ReturnInst>(&Inst))
+  //    return true;
 
   return false;
 }
