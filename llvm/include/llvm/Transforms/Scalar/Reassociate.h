@@ -27,6 +27,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Analysis/UniformityAnalysis.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/Compiler.h"
@@ -80,6 +81,7 @@ public:
 protected:
   DenseMap<BasicBlock *, unsigned> RankMap;
   DenseMap<AssertingVH<Value>, unsigned> ValueRankMap;
+  DenseMap<std::pair<Value *, ConstantInt *>, Instruction *> ShiftMap;
   OrderedSet RedoInsts;
 
   // Arbitrary, but prevents quadratic behavior.

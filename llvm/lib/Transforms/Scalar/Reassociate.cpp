@@ -2682,6 +2682,35 @@ PreservedAnalyses ReassociatePass::run(Function &F,
   return runImpl(F, UI);
 }
 
+static void convertShiftsToMul(ReversePostOrderTraversal<Function *> RPOT) {
+  DenseMap<std::pair<Value *, ConstantInt *>, Instruction *> ShiftMap;
+  for (BasicBlock *BI : RPOT) {
+    for (Instruction &I : *BI) {
+      Value *ShiftedValue;
+      ConstantInt *ShiftAmount;
+      if (match(&I, m_Shl(m_Value(ShiftedValue), m_ConstantInt(ShiftAmount)))) {
+        std::pair<Value *, ConstantInt *> ShiftKey{ShiftedValue, ShiftAmount};
+        auto OtherShiftIte = ShiftMap.try_emplace(ShiftKey, &I).first;
+        Instruction *OtherShift = OtherShiftIte->second;
+        if (I.getNumUses() > OtherShift->getNumUses())
+          OtherShiftIte->second = &I;
+        continue;
+      }
+
+      Value *OtherValue;
+      ConstantInt *Const;
+      if (match(&I, m_c_Mul(m_Shl(m_Value(), m_ConstantInt(Const)),
+                            m_Value(OtherValue)))) {
+        std::pair<Value *, ConstantInt *> ShiftKey{OtherValue, Const};
+        auto Ite = ShiftMap.find(ShiftKey);
+        if (Ite != ShiftMap.end()) {
+          ConvertShiftToMul(Ite->second);
+        }
+      }
+    }
+  }
+}
+
 PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
   UA = &UI;
 
@@ -2693,6 +2722,10 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
 
   // Calculate the rank map for F.
   BuildRankMap(F, RPOT);
+
+  convertShiftsToMul(RPOT);
+  //TODO: Remove my debug print!
+  //F.dump();
 
   // Build the pair map before running reassociate.
   // Technically this would be more accurate if we did it after one round
