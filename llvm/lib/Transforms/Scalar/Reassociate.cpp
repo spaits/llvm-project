@@ -2563,6 +2563,13 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
         unsigned Score = 0;
         Value *Op0 = Ops[i].Op;
         Value *Op1 = Ops[j].Op;
+
+        llvm::errs() << "Comparing:\n";
+        llvm::errs() << Ops[i].Rank << ' ';
+        Op0->dump();
+        llvm::errs() << Ops[j].Rank << ' ';
+        Op1->dump();
+
         if (std::less<Value *>()(Op1, Op0))
           std::swap(Op0, Op1);
         auto it = PairMap[Idx].find({Op0, Op1});
@@ -2572,8 +2579,10 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
           // small chance that the new nodes can have the same address as
           // something already in the table. We shouldn't accumulate the stored
           // score in that case as it refers to the wrong Value.
-          if (it->second.isValid())
+          if (it->second.isValid()) {
+            llvm::errs() << "Sketchy increase by:" << it->second.Score << "\n";
             Score += it->second.Score;
+          }
         }
 
         unsigned MaxRank = std::max(Ops[i].Rank, Ops[j].Rank);
@@ -2590,7 +2599,9 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
         // If two pairs occur as many times, we pick the one with the
         // lowest rank, meaning the one with both operands appearing first in
         // the topological order.
+        llvm::errs() << Score << ">" <<  Max << "||" << "(" << Score << "=="  <<Max << "&&" << MaxRank << "<" << BestRank << '\n';
         if (Score > Max || (Score == Max && MaxRank < BestRank)) {
+          llvm::errs() << "We ever get here!\n";
           BestPair = {j, i};
           Max = Score;
           BestRank = MaxRank;
@@ -2682,10 +2693,10 @@ PreservedAnalyses ReassociatePass::run(Function &F,
   return runImpl(F, UI);
 }
 
-static void convertShiftsToMul(ReversePostOrderTraversal<Function *> RPOT) {
+static void convertShiftsUsedByMulsToMuls(Function &F) {
   DenseMap<std::pair<Value *, ConstantInt *>, Instruction *> ShiftMap;
-  for (BasicBlock *BI : RPOT) {
-    for (Instruction &I : *BI) {
+  for (BasicBlock  &BI : F) {
+    for (Instruction &I : BI) {
       Value *ShiftedValue;
       ConstantInt *ShiftAmount;
       if (match(&I, m_Shl(m_Value(ShiftedValue), m_ConstantInt(ShiftAmount)))) {
@@ -2704,7 +2715,9 @@ static void convertShiftsToMul(ReversePostOrderTraversal<Function *> RPOT) {
         std::pair<Value *, ConstantInt *> ShiftKey{OtherValue, Const};
         auto Ite = ShiftMap.find(ShiftKey);
         if (Ite != ShiftMap.end()) {
+          //ShiftMap.erase(ShiftKey);
           ConvertShiftToMul(Ite->second);
+          Ite->second->eraseFromParent();
         }
       }
     }
@@ -2713,6 +2726,9 @@ static void convertShiftsToMul(ReversePostOrderTraversal<Function *> RPOT) {
 
 PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
   UA = &UI;
+
+  convertShiftsUsedByMulsToMuls(F);
+
 
   // Get the functions basic blocks in Reverse Post Order. This order is used by
   // BuildRankMap to pre calculate ranks correctly. It also excludes dead basic
@@ -2723,9 +2739,8 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
   // Calculate the rank map for F.
   BuildRankMap(F, RPOT);
 
-  convertShiftsToMul(RPOT);
   //TODO: Remove my debug print!
-  //F.dump();
+  F.dump();
 
   // Build the pair map before running reassociate.
   // Technically this would be more accurate if we did it after one round
@@ -2746,8 +2761,12 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
     // Optimize every instruction in the basic block.
     for (BasicBlock::iterator II = BI->begin(), IE = BI->end(); II != IE;)
       if (isInstructionTriviallyDead(&*II)) {
+        llvm::errs() << "Erasing:\n";
+        II->dump();
         EraseInst(&*II++);
       } else {
+        llvm::errs() << "Optimizing:\n";
+        II->dump();
         OptimizeInst(&*II);
         assert(II->getParent() == &*BI && "Moved to a different block!");
         ++II;
@@ -2763,6 +2782,8 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
     while (!ToRedo.empty()) {
       Instruction *I = ToRedo.pop_back_val();
       if (isInstructionTriviallyDead(I)) {
+        llvm::errs() << "2Erasing:\n";
+        I->dump();
         RecursivelyEraseDeadInsts(I, ToRedo);
         MadeChange = true;
       }
@@ -2773,10 +2794,15 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
     while (!RedoInsts.empty()) {
       Instruction *I = RedoInsts.front();
       RedoInsts.erase(RedoInsts.begin());
-      if (isInstructionTriviallyDead(I))
+      if (isInstructionTriviallyDead(I)) {
+        llvm::errs() << "3Erasing:\n";
+        I->dump();
         EraseInst(I);
-      else
+      } else {
+        llvm::errs() << "2Optimizing:\n";
+        I->dump();
         OptimizeInst(I);
+      }
     }
   }
 
