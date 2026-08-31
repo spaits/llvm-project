@@ -2693,7 +2693,7 @@ PreservedAnalyses ReassociatePass::run(Function &F,
   return runImpl(F, UI);
 }
 
-static void convertShiftsUsedByMulsToMuls(Function &F) {
+void ReassociatePass::convertShiftsUsedByMulsToMuls(Function &F) {
   DenseMap<std::pair<Value *, ConstantInt *>, Instruction *> ShiftMap;
   SmallVector<Instruction *> ShiftsToBeConvertedToMuls;
   for (BasicBlock  &BI : F) {
@@ -2713,22 +2713,27 @@ static void convertShiftsUsedByMulsToMuls(Function &F) {
 
       Value *LHS, *OtherOp;
       if (!match(&I, m_c_Mul(m_Value(LHS), m_Value(OtherOp))))
-        return;
+        continue;
 
-      Value *ShiftLHS;
       ConstantInt *ConstVal;
-      if (!match(LHS, m_Shl(m_Value(ShiftLHS), m_ConstantInt(ConstVal))))
+      if (!match(LHS, m_Shl(m_Value(), m_ConstantInt(ConstVal))))
         continue;
 
       // Check if there was a shift, that has the other parameter of the multiplication with shifed by the same constant.
       std::pair<Value *, ConstantInt *> ShiftKey{OtherOp, ConstVal};
       auto Ite = ShiftMap.find(ShiftKey);
       if (Ite != ShiftMap.end()) {
+        MadeChange = true;
         ConvertShiftToMul(Ite->second);
         ConvertShiftToMul(cast<Instruction>(LHS));
       }
     }
   }
+
+  //for (Instruction *I : ShiftsToBeConvertedToMuls) {
+  //  MadeChange = true;
+  //  ConvertShiftToMul(I);
+  //}
 }
 
 PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
