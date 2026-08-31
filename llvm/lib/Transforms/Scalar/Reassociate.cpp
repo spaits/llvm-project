@@ -2723,17 +2723,16 @@ void ReassociatePass::convertShiftsUsedByMulsToMuls(Function &F) {
       std::pair<Value *, ConstantInt *> ShiftKey{OtherOp, ConstVal};
       auto Ite = ShiftMap.find(ShiftKey);
       if (Ite != ShiftMap.end()) {
-        MadeChange = true;
-        ConvertShiftToMul(Ite->second);
-        ConvertShiftToMul(cast<Instruction>(LHS));
+        ShiftsToBeConvertedToMuls.push_back(Ite->second);
+        ShiftsToBeConvertedToMuls.push_back(cast<Instruction>(LHS));
       }
     }
   }
 
-  //for (Instruction *I : ShiftsToBeConvertedToMuls) {
-  //  MadeChange = true;
-  //  ConvertShiftToMul(I);
-  //}
+  for (Instruction *I : ShiftsToBeConvertedToMuls) {
+    MadeChange = true;
+    ConvertShiftToMul(I);
+  }
 }
 
 PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
