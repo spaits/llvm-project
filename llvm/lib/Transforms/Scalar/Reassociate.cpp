@@ -2693,34 +2693,37 @@ PreservedAnalyses ReassociatePass::run(Function &F,
   return runImpl(F, UI);
 }
 
+
 void ReassociatePass::convertShiftsUsedByMulsToMuls(Function &F) {
-  DenseMap<std::pair<Value *, ConstantInt *>, Instruction *> ShiftMap;
+  using ShiftMapKeyT = std::pair<Value *, ConstantInt *>;
+
+  DenseMap<ShiftMapKeyT, Instruction *> ShiftMap;
   SmallVector<Instruction *> ShiftsToBeConvertedToMuls;
+
   for (BasicBlock  &BI : F) {
     for (Instruction &I : BI) {
-      Value *ShiftedValue;
-      ConstantInt *ShiftAmount;
+      Value *LHS;
+      ConstantInt *ConstVal;
 
-      // Save shift instructions with a constant shift amount.
-      if (match(&I, m_Shl(m_Value(ShiftedValue), m_ConstantInt(ShiftAmount)))) {
-        std::pair<Value *, ConstantInt *> ShiftKey{ShiftedValue, ShiftAmount};
+      if (match(&I, m_Shl(m_Value(LHS), m_ConstantInt(ConstVal)))) {
+        ShiftMapKeyT ShiftKey{LHS, ConstVal};
         auto OtherShiftIte = ShiftMap.try_emplace(ShiftKey, &I).first;
         Instruction *OtherShift = OtherShiftIte->second;
+        // We should use the most popular such shift instruction for reassociation.
         if (I.getNumUses() > OtherShift->getNumUses())
           OtherShiftIte->second = &I;
         continue;
       }
 
-      Value *LHS, *OtherOp;
-      if (!match(&I, m_c_Mul(m_Value(LHS), m_Value(OtherOp))))
+      Value *OtherOp;
+      if (!match(&I, m_Mul(m_Value(LHS), m_Value(OtherOp))))
         continue;
 
-      ConstantInt *ConstVal;
       if (!match(LHS, m_Shl(m_Value(), m_ConstantInt(ConstVal))))
         continue;
 
       // Check if there was a shift, that has the other parameter of the multiplication with shifed by the same constant.
-      std::pair<Value *, ConstantInt *> ShiftKey{OtherOp, ConstVal};
+      ShiftMapKeyT ShiftKey{OtherOp, ConstVal};
       auto Ite = ShiftMap.find(ShiftKey);
       if (Ite != ShiftMap.end()) {
         ShiftsToBeConvertedToMuls.push_back(Ite->second);
