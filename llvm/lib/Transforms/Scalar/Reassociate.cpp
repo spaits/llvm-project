@@ -2564,12 +2564,6 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
         Value *Op0 = Ops[i].Op;
         Value *Op1 = Ops[j].Op;
 
-        llvm::errs() << "Comparing:\n";
-        llvm::errs() << Ops[i].Rank << ' ';
-        Op0->dump();
-        llvm::errs() << Ops[j].Rank << ' ';
-        Op1->dump();
-
         if (std::less<Value *>()(Op1, Op0))
           std::swap(Op0, Op1);
         auto it = PairMap[Idx].find({Op0, Op1});
@@ -2579,10 +2573,8 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
           // small chance that the new nodes can have the same address as
           // something already in the table. We shouldn't accumulate the stored
           // score in that case as it refers to the wrong Value.
-          if (it->second.isValid()) {
-            llvm::errs() << "Sketchy increase by:" << it->second.Score << "\n";
+          if (it->second.isValid())
             Score += it->second.Score;
-          }
         }
 
         unsigned MaxRank = std::max(Ops[i].Rank, Ops[j].Rank);
@@ -2599,9 +2591,7 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
         // If two pairs occur as many times, we pick the one with the
         // lowest rank, meaning the one with both operands appearing first in
         // the topological order.
-        llvm::errs() << Score << ">" <<  Max << "||" << "(" << Score << "=="  <<Max << "&&" << MaxRank << "<" << BestRank << '\n';
         if (Score > Max || (Score == Max && MaxRank < BestRank)) {
-          llvm::errs() << "We ever get here!\n";
           BestPair = {j, i};
           Max = Score;
           BestRank = MaxRank;
@@ -2753,9 +2743,6 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
   // Calculate the rank map for F.
   BuildRankMap(F, RPOT);
 
-  //TODO: Remove my debug print!
-  F.dump();
-
   // Build the pair map before running reassociate.
   // Technically this would be more accurate if we did it after one round
   // of reassociation, but in practice it doesn't seem to help much on
@@ -2775,12 +2762,8 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
     // Optimize every instruction in the basic block.
     for (BasicBlock::iterator II = BI->begin(), IE = BI->end(); II != IE;)
       if (isInstructionTriviallyDead(&*II)) {
-        llvm::errs() << "Erasing:\n";
-        II->dump();
         EraseInst(&*II++);
       } else {
-        llvm::errs() << "Optimizing:\n";
-        II->dump();
         OptimizeInst(&*II);
         assert(II->getParent() == &*BI && "Moved to a different block!");
         ++II;
@@ -2796,8 +2779,6 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
     while (!ToRedo.empty()) {
       Instruction *I = ToRedo.pop_back_val();
       if (isInstructionTriviallyDead(I)) {
-        llvm::errs() << "2Erasing:\n";
-        I->dump();
         RecursivelyEraseDeadInsts(I, ToRedo);
         MadeChange = true;
       }
@@ -2808,15 +2789,10 @@ PreservedAnalyses ReassociatePass::runImpl(Function &F, UniformityInfo &UI) {
     while (!RedoInsts.empty()) {
       Instruction *I = RedoInsts.front();
       RedoInsts.erase(RedoInsts.begin());
-      if (isInstructionTriviallyDead(I)) {
-        llvm::errs() << "3Erasing:\n";
-        I->dump();
+      if (isInstructionTriviallyDead(I))
         EraseInst(I);
-      } else {
-        llvm::errs() << "2Optimizing:\n";
-        I->dump();
+      else
         OptimizeInst(I);
-      }
     }
   }
 
